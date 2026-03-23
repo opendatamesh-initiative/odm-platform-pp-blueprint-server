@@ -1,0 +1,40 @@
+server:
+  port: 8080
+  baseUrl: http://localhost:8080
+
+service-template:
+  observer:
+    name: service-template
+    displayName: Service template
+
+spring:
+  profiles:
+    active: test
+  application:
+    name: odm-platform-service-template
+  banner:
+    charset: UTF-8
+    mode: console
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration/postgresql
+  jpa:
+    properties:
+      hibernate:
+        default_schema: odm_service_template
+        ddl-auto: validate
+
+info:
+  version: @project.version@
+  name: @project.name@
+
+application:
+  title: ODM Platform Service Template
+
+logging:
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  level:
+    org.springframework.web.filter.CommonsRequestLoggingFilter: DEBUG
