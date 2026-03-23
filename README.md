@@ -1,221 +1,204 @@
-# ODM Platform — service repository template
-
-This repository is a **starting point** for new [Open Data Mesh Platform](https://github.com/opendatamesh-initiative) microservices (registry, blueprint, or domain-specific APIs). Use it as a [GitHub template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) or clone it, then rename packages, configuration keys, and infrastructure identifiers to match your service.
-
-The layout and configuration style are aligned with product-plane services such as the **[ODM Platform Registry Server](https://github.com/opendatamesh-initiative/odm-platform-pp-registry-server)** (see that project’s README for production-oriented examples: `policy-service`, observer subscriptions, event matrices, Git provider auth). **This template only ships a minimal notification client setup**; it does not implement policy integration, incoming observer endpoints, or automatic event subscription.
-
-<!-- TOC -->
-
-* [Overview](#overview)
-* [What you get](#what-you-get)
-* [Prerequisites](#prerequisites)
-* [Setup instructions](#setup-instructions)
-  * [1. Database configuration](#1-database-configuration)
-  * [2. Building the project](#2-building-the-project)
-  * [3. Running the application](#3-running-the-application)
-* [Configuration options](#configuration-options)
-  * [Server configuration](#server-configuration)
-  * [Spring configuration](#spring-configuration)
-  * [Database and Flyway](#database-and-flyway)
-  * [ODM product-plane configuration](#odm-product-plane-configuration)
-  * [Observer identifiers (`service-template`)](#observer-identifiers-service-template)
-  * [Notification client (`NotificationClientConfig`)](#notification-client-notificationclientconfig)
-  * [Logging configuration](#logging-configuration)
-  * [Docker and environment variables](#docker-and-environment-variables)
-* [API documentation](#api-documentation)
-* [Testing](#testing)
-* [Customization checklist](#customization-checklist)
-* [Summary of string locations](#summary-of-string-locations)
-
-<!-- TOC -->
+# ODM Platform Blueprint Server
 
 ## Overview
 
-The template is a Spring Boot application with JPA, Flyway (PostgreSQL dialect), Actuator, SpringDoc OpenAPI, shared REST error handling, CRUD helpers, and a **notification client** bean you can use to register with the product-plane notification service when you build a real service.
+The ODM Platform Blueprint Server is a microservice in the [Open Data Mesh Platform](https://github.com/opendatamesh-initiative) product plane. It exposes Git-provider integration for blueprints: listing organizations and repositories, creating repositories, browsing branches, and working with provider-specific resources (for example projects or workspaces). It can integrate with the product-plane **notification service** as an observer to subscribe to events and emit or acknowledge notifications when that integration is enabled.
 
-## What you get
+<!-- TOC -->
 
-- **Spring Boot 3.5**, **Java 21**, JPA, Flyway, Testcontainers in tests, DevTools (optional).
-- **Profiles:** `application-dev.yml` (H2), `application-docker.yml`, `application-localpostgres.yml`, plus test resources for integration tests.
-- **CI/CD:** GitHub Actions (`verify` on `main`; release workflow and Docker image publishing — configurable).
-- **Notification:** `NotificationClientConfig` + `NotificationClient` / `NotificationClientImpl` (HTTP when `odm.product-plane.notification-service.active` is `true`, in-process no-op when `false`). There is **no** `policy-service` wiring, **no** startup subscription to event types, and **no** sample `NotificationEventHandler` / observer controller — add those when you follow patterns from the Registry (or your own design).
+* [ODM Platform Blueprint Server](#odm-platform-blueprint-server)
+    * [Overview](#overview)
+        * [Key Features](#key-features)
+        * [How It Works](#how-it-works)
+    * [Setup and Start](#setup-and-start)
+        * [Prerequisites](#prerequisites)
+        * [Configuration](#configuration)
+            * [Environment Variables (Docker Profile)](#environment-variables-docker-profile)
+            * [Notification Service and Observer Identity](#notification-service-and-observer-identity)
+        * [Running Locally](#running-locally)
+            * [Option 1: Using Maven](#option-1-using-maven)
+            * [Option 2: Using Docker](#option-2-using-docker)
+            * [Option 3: Using the JAR](#option-3-using-the-jar)
+        * [Default Port](#default-port)
+        * [API Documentation](#api-documentation)
+    * [Main Capabilities](#main-capabilities)
+        * [1. Git Provider Operations](#1-git-provider-operations)
+        * [2. Blueprint Repository Context](#2-blueprint-repository-context)
+        * [3. Notification Integration](#3-notification-integration)
+    * [Additional Endpoints](#additional-endpoints)
+    * [Architecture](#architecture)
+    * [Testing](#testing)
+    * [License](#license)
 
-## Prerequisites
+<!-- TOC -->
 
-- **Java 21** (see `pom.xml` `java.version`).
-- **Maven 3.6+**.
-- **Docker** (for Testcontainers during `mvn verify` / integration tests).
-- **PostgreSQL** for profiles that use JDBC PostgreSQL (e.g. default `application.yml` + local Postgres); **H2** for the `dev` profile.
+### Key Features
 
-## Setup instructions
+- **Multi-provider Git integration**: GitHub, GitLab, Bitbucket, and Azure DevOps via the shared `git-utils` abstraction and a blueprint-local `GitProviderFactory`
+- **Organizations and repositories**: Paginated listing, filters, and repository creation with standardized request/response models
+- **Provider extensions**: Custom resource definitions and custom resources for provider-specific concepts (for example Bitbucket projects or Azure DevOps projects)
+- **Optional notification client**: HTTP client to the ODM notification service (`NotificationClient` / `NotificationClientConfig`) when `odm.product-plane.notification-service.active` is `true`
+- **Persistence and migrations**: PostgreSQL with Flyway; Hibernate schema `odm_blueprint` (see `application.yml`)
 
-### 1. Database configuration
+### How It Works
 
-**PostgreSQL (typical local / production-style)** — example fragment; adjust host, database, user, and match `spring.jpa.properties.hibernate.default_schema` with your Flyway/JPA schema:
+1. Callers identify the **Git provider** (type and optional base URL) and pass **authentication** through HTTP headers, consistent with other product-plane services.
+2. The service builds a provider-specific `GitProvider` (or `GitProviderExtension` for unauthenticated metadata) through `GitProviderFactory`.
+3. **GitProvidersUtilsService** orchestrates operations (organizations, repositories, branches, custom resources) and maps results to versioned REST resources under `rest.v2.resources`.
+4. If the notification integration is active, the service can interact with the notification API (subscribe, emit, processing callbacks) using `server.baseUrl` and `blueprint.observer.*` identity fields.
 
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/postgres
-    username: postgres
-    password: your_password
-    driver-class-name: org.postgresql.Driver
-  jpa:
-    properties:
-      hibernate:
-        default_schema: odm_service_template
-```
+## Setup and Start
 
-See `application-localpostgres.yml` for a concrete profile.
+### Prerequisites
 
-**H2 (development)** — `application-dev.yml` uses an in-memory H2 database with PostgreSQL compatibility mode for quick runs without Postgres.
+- Java 21 or higher
+- Maven 3.6+
+- PostgreSQL 12+ (for production or `localpostgres` / `docker` profiles) or H2 (for the `dev` profile)
+- Docker (optional, for containerized deployment; required for Testcontainers during `mvn verify`)
 
-### 2. Building the project
+### Configuration
+
+Spring Boot profiles used in this repository:
+
+- **`dev`**: Development profile with H2 in-memory database (`application-dev.yml`; default server port **8087** in that file)
+- **`docker`**: Docker profile with PostgreSQL via environment variables (`application-docker.yml`)
+- **`localpostgres`**: Local PostgreSQL example (`application-localpostgres.yml`; port **8087**)
+- **`test`**: Used by integration tests (`src/test/resources/application-test.yml`)
+
+The root `application.yml` sets `spring.profiles.active` to **`test`**. For a normal local run, override the profile (for example `dev` or `localpostgres`) as shown below.
+
+#### Environment Variables (Docker Profile)
+
+When running with the `docker` profile, configure:
 
 ```bash
-git clone <your-repo-url>
-cd odm-platform-service-template
-mvn clean install
+DB_JDBC_URL=jdbc:postgresql://localhost:5432/odm_blueprint
+DB_USERNAME=your_username
+DB_PASSWORD=your_password
 ```
 
-### 3. Running the application
+The Docker image sets `PROFILES_ACTIVE=docker` by default (see `Dockerfile`).
 
-```bash
-# Default profile from application.yml is "test"; override as needed
-mvn spring-boot:run
+#### Notification Service and Observer Identity
 
-# Examples
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
-mvn spring-boot:run -Dspring-boot.run.profiles=localpostgres
-```
-
-**Docker** (after `mvn package`):
-
-```bash
-docker build -t odm-platform-service-template .
-docker run -p 8080:8080 \
-  -e PROFILES_ACTIVE=docker \
-  -e SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/postgres \
-  -e SPRING_DATASOURCE_USERNAME=postgres \
-  -e SPRING_DATASOURCE_PASSWORD=your_password \
-  odm-platform-service-template
-```
-
-Adapt datasource environment variable names to match Spring Boot relaxed binding for your `application-docker.yml`.
-
-## Configuration options
-
-### Server configuration
-
-```yaml
-server:
-  port: 8080
-  baseUrl: http://localhost:8080   # Used by the notification client as the observer callback base URL when integrated
-```
-
-### Spring configuration
-
-```yaml
-spring:
-  application:
-    name: odm-platform-service-template
-  banner:
-    charset: UTF-8
-    mode: console
-```
-
-Maven resource filtering exposes `@project.version@` and `@project.name@` under `info.*` in `application.yml`.
-
-### Database and Flyway
-
-```yaml
-spring:
-  flyway:
-    enabled: true
-    baseline-on-migrate: true
-    locations: classpath:db/migration/postgresql
-  jpa:
-    properties:
-      hibernate:
-        default_schema: odm_service_template
-        ddl-auto: validate
-```
-
-Migration scripts live under `src/main/resources/db/migration/postgresql/`. Keep `default_schema` consistent with your SQL.
-
-### ODM product-plane configuration
-
-Properties read by **`NotificationClientConfig`** (no Java defaults — must be present in YAML, a profile, or the environment):
+Properties consumed by `NotificationClientConfig`:
 
 ```yaml
 odm:
   product-plane:
     notification-service:
-      address: http://localhost:8001   # Notification service base URL
-      active: false                     # true: real HTTP client + connection check at startup; false: dummy client
+      address: http://localhost:8001
+      active: false
+
+blueprint:
+  observer:
+    name: blueprint
+    displayName: Blueprint
 ```
 
 | Property | Description |
 |----------|-------------|
-| `odm.product-plane.notification-service.address` | Base URL of the product-plane notification service. Still required when `active` is `false` (placeholder resolution). |
-| `odm.product-plane.notification-service.active` | Enables the real `NotificationClientImpl` and startup connectivity check; `false` uses an in-process implementation that logs and skips HTTP. |
-
-**Not in this template:** the Registry documents `odm.product-plane.policy-service.*` and startup event subscriptions. Those are **Registry-specific**; this repository does not read `policy-service` properties. Add them in your service when you implement the same behaviour.
+| `odm.product-plane.notification-service.address` | Base URL of the [ODM Platform Notification Server](https://github.com/opendatamesh-initiative/odm-platform-pp-notification-server) |
+| `odm.product-plane.notification-service.active` | If `true`, uses the real HTTP client and checks connectivity at startup; if `false`, uses an in-process no-op client |
+| `blueprint.observer.name` / `displayName` | Observer identity when subscribing to the notification service |
+| `server.baseUrl` | Public base URL of this service (used as the observer callback base URL when integrated) |
 
 Environment examples (relaxed binding): `ODM_PRODUCT_PLANE_NOTIFICATION_SERVICE_ADDRESS`, `ODM_PRODUCT_PLANE_NOTIFICATION_SERVICE_ACTIVE`.
 
-### Observer identifiers (`service-template`)
+### Running Locally
 
-Analogous to the Registry’s `registry.observer.*` keys, this template uses a **renameable YAML prefix** `service-template` for observer identity fields consumed by `NotificationClientConfig`:
+#### Option 1: Using Maven
 
-```yaml
-service-template:
-  observer:
-    name: service-template
-    displayName: Service template
+```bash
+# Build the project
+mvn clean install
+
+# Run with dev profile (H2)
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
+
+# Run against local PostgreSQL
+mvn spring-boot:run -Dspring-boot.run.profiles=localpostgres
 ```
 
-After renaming the prefix (e.g. to `blueprint`), update `@Value("${service-template.observer...}")` in `NotificationClientConfig.java` to match.
+#### Option 2: Using Docker
 
-### Notification client (`NotificationClientConfig`)
+```bash
+# Build the JAR then the image
+mvn clean package
+docker build -t odm-platform-pp-blueprint-server .
 
-Spring `@Configuration` class that:
-
-1. Loads **`server.baseUrl`**, **`service-template.observer.name`** / **`displayName`** (with defaults in `@Value`), and **`odm.product-plane.notification-service.*`**.
-2. Exposes a **`NotificationClient`** bean: if `active` is `true`, builds `NotificationClientImpl`, asserts connection to the notification service, and returns it; if `false`, returns a dummy client that warns on `notifyEvent`, `subscribeToEvents`, and processing callbacks.
-
-Unlike the Registry, this template **does not** call `subscribeToEvents` at startup or expose an observer REST endpoint — you add that when you integrate.
-
-### Logging configuration
-
-```yaml
-logging:
-  pattern:
-    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
-  level:
-    org.springframework.web.filter.CommonsRequestLoggingFilter: DEBUG
+# Run the container
+docker run -p 8080:8080 \
+  -e DB_JDBC_URL=jdbc:postgresql://host.docker.internal:5432/odm_blueprint \
+  -e DB_USERNAME=your_username \
+  -e DB_PASSWORD=your_password \
+  -e PROFILES_ACTIVE=docker \
+  odm-platform-pp-blueprint-server
 ```
 
-### Docker and environment variables
+#### Option 3: Using the JAR
 
-The `Dockerfile` sets `PROFILES_ACTIVE` (default `docker`) and passes `JAVA_OPTS` and `SPRING_PROPS` into the JVM command line before `-jar`. For JSON-style overrides similar to the Registry, use Spring Boot’s supported mechanisms (e.g. `SPRING_APPLICATION_JSON` or profile-specific YAML) rather than assuming a single variable format unless your entrypoint maps it.
+```bash
+# Build the JAR
+mvn clean package
 
-Common variables:
+# Run the JAR (adjust version if needed)
+java -jar target/odm-platform-pp-blueprint-server-1.0.0.jar
 
-- `SPRING_PROFILES_ACTIVE` — active profiles
-- `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`
-- `SERVER_PORT`
-- `ODM_PRODUCT_PLANE_NOTIFICATION_SERVICE_ADDRESS`, `ODM_PRODUCT_PLANE_NOTIFICATION_SERVICE_ACTIVE`
+# Or with a specific profile
+java -Dspring.profiles.active=dev -jar target/odm-platform-pp-blueprint-server-1.0.0.jar
+```
 
-## API documentation
+### Default Port
 
-With SpringDoc on the classpath, when you add controllers the UI is typically:
+`application.yml` sets **8080**. The `dev` and `localpostgres` profiles override this to **8087** for local convenience. Override with `server.port` or `SERVER_PORT` if needed.
 
-- Swagger UI: `http://localhost:<port>/swagger-ui/index.html` (or `/swagger-ui.html` depending on version)
-- OpenAPI JSON: `http://localhost:<port>/v3/api-docs`
+### API Documentation
 
-The bare template may not expose application REST endpoints until you implement them.
+When the application exposes REST controllers, use SpringDoc OpenAPI:
+
+- **Swagger UI**: http://localhost:8080/swagger-ui.html (or `/swagger-ui/index.html` depending on SpringDoc version)
+- **OpenAPI JSON**: http://localhost:8080/v3/api-docs
+
+Integration tests use the product-plane prefix **`/api/v2/pp/blueprint/`** (for example `git-providers` under that path). See `RoutesV2` in tests and the live OpenAPI document for the current surface.
+
+## Main Capabilities
+
+### 1. Git Provider Operations
+
+Through **GitProvidersUtilsService** (implementation: `GitProvidersUtilsServiceImpl`), the service supports:
+
+- Listing **organizations** and **repositories** (with pagination and filters)
+- **Creating** repositories
+- Listing **branches**
+- **Custom resource definitions** and **custom resources** for provider-specific types
+
+Authentication and provider instance selection follow the `ProviderIdentifierRes` model and `HttpHeaders` passed into the service layer. REST mapping for these operations is aligned with **`/api/v2/pp/blueprint/`**; consult Swagger for exact paths and payloads once controllers are registered.
+
+### 2. Blueprint Repository Context
+
+- List **commits** (with `CommitSearchOptions`), **branches**, and **tags**
+- **Add tags** to a repository
+
+### 3. Notification Integration
+
+This service includes a **notification client** compatible with the ODM notification API (subscribe, emit, notification status updates). For observer contract, payload shapes, and HTTP endpoints on the notification side, see the **ODM Platform Notification Server** README and Swagger.
+
+When you implement an incoming **observer** endpoint on this service, follow the same path conventions as documented there (for example `POST {observerBaseUrl}/api/v2/up/observer/notifications` for API version `v2`).
+
+## Additional Endpoints
+
+Actuator and infrastructure endpoints follow Spring Boot defaults when starters are enabled. Application REST resources will appear under `/api/v2/pp/blueprint/` as controllers are added. Use **Swagger UI** for the authoritative list.
+
+## Architecture
+
+- **Spring Boot 3.5.7**: Core framework
+- **PostgreSQL**: Primary database with Flyway migrations under `src/main/resources/db/migration/postgresql/`
+- **H2**: In-memory database for the `dev` profile
+- **Spring Data JPA**: Persistence (schema `odm_blueprint` in default configuration)
+- **SpringDoc OpenAPI**: API documentation
+- **Apache HttpClient 5**: HTTP client stack (via Spring and REST utilities)
+- **ODM git-utils**: Provider implementations behind `GitProviderFactory`
 
 ## Testing
 
@@ -223,59 +206,8 @@ The bare template may not expose application REST endpoints until you implement 
 mvn -B verify -Dspring.profiles.active=test
 ```
 
-Ensure Docker is available for Testcontainers when integration tests run.
+Docker must be available for Testcontainers when integration tests run.
 
----
+## License
 
-## Customization checklist
-
-Work through these in order. Prefer IDE **refactor → rename package** where possible; then fix YAML, SQL, Dockerfile, workflows, and hard-coded classpath patterns.
-
-### 1. Maven coordinates (`pom.xml`)
-
-| Location | Action |
-|----------|--------|
-| `groupId` | Your organisation (e.g. `org.opendatamesh`). |
-| `artifactId` | Must match the JAR name glob in the `Dockerfile`. |
-| `version` | Initial version; release tags should match for CD. |
-| `name` / `description` | Service branding; `name` feeds `@project.name@` in YAML. |
-
-### 2. Java base package
-
-Rename `org.opendatamesh.platform.service.template` under `src/main/java` and `src/test/java`, including `OdmPlatformServiceTemplateApplication` and `SpringBootTest` references.
-
-### 3. Configuration and database
-
-- Adjust `application.yml` and profiles (ports, datasource, `odm.product-plane.notification-service`, `service-template` prefix).
-- Align Flyway scripts and `default_schema` with your domain (replace sample `service_template` table if needed).
-
-### 4. Optional: API exception type
-
-Rename `ServiceTemplateApiException` and subclasses, and update `ResponseExceptionHandler` and any `catch` sites in **your** code.
-
-### 5. Integration tests: client mocks
-
-Update the Ant pattern in `TestConfig` from `classpath*:org/opendatamesh/platform/service/template/client/**/*.class` to your new package path.
-
-### 6. Docker and GitHub Actions
-
-- `Dockerfile` `COPY` glob vs `artifactId`.
-- `.github/workflows/ci.yml` and `cicd.yml`: branch names, `IMAGE_NAME`, Docker Hub org, Maven `settings.xml` server id if used.
-
-### 7. Replace this README
-
-After forking from the template, replace this document with a service-specific README (like the Registry’s) describing your APIs, events, and operational config.
-
----
-
-## Summary of string locations
-
-Search and replace template-specific tokens:
-
-- `odm-platform-service-template` — POM `artifactId`, Spring app name, workflows, Docker.
-- `org.opendatamesh.platform.service.template` — packages, `TestConfig` classpath pattern.
-- `OdmPlatformServiceTemplateApplication` — main class and tests.
-- `service-template` / `service_template` / `odm_service_template` — YAML and SQL.
-- `ServiceTemplateApiException` — if you rebrand exceptions.
-
-After customization, run `mvn verify` and a full local or container run with real datasource and `odm.product-plane.notification-service.*` before your first release.
+Licensed under the Apache License, Version 2.0.

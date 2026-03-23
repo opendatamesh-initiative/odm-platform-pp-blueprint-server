@@ -2,16 +2,16 @@ server:
   port: 8080
   baseUrl: http://localhost:8080
 
-service-template:
+blueprint:
   observer:
-    name: service-template
-    displayName: Service template
+    name: blueprint2.0
+    displayName: Blueprint 2.0
 
 spring:
   profiles:
     active: test
   application:
-    name: odm-platform-service-template
+    name: odm-platform-pp-blueprint-server
   banner:
     charset: UTF-8
     mode: console
@@ -22,7 +22,7 @@ spring:
   jpa:
     properties:
       hibernate:
-        default_schema: odm_service_template
+        default_schema: odm_blueprint
         ddl-auto: validate
 
 info:
@@ -30,7 +30,7 @@ info:
   name: @project.name@
 
 application:
-  title: ODM Platform Service Template
+  title: ODM Platform Blueprint Server
 
 logging:
   pattern:

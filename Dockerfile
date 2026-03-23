@@ -1,6 +1,6 @@
 FROM amazoncorretto:21-alpine-jdk
 
-COPY target/odm-platform-service-template-*.jar ./application.jar
+COPY target/odm-platform-pp-blueprint-server-*.jar ./application.jar
 
 ENV JAVA_OPTS=""
 ENV SPRING_PROPS=""

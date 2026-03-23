@@ -1,4 +1,4 @@
-create table if not exists service_template (
+create table if not exists blueprints (
     uuid                varchar(36) primary key,
     name                varchar(255),
     display_name        varchar(255),

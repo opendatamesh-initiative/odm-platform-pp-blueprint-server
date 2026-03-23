@@ -1,0 +1,15 @@
+package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders;
+
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.opendatamesh.platform.git.model.Organization;
+
+@Mapper(componentModel = "spring")
+public interface OrganizationMapper {
+
+    OrganizationRes toRes(Organization organization);
+
+    @Mapping(target = "members", ignore = true)
+    @Mapping(target = "repositories", ignore = true)
+    Organization toEntity(OrganizationRes organizationRes);
+}

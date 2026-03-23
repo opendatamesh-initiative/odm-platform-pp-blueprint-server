@@ -6,5 +6,13 @@ spring:
     properties:
       hibernate:
         show_sql: false
-        default_schema: odm_service_template_test
+        default_schema: odm_blueprint_test
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+odm:
+  product-plane:
+    notification-service:
+      address:
+      active: true
+    policy-service:
+      active: true

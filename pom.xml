@@ -5,15 +5,14 @@
 		 					 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<!-- Change the groupId and artifactId to your own values -->
 	<groupId>org.opendatamesh</groupId>
-	<artifactId>odm-platform-service-template</artifactId>
-	<version>0.0.1</version>
+	<artifactId>odm-platform-pp-blueprint-server</artifactId>
+	<version>1.0.0</version>
+    <url>https://github.com/opendatamesh-initiative/odm-platform-pp-blueprint-server</url>
 	<packaging>jar</packaging>
 
-	<!-- Change the name and description to your own values -->
-	<name>ODM Platform Service Template</name>
-	<description>This is a template for creating a new odm platform service repository.</description>
+	<name>ODM Platform Blueprint Server</name>
+	<description>Open Data Mesh Platform's Blueprint service server</description>
 	
 	<parent>
         <groupId>org.springframework.boot</groupId>
@@ -28,6 +27,26 @@
             <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
         </license>
     </licenses>
+
+    <scm>
+        <connection>scm:git:git@github.com:opendatamesh-initiative/odm-platform-pp-blueprint-server</connection>
+        <developerConnection>scm:git:git@github.com:opendatamesh-initiative/odm-platform-pp-blueprint-server
+        </developerConnection>
+        <url>scm:git:git@github.com:opendatamesh-initiative/odm-platform-pp-blueprint-server</url>
+    </scm>
+
+    <repositories>
+        <repository>
+            <id>odm-spec-parser-repo</id>
+            <name>GitHub Packages for ODM Specification Parser</name>
+            <url>https://maven.pkg.github.com/opendatamesh-initiative/odm-specification-dpdescriptor-parser</url>
+        </repository>
+        <repository>
+            <id>odm-git-utils-repo</id>
+            <name>GitHub Packages for Git Utils</name>
+            <url>https://maven.pkg.github.com/opendatamesh-initiative/git-utils</url>
+        </repository>
+    </repositories>
 
 	<properties>
         <java.version>21</java.version>
@@ -168,6 +187,14 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+
+        <!-- Git Utils (Git provider abstraction + JGit) -->
+        <dependency>
+            <groupId>org.opendatamesh</groupId>
+            <artifactId>git-utils</artifactId>
+            <version>1.0.1</version>
+        </dependency>
+        
     </dependencies>
 
 	<build>
