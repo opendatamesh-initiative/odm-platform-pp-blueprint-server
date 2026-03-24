@@ -11,8 +11,5 @@ spring:
 
 odm:
   product-plane:
-    notification-service:
-      address:
-      active: true
     policy-service:
       active: true
