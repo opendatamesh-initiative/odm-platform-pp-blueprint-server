@@ -1,0 +1,32 @@
+# Section 2.3 — README: Polyrepo, no composition
+spec: odm-blueprint-manifest
+specVersion: v1
+name: split-stack-template
+version: 0.5.0
+
+parameters:
+  - key: awsRegion
+    type: string
+    required: true
+    validation:
+      allowedValues: [ eu-west-1, eu-central-1, us-east-1 ]
+    ui:
+      label: AWS region
+      formType: dropdown
+
+instantiation:
+  strategy: polyrepo
+  targets:
+    - repositoryNamePostfix: "-infra"
+      createPolicy: create_if_missing
+      sourcePath: terraform/
+      targetPath: ./
+
+    - repositoryNamePostfix: "-apps"
+      createPolicy: create_if_missing
+      sourcePath: application/
+      targetPath: ./
+
+    - repositoryNamePostfix: "-infra"
+      sourcePath: policies/
+      targetPath: policies/

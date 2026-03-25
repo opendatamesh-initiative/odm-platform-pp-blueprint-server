@@ -1,0 +1,10 @@
+spec: odm-blueprint-manifest
+specVersion: v1
+name: ext-test
+version: 1.0.0
+dumb_extension:
+  fieldA: valueA
+  fieldB: valueB
+x-prop: x-prop-value
+instantiation:
+  strategy: monorepo

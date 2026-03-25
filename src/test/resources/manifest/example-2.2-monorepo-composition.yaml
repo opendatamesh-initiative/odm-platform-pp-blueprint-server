@@ -1,0 +1,47 @@
+# Section 2.2 — README: Monorepo + composition
+spec: odm-blueprint-manifest
+specVersion: v1
+name: full-stack-dp
+version: 2.1.0
+description: Parent blueprint composing storage and serving modules into one repo.
+
+parameters:
+  - key: projectSlug
+    type: string
+    required: true
+    validation:
+      pattern: '^[a-z][a-z0-9-]{1,62}$'
+    ui:
+      group: General Configuration
+      label: Project slug
+      formType: text
+
+  - key: enablePiiMasking
+    type: boolean
+    default: true
+    ui:
+      group: Security
+      label: Enable PII masking
+      formType: toggle
+
+composition:
+  - module: storage
+    blueprintName: odm-blueprint-s3-lake
+    blueprintVersion: 3.0.1
+    parameterMapping:
+      bucketPrefix: projectSlug
+      encryptAtRest: enablePiiMasking
+
+  - module: serving
+    blueprintName: odm-blueprint-api-skeleton
+    blueprintVersion: 1.4.0
+    parameterMapping:
+      serviceName: projectSlug
+
+instantiation:
+  strategy: monorepo
+  compositionLayout:
+    - module: storage
+      targetPath: data-plane/storage
+    - module: serving
+      targetPath: app/serving
