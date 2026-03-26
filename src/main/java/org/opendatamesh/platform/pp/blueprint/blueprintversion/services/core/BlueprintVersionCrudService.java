@@ -8,9 +8,6 @@ import org.opendatamesh.platform.pp.blueprint.utils.services.GenericMappedAndFil
 /**
  * Service for CRUD operations on individual BlueprintVersion entities.
  * 
- * This service provides full CRUD functionality for managing single BlueprintVersion instances,
- * including all manifest and descriptor template content. It is designed for operations that require complete entity
- * data such as creating, updating, or retrieving individual versions.
  * 
  * <p><strong>Supported Operations:</strong></p>
  * <ul>
@@ -20,9 +17,6 @@ import org.opendatamesh.platform.pp.blueprint.utils.services.GenericMappedAndFil
  *   <li>Delete blueprint versions</li>
  * </ul>
  * 
- * <p><strong>Note:</strong> Paginated reads are disabled for this service to encourage
- * the use of {@link BlueprintVersionsQueryService} for listing operations, which provides
- * better performance by excluding manifest and descriptor template content.</p>
  * 
  * @see BlueprintVersionsQueryService for paginated read operations
  */

@@ -81,6 +81,9 @@ public class BlueprintRes extends VersionedRes {
     @Schema(description = "The path where the descriptor template is located in the repository")
     private String descriptorTemplatePath;
 
+    @Schema(description = "The path where the readme is located in the repository")
+    private String readmePath;
+
     @Schema(description = "The HTTP URL for cloning the repository", example = "https://github.com/my-company/data-product-repo.git")
     private String remoteUrlHttp;
 
@@ -151,6 +154,14 @@ public class BlueprintRes extends VersionedRes {
 
     public void setDescriptorTemplatePath(String descriptorTemplatePath) {
         this.descriptorTemplatePath = descriptorTemplatePath;
+    }
+
+    public String getReadmePath() {
+        return readmePath;
+    }
+
+    public void setReadmePath(String readmePath) {
+        this.readmePath = readmePath;
     }
 
     public String getRemoteUrlHttp() {

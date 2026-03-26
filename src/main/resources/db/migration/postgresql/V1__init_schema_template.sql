@@ -7,13 +7,14 @@ create table if not exists blueprints (
     updated_at          timestamp
 );
 
-create table if not exists blueprint_repositories (
+create table if not exists blueprints_repositories (
     uuid                    varchar(36) primary key,
     external_identifier     varchar(255),
     name                    varchar(255),
     description             text,
     manifest_root_path      text,
     descriptor_template_path text,
+    readme_path             text,
     remote_url_http         text,
     remote_url_ssh          text,
     default_branch          varchar(255),
@@ -24,11 +25,12 @@ create table if not exists blueprint_repositories (
     blueprint_uuid          varchar(36) references blueprints(uuid) on delete cascade
 );
 
-create table if not exists blueprint_versions (
+create table if not exists blueprints_versions (
     uuid                varchar(36) primary key,
     blueprint_uuid      varchar(36) references blueprints (uuid) on delete cascade,
     name                varchar(255),
     description         text,
+    readme              text,
     tag                 varchar(255),
     spec                varchar(255),
     spec_version        varchar(255),

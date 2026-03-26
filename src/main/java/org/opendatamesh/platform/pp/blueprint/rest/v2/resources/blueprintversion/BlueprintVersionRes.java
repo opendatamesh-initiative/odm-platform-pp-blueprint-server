@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.utils.resources.VersionedRes;
 
-@Schema(name = "blueprint_versions")
+@Schema(name = "blueprints_versions")
 public class BlueprintVersionRes extends VersionedRes {
 
     @Schema(description = "The unique identifier of the blueprint version")
@@ -19,6 +19,9 @@ public class BlueprintVersionRes extends VersionedRes {
 
     @Schema(description = "The description of the blueprint version")
     private String description;
+
+    @Schema(description = "The readme of the blueprint version")
+    private String readme;
 
     @Schema(description = "The tag of the blueprint version")
     private String tag;
@@ -87,6 +90,14 @@ public class BlueprintVersionRes extends VersionedRes {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getReadme() {
+        return readme;
+    }
+
+    public void setReadme(String readme) {
+        this.readme = readme;
     }
 
     public String getTag() {

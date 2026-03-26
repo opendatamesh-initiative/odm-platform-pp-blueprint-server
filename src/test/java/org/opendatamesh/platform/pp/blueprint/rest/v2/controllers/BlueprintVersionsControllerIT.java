@@ -57,6 +57,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion = new BlueprintVersionRes();
             blueprintVersion.setName(namePrefix + "-version");
             blueprintVersion.setDescription(namePrefix + "-desc");
+            blueprintVersion.setReadme(namePrefix + "-readme");
             blueprintVersion.setTag("v1.0.0");
             blueprintVersion.setVersionNumber("1.0.0");
             blueprintVersion.setSpec("bp-spec");
@@ -76,6 +77,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().getUuid()).isNotNull();
             assertThat(response.getBody().getName()).isEqualTo(blueprintVersion.getName());
+            assertThat(response.getBody().getReadme()).isEqualTo(blueprintVersion.getReadme());
             assertThat(response.getBody().getVersionNumber()).isEqualTo(blueprintVersion.getVersionNumber());
             assertThat(response.getBody().getSpec()).isEqualTo(blueprintVersion.getSpec());
             assertThat(response.getBody().getSpecVersion()).isEqualTo(blueprintVersion.getSpecVersion());
@@ -118,6 +120,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion = new BlueprintVersionRes();
             blueprintVersion.setName(namePrefix + "-version");
             blueprintVersion.setDescription(namePrefix + "-desc");
+            blueprintVersion.setReadme(namePrefix + "-readme");
             blueprintVersion.setTag("v1.0.0");
             blueprintVersion.setVersionNumber("1.0.0");
             blueprintVersion.setSpec("bp-spec");
@@ -144,6 +147,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().getUuid()).isEqualTo(blueprintVersionUuid);
             assertThat(response.getBody().getName()).isEqualTo(blueprintVersion.getName());
+            assertThat(response.getBody().getReadme()).isEqualTo(blueprintVersion.getReadme());
             assertThat(response.getBody().getSpec()).isEqualTo(blueprintVersion.getSpec());
             assertThat(response.getBody().getSpecVersion()).isEqualTo(blueprintVersion.getSpecVersion());
             assertThat(response.getBody().getVersionNumber()).isEqualTo(blueprintVersion.getVersionNumber());
@@ -206,6 +210,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion = new BlueprintVersionRes();
             blueprintVersion.setName(namePrefix + "-version");
             blueprintVersion.setDescription(namePrefix + "-desc");
+            blueprintVersion.setReadme(namePrefix + "-readme");
             blueprintVersion.setTag("v1.0.0");
             blueprintVersion.setVersionNumber("1.0.0");
             blueprintVersion.setSpec("bp-spec");
@@ -271,6 +276,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersionMatching = new BlueprintVersionRes();
             blueprintVersionMatching.setName("test-version-matching");
             blueprintVersionMatching.setDescription(namePrefix + "-desc");
+            blueprintVersionMatching.setReadme(namePrefix + "-readme");
             blueprintVersionMatching.setTag("v1.0.0");
             blueprintVersionMatching.setVersionNumber("1.0.0");
             blueprintVersionMatching.setSpec("bp-spec");
@@ -289,6 +295,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersionOther = new BlueprintVersionRes();
             blueprintVersionOther.setName("test-version-other");
             blueprintVersionOther.setDescription(namePrefix + "-desc");
+            blueprintVersionOther.setReadme(namePrefix + "-readme");
             blueprintVersionOther.setTag("v1.0.1");
             blueprintVersionOther.setVersionNumber("1.0.1");
             blueprintVersionOther.setSpec("bp-spec");
@@ -359,6 +366,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion = new BlueprintVersionRes();
             blueprintVersion.setName(namePrefix + "-version");
             blueprintVersion.setDescription(namePrefix + "-desc");
+            blueprintVersion.setReadme(namePrefix + "-readme");
             blueprintVersion.setTag("v1.0.0");
             blueprintVersion.setVersionNumber("1.0.0");
             blueprintVersion.setSpec("bp-spec");
@@ -377,6 +385,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             blueprintVersion.setUuid(blueprintVersionUuid);
             blueprintVersion.setName("updated-version-name");
             blueprintVersion.setDescription("updated-description");
+            blueprintVersion.setReadme("updated-readme");
 
             // When
             ResponseEntity<BlueprintVersionRes> response = rest.exchange(
@@ -390,7 +399,8 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().getName()).isEqualTo("updated-version-name");
             assertThat(response.getBody().getDescription()).isEqualTo("updated-description");
-
+            assertThat(response.getBody().getReadme()).isEqualTo("updated-readme");
+            
             ResponseEntity<BlueprintVersionRes> getResponse = rest.getForEntity(
                     apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + blueprintVersionUuid),
                     BlueprintVersionRes.class
@@ -414,6 +424,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
     public void whenUpdateNonExistentBlueprintVersionThenReturnNotFound() throws IOException {
         BlueprintVersionRes blueprintVersion = new BlueprintVersionRes();
         blueprintVersion.setName("non-existent-version");
+        blueprintVersion.setReadme("non-existent-readme");
         blueprintVersion.setTag("v1.0.0");
         blueprintVersion.setVersionNumber("1.0.0");
         blueprintVersion.setSpec("bp-spec");
@@ -464,6 +475,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion = new BlueprintVersionRes();
             blueprintVersion.setName(namePrefix + "-version");
             blueprintVersion.setDescription(namePrefix + "-desc");
+            blueprintVersion.setReadme(namePrefix + "-readme");
             blueprintVersion.setTag("v1.0.0");
             blueprintVersion.setVersionNumber("1.0.0");
             blueprintVersion.setSpec("bp-spec");
@@ -586,6 +598,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion = new BlueprintVersionRes();
             blueprintVersion.setName(namePrefix + "-version");
             blueprintVersion.setDescription(namePrefix + "-desc");
+            blueprintVersion.setReadme(namePrefix + "-readme");
             blueprintVersion.setTag("v1.0.0");
             blueprintVersion.setVersionNumber("1.0.0");
             blueprintVersion.setSpec("bp-spec");
@@ -662,6 +675,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion1 = new BlueprintVersionRes();
             blueprintVersion1.setName(namePrefix + "-version");
             blueprintVersion1.setDescription(namePrefix + "-desc");
+            blueprintVersion1.setReadme(namePrefix + "-readme");
             blueprintVersion1.setTag("v9.9.9");
             blueprintVersion1.setVersionNumber("9.9.9");
             blueprintVersion1.setSpec("bp-spec");
@@ -680,6 +694,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             BlueprintVersionRes blueprintVersion2 = new BlueprintVersionRes();
             blueprintVersion2.setName(namePrefix + "-version");
             blueprintVersion2.setDescription(namePrefix + "-desc");
+            blueprintVersion2.setReadme(namePrefix + "-readme");
             blueprintVersion2.setTag("v9.9.9-dup");
             blueprintVersion2.setVersionNumber("9.9.9");
             blueprintVersion2.setSpec("bp-spec");

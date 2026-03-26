@@ -9,7 +9,7 @@ import org.springframework.util.StringUtils;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
 
 @Entity
-@Table(name = "blueprint_versions")
+@Table(name = "blueprints_versions")
 public class BlueprintVersion extends VersionedEntity{
 
     @Id
@@ -22,6 +22,9 @@ public class BlueprintVersion extends VersionedEntity{
 
     @Column(name = "description")
     private String description;
+
+    @Column(name = "readme")
+    private String readme;
 
     @Column(name = "tag")
     private String tag;
@@ -90,6 +93,14 @@ public class BlueprintVersion extends VersionedEntity{
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getReadme() {
+        return readme;
+    }
+
+    public void setReadme(String readme) {
+        this.readme = readme;
     }
 
     public String getTag() {

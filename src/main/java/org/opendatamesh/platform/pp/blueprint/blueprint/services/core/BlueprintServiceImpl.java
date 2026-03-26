@@ -89,7 +89,6 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
         validateRequired("Repository name", blueprintRepo.getName());
         validateRequired("External identifier", blueprintRepo.getExternalIdentifier());
         validateRequired("Manifest root path", blueprintRepo.getManifestRootPath());
-        validateRequired("Descriptor template path", blueprintRepo.getDescriptorTemplatePath());
         validateRequired("HTTP remote URL", blueprintRepo.getRemoteUrlHttp());
         validateRequired("SSH remote URL", blueprintRepo.getRemoteUrlSsh());
         validateRequired("Default branch", blueprintRepo.getDefaultBranch());
@@ -119,7 +118,12 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
         validateLength("External identifier", blueprintRepo.getExternalIdentifier(), 255);
         validateLength("Default branch", blueprintRepo.getDefaultBranch(), 255);
         validateLength("Manifest root path", blueprintRepo.getManifestRootPath(), 500);
-        validateLength("Descriptor template path", blueprintRepo.getDescriptorTemplatePath(), 500);
+        if (StringUtils.hasText(blueprintRepo.getDescriptorTemplatePath())) {
+            validateLength("Descriptor template path", blueprintRepo.getDescriptorTemplatePath(), 500);
+        }
+        if (StringUtils.hasText(blueprintRepo.getReadmePath())) {
+            validateLength("Readme path", blueprintRepo.getReadmePath(), 500);
+        }
         validateLength("HTTP remote URL", blueprintRepo.getRemoteUrlHttp(), 500);
         validateLength("SSH remote URL", blueprintRepo.getRemoteUrlSsh(), 500);
         validateLength("Provider base URL", blueprintRepo.getProviderBaseUrl(), 500);

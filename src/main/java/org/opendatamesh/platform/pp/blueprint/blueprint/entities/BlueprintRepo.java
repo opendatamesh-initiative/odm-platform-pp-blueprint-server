@@ -3,7 +3,7 @@ package org.opendatamesh.platform.pp.blueprint.blueprint.entities;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "blueprint_repositories")
+@Table(name = "blueprints_repositories")
 public class BlueprintRepo {
 
     @Id
@@ -25,6 +25,9 @@ public class BlueprintRepo {
 
     @Column(name = "descriptor_template_path")
     private String descriptorTemplatePath;
+
+    @Column(name = "readme_path")
+    private String readmePath;
 
     @Column(name = "remote_url_http")
     private String remoteUrlHttp;
@@ -102,6 +105,14 @@ public class BlueprintRepo {
 
     public void setDescriptorTemplatePath(String descriptorTemplatePath) {
         this.descriptorTemplatePath = descriptorTemplatePath;
+    }
+
+    public String getReadmePath() {
+        return readmePath;
+    }
+
+    public void setReadmePath(String readmePath) {
+        this.readmePath = readmePath;
     }
 
     public String getRemoteUrlHttp() {

@@ -505,6 +505,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprintRepo.setDescription("repo-desc");
         blueprintRepo.setManifestRootPath("/manifest");
         blueprintRepo.setDescriptorTemplatePath("/template");
+        blueprintRepo.setReadmePath("/readme");
         blueprintRepo.setRemoteUrlHttp("https://github.com/org/repo.git");
         blueprintRepo.setRemoteUrlSsh("git@github.com:org/repo.git");
         blueprintRepo.setDefaultBranch("main");
@@ -555,6 +556,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprintRepo.setDescription("repo-desc");
         blueprintRepo.setManifestRootPath("/manifest");
         blueprintRepo.setDescriptorTemplatePath("/template");
+        blueprintRepo.setReadmePath("/readme");
         blueprintRepo.setRemoteUrlHttp("https://github.com/org/repo.git");
         blueprintRepo.setRemoteUrlSsh("git@github.com:org/repo.git");
         blueprintRepo.setDefaultBranch("main");
@@ -609,6 +611,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         createBlueprintRepo.setDescription("repo-desc");
         createBlueprintRepo.setManifestRootPath("/manifest");
         createBlueprintRepo.setDescriptorTemplatePath("/template");
+        createBlueprintRepo.setReadmePath("/readme");
         createBlueprintRepo.setRemoteUrlHttp("https://github.com/org/repo.git");
         createBlueprintRepo.setRemoteUrlSsh("git@github.com:org/repo.git");
         createBlueprintRepo.setDefaultBranch("main");
@@ -638,6 +641,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         updateBlueprintRepo.setDescription("repo-desc");
         updateBlueprintRepo.setManifestRootPath("/manifest");
         updateBlueprintRepo.setDescriptorTemplatePath("/template");
+        updateBlueprintRepo.setReadmePath("/readme");
         updateBlueprintRepo.setRemoteUrlHttp("https://github.com/org/repo.git");
         updateBlueprintRepo.setRemoteUrlSsh("git@github.com:org/repo.git");
         updateBlueprintRepo.setDefaultBranch("develop");
@@ -692,6 +696,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprintRepo.setDescription("repo-desc");
         blueprintRepo.setManifestRootPath("/manifest");
         blueprintRepo.setDescriptorTemplatePath("/template");
+        blueprintRepo.setReadmePath("/readme");
         blueprintRepo.setRemoteUrlHttp("https://github.com/org/repo.git");
         blueprintRepo.setRemoteUrlSsh("git@github.com:org/repo.git");
         blueprintRepo.setDefaultBranch("main");
@@ -819,6 +824,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprintRepo.setDescription("repo-desc");
         blueprintRepo.setManifestRootPath("/manifest");
         blueprintRepo.setDescriptorTemplatePath("/template");
+        blueprintRepo.setReadmePath("/readme");
         blueprintRepo.setRemoteUrlHttp(null);
         blueprintRepo.setRemoteUrlSsh(null);
         blueprintRepo.setDefaultBranch("main");
