@@ -13,6 +13,13 @@ The flow is:
 - The **factory** is the composition root for a single use case: it wires concrete port implementations and returns a `UseCase` instance.
 - The **use cases service** adapts REST DTOs to commands, runs the use case, and maps domain results back to API resources.
 
+### Hard boundaries (use case package)
+
+- **REST resources (`*CommandRes`, `*ResultRes`, and any `*Res` under `rest.v<*>.resources`) MUST NOT** be referenced inside the use case package (`...services.usecases.*`). They belong to the HTTP adapter; only the **use cases service** (and controller) may use them.
+- **Commands** passed into the use case MUST carry **domain data only**: JPA **entities**, value types, or **small immutable records** you declare for denormalized input—never API DTOs.
+- **Presenters** MUST accept **domain results** (entities, domain records, or primitives)—not `*Res` types.
+- **Outbound port implementations** (`*OutboundPortImpl`) MUST be **plain Java classes** (no `@Component`, `@Service`, or other Spring stereotypes). The **factory** is the only `@Component` in that slice: it constructs port impls with `new` and passes **Spring-injected collaborators** (core services, mappers, clients, `TransactionalOutboundPort`) into their constructors. Port interfaces stay free of framework types.
+
 ```mermaid
 flowchart LR
   subgraph rest [REST]
@@ -82,7 +89,7 @@ Use the transactional port inside the use case when the operation must be atomic
 - **Package:** `...<aggregate>.services` (e.g. `dataproduct.services`).
 - **Annotation:** `@Service`.
 - **Responsibility:**
-  1. Convert `*CommandRes` → domain **command** (record) using mappers (`toEntity`, etc.).
+  1. Convert `*CommandRes` → domain **command** (record) using mappers (`toEntity`, etc.). This is the **only** layer that bridges `*Res` ↔ entities for the use case.
   2. Build a **presenter** implementation:
     - Often a **private static inner class** `*ResultHolder` that implements the presenter interface and stores the last `present*` argument for later `getResult()`.
     - For void outcomes, a **lambda** implementing the presenter is acceptable when there is nothing to return (e.g. delete).
@@ -101,11 +108,11 @@ For one behavioral slice (e.g. “initialize data product”), colocate under `.
 | File                     | Purpose                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------ |
 | `<Name>.java`            | Use case class: `class <Name> implements UseCase`, **package-private**.              |
-| `<Name>Command.java`     | Input: prefer a **Java `record`** holding domain entities/value objects.             |
-| `<Name>Presenter.java`   | Output boundary: interface with methods like `present<DataProduct>Initialized(...)`. |
-| `<Name>Factory.java`     | `@Component`; method `UseCase build...(Command, Presenter)`.                         |
-| `*OutboundPort.java`     | Port interfaces (persistence, validation, notification, external descriptor, …).     |
-| `*OutboundPortImpl.java` | Adapters: implement ports by delegating to **core** services or clients.             |
+| `<Name>Command.java`     | Input: **Java `record`** (or equivalent) holding **entities** and/or **declared domain records**—never `*Res` types. |
+| `<Name>Presenter.java`   | Output boundary: methods use **domain types** only (e.g. `presentRegistered(Blueprint entity)`), not REST DTOs. |
+| `<Name>Factory.java`     | **`@Component`** (sole Spring bean here); method `UseCase build...(Command, Presenter)`. Instantiates port impls with `new`. |
+| `*OutboundPort.java`     | Port interfaces (persistence, validation, notification, …). Domain-level method signatures. |
+| `*OutboundPortImpl.java` | **Plain classes** (not Spring beans): implement ports; receive collaborators via constructor only. |
 
 
 Optional: split ports by concern (`...PersistenceOutboundPort`, `...NotificationOutboundPort`, `...ValidationOutboundPort`, etc.).
@@ -125,17 +132,17 @@ Optional: split ports by concern (`...PersistenceOutboundPort`, `...Notification
 
 ## 6. Command and presenter
 
-- **Command:** Immutable **record** with domain types (entities, UUIDs, enums), not REST DTOs.
-- **Presenter:** Interface named `<Action>Presenter` with one or more `present...` methods. The use case calls these to push results outward without knowing HTTP.
+- **Command:** Immutable **record** with **domain types only** (entities, UUIDs, enums, or small records you define in the use case package for structured input). **Never** use `*Res` / REST resources in the command.
+- **Presenter:** Interface named `<Action>Presenter` with one or more `present...` methods using **domain types** for arguments. The use case calls these to push results outward; the use cases service maps domain results to `*ResultRes` for HTTP.
 
 ---
 
 ## 7. Factories (`*Factory`)
 
-- `**@Component`** in the same package as the use case.
-- **Inject** Spring beans needed to build adapters: core services (`*Service`, `*CrudService`), `TransactionalOutboundPort`, clients, mappers, etc.
+- `**@Component`** in the same package as the use case (typically the **only** `@Component` in that package).
+- **Inject** Spring beans needed to **construct** port implementations: core services (`*Service`, `*CrudService`), `TransactionalOutboundPort`, clients, **MapStruct mappers** between entities and `*Res` when ports need them, etc.
 - **Method signature:** `public UseCase build<Name>(<Name>Command command, <Name>Presenter presenter)`.
-- **Inside:** Instantiate `*OutboundPortImpl` classes (often package-private) with constructor injection of the needed services; return `new <Name>(command, presenter, ...ports, transactionalOutboundPort)`.
+- **Inside:** `new <Name>OutboundPortImpl(...)` for each port—**never** register port impls as Spring beans. Pass `new <Name>(command, presenter, ...ports, transactionalOutboundPort)`.
 
 The factory is the only place that chooses concrete port implementations for that use case.
 
@@ -143,12 +150,13 @@ The factory is the only place that chooses concrete port implementations for tha
 
 ## 8. Outbound ports and adapters
 
-- **Interface:** `<UseCase><Concern>OutboundPort` (e.g. `DataProductInitializerPersistenceOutboundPort`). Methods express what the use case needs in domain terms (`save`, `findByFqn`, `emit...`), not SQL or REST.
-- **Implementation:** `<UseCase><Concern>OutboundPortImpl` implements the port by calling:
+- **Interface:** `<UseCase><Concern>OutboundPort` (e.g. `DataProductInitializerPersistenceOutboundPort`). Methods express what the use case needs in **domain terms** (`save(Blueprint)`, `validate(Blueprint)`, `emit...`)—not SQL, REST, or `*Res` types.
+- **Implementation:** `<UseCase><Concern>OutboundPortImpl` is a **plain Java class** (no `@Component` / `@Service`). It receives **constructor-injected** collaborators supplied by the factory (core `*Service`, mappers, clients). It may call:
   - **Core layer** services (e.g. `DataProductsService`, `DescriptorVariableCrudService`), or
-  - **Clients** (e.g. `NotificationClient`), with mapping if needed.
+  - **Clients** (e.g. `NotificationClient`), with entity ↔ `*Res` mapping **inside the impl** when the core API still uses resources.
 - **Visibility:** Port interfaces and their impls are often **package-private** so the boundary stays inside the use case package.
 - **Transactional port:** Shared across use cases; do not reimplement transaction handling inside each use case—delegate to `TransactionalOutboundPort`.
+- **No Spring on port impls:** If a concern needs to be testable in isolation, use plain `new` in unit tests or test the factory with mocked collaborators—not `@MockBean` on the impl type as a bean.
 
 ---
 
@@ -168,10 +176,10 @@ The factory is the only place that chooses concrete port implementations for tha
 
 ## 11. Checklist for a new use case
 
-1. Define **command** record and **presenter** interface in `...services.usecases.<name>`.
-2. Implement the **use case** class (`implements UseCase`) with outbound port interfaces and **impl** classes.
-3. Add `**@Component` factory** wiring ports and `TransactionalOutboundPort`.
-4. Add `***UseCasesService`** methods (or extend an existing one): map `*CommandRes` → command, run factory + `execute()`, map to `*ResultRes`.
+1. Define **command** record (domain only) and **presenter** interface (domain arguments only) in `...services.usecases.<name>`.
+2. Define **outbound port** interfaces and **plain `*OutboundPortImpl` classes** (no Spring annotations). Implement validation/persistence/etc. with collaborators passed from the factory.
+3. Add **`@Component` factory** only: construct port impls with `new`, inject `TransactionalOutboundPort` and core services/mappers.
+4. Add `***UseCasesService`** methods (or extend an existing one): map `*CommandRes` → entity/command, run factory + `execute()`, map domain result from presenter to `*ResultRes`.
 5. Add `**CommandRes` / `ResultRes**` under `rest.v2.resources...usecases...` with OpenAPI `@Schema` as needed.
 6. Add `**@RestController**` endpoint calling the use cases service; document with OpenAPI.
 7. Add **integration test** for the new route.
