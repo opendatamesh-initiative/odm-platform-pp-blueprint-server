@@ -2,8 +2,10 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2;
 
 public enum RoutesV2 {
 
-    GIT_PROVIDERS("/api/v2/pp/blueprint/git-providers");
-        
+    GIT_PROVIDERS("/api/v2/pp/blueprint/git-providers"),
+    BLUEPRINTS("/api/v2/pp/blueprint/blueprints"),
+    BLUEPRINT_VERSIONS("/api/v2/pp/blueprint/blueprints-versions");
+
     private final String path;
     
     RoutesV2(String path) {
