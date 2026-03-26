@@ -168,6 +168,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- YAML fixtures for manifest parser tests (README examples) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Apache HttpClient -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>

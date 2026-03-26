@@ -1,0 +1,38 @@
+# Section 2.4 — README: Polyrepo + composition
+spec: odm-blueprint-manifest
+specVersion: v1
+name: mesh-polyrepo-parent
+version: 1.3.0
+
+parameters:
+  - key: dataDomain
+    type: string
+    required: true
+    ui:
+      group: Governance
+      label: Data domain
+      formType: text
+
+composition:
+  - module: ingest
+    blueprintName: odm-blueprint-ingest-batch
+    blueprintVersion: 2.0.0
+    parameterMapping:
+      domain: dataDomain
+
+  - module: consume
+    blueprintName: odm-blueprint-consumer-api
+    blueprintVersion: 1.1.0
+    parameterMapping:
+      domain: dataDomain
+
+instantiation:
+  strategy: polyrepo
+  targets:
+    - repositoryNamePostfix: "-pipeline"
+      createPolicy: must_exist
+      module: ingest
+
+    - repositoryNamePostfix: "-api"
+      createPolicy: create_if_missing
+      module: consume
