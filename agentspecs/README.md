@@ -6,8 +6,9 @@ This directory holds **specifications and proposals** used by agents (and humans
 
 - **`changes/`** — Work in progress. Each item here is a change or feature currently being designed or implemented.
 - **`specs/`** — Consolidated specifications. Completed or released specs live here, organized by domain and feature.
+- **`guidelines/`** — Architectural guidelines (how to structure layers, use cases, and related patterns). Read these when implementing so code matches the intended architecture.
 
-When reading the codebase, check **`changes/`** for active work and **`specs/`** for stable, agreed behavior.
+When reading the codebase, check **`changes/`** for active work, **`specs/`** for stable, agreed behavior, and **`guidelines/`** for architectural rules.
 
 ## Organization
 
@@ -34,6 +35,15 @@ specs/
 ```
 
 Only **spec** content is kept here (no `proposal.md`). The file is named **`spec.md`** (singular). Copy or merge from the `specs.md` in `changes/` when promoting a change.
+
+### Under `guidelines/`
+
+The **`guidelines/`** package holds **architectural guidelines** for this codebase (markdown documents describing layers, use-case structure, and similar conventions). Consult them alongside `proposal.md` when implementing so new code follows the agreed architecture.
+
+**Entry point — what each guide contains:**
+
+- **`USE_CASE_IMPLEMENTATION.md`** — How the use-case flow is wired from REST through controllers, use-case services, factories, domain commands, presenters, and outbound ports (and how adapters sit behind those ports).
+- **`GENERIC-CRUD-GUIDELINES.md`** — How to implement CRUD with the template-method `GenericCrud*` service hierarchy (JPA entities, optional DTO mapping, optional specification-based filtering).
 
 ---
 
@@ -76,5 +86,6 @@ Follow these steps **in this exact order**:
 |----------|--------|----------|
 | **`changes/<name>/`** | Current WIP | `proposal.md` + `specs.md` |
 | **`specs/<domain>/<feature>/`** | Consolidated | `spec.md` only (from specs) |
+| **`guidelines/`** | Architecture | Markdown docs (e.g. use-case patterns) |
 
 Workflow: **read proposal + specs → write ITs from specs → see tests fail → implement from proposal → see tests pass → review spec coherence → copy spec into `specs/` by domain/feature.**
