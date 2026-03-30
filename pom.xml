@@ -1,27 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" 
-		 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
 		 					 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-	<modelVersion>4.0.0</modelVersion>
+    <modelVersion>4.0.0</modelVersion>
 
-	<groupId>org.opendatamesh</groupId>
-	<artifactId>odm-platform-pp-blueprint-server</artifactId>
-	<version>1.0.0</version>
+    <groupId>org.opendatamesh</groupId>
+    <artifactId>odm-platform-pp-blueprint-server</artifactId>
+    <version>1.0.0</version>
     <url>https://github.com/opendatamesh-initiative/odm-platform-pp-blueprint-server</url>
-	<packaging>jar</packaging>
+    <packaging>jar</packaging>
 
-	<name>ODM Platform Blueprint Server</name>
-	<description>Open Data Mesh Platform's Blueprint service server</description>
-	
-	<parent>
+    <name>ODM Platform Blueprint Server</name>
+    <description>Open Data Mesh Platform's Blueprint service server</description>
+
+    <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.5.7</version>
         <relativePath/>
     </parent>
-	
-	<licenses>
+
+    <licenses>
         <license>
             <name>The Apache License, Version 2.0</name>
             <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
@@ -48,7 +48,7 @@
         </repository>
     </repositories>
 
-	<properties>
+    <properties>
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
@@ -58,7 +58,7 @@
         <org.hibernate.jpamodelgen.version>6.4.1.Final</org.hibernate.jpamodelgen.version>
     </properties>
 
-	<dependencies>
+    <dependencies>
         <!-- Spring Boot Core Starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -102,6 +102,11 @@
             <artifactId>hibernate-jpamodelgen</artifactId>
             <version>${org.hibernate.jpamodelgen.version}</version>
             <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
         </dependency>
 
         <!-- TestContainers -->
@@ -168,13 +173,6 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- YAML fixtures for manifest parser tests (README examples) -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-yaml</artifactId>
-            <scope>test</scope>
-        </dependency>
-
         <!-- Apache HttpClient -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
@@ -201,10 +199,10 @@
             <artifactId>git-utils</artifactId>
             <version>1.0.1</version>
         </dependency>
-        
+
     </dependencies>
 
-	<build>
+    <build>
         <resources>
             <resource>
                 <directory>src/main/resources</directory>

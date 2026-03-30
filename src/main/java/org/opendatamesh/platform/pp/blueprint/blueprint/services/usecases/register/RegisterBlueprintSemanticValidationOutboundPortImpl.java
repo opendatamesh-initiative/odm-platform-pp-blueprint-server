@@ -78,7 +78,7 @@ class RegisterBlueprintSemanticValidationOutboundPortImpl implements RegisterBlu
         }
     }
 
-    private static boolean hasText(String value) {
+    private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 }

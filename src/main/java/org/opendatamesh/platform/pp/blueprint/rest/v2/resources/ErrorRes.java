@@ -2,34 +2,50 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2.resources;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.time.LocalDateTime;
+
 public class ErrorRes {
+    @JsonProperty("timestamp")
+    private LocalDateTime timestamp;
+
     @JsonProperty("status")
     private int status;
 
-    @JsonProperty("title")
-    private String title;
+    @JsonProperty("error")
+    private String error;
 
-    @JsonProperty("detail")
-    private String detail;
+    @JsonProperty("message")
+    private String message;
 
-    @JsonProperty("instance")
-    private String instance;
+    @JsonProperty("path")
+    private String path;
 
     public ErrorRes() {
     }
 
-    public ErrorRes(int status, String title, String detail, String instance) {
+    public ErrorRes(LocalDateTime timestamp, int status, String error, String message, String path) {
+        this.timestamp = timestamp;
         this.status = status;
-        this.title = title;
-        this.detail = detail;
-        this.instance = instance;
+        this.error = error;
+        this.message = message;
+        this.path = path;
     }
 
-    public static ErrorRes of(int status, String title, String detail, String instance) {
-        return new ErrorRes(status, title, detail, instance);
+    public ErrorRes(int status, String error, String message, String path) {
+        this.status = status;
+        this.error = error;
+        this.message = message;
+        this.path = path;
     }
 
-    // Getters and Setters
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(LocalDateTime timestamp) {
+        this.timestamp = timestamp;
+    }
+
     public int getStatus() {
         return status;
     }
@@ -38,27 +54,27 @@ public class ErrorRes {
         this.status = status;
     }
 
-    public String getTitle() {
-        return title;
+    public String getError() {
+        return error;
     }
 
-    public void setTitle(String title) {
-        this.title = title;
+    public void setError(String error) {
+        this.error = error;
     }
 
-    public String getDetail() {
-        return detail;
+    public String getMessage() {
+        return message;
     }
 
-    public void setDetail(String detail) {
-        this.detail = detail;
+    public void setMessage(String message) {
+        this.message = message;
     }
 
-    public String getInstance() {
-        return instance;
+    public String getPath() {
+        return path;
     }
 
-    public void setInstance(String instance) {
-        this.instance = instance;
+    public void setPath(String path) {
+        this.path = path;
     }
 }
