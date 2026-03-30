@@ -1,4 +1,4 @@
-package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.repository;
+package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders;
 
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;

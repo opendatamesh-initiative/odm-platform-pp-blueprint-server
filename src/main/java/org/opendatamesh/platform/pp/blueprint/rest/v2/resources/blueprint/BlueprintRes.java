@@ -15,7 +15,7 @@ public class BlueprintRes extends VersionedRes {
     @Schema(description = "The name used as display name of the blueprint")
     private String displayName;
 
-    @Schema(description = "The description of the blueprint")
+    @Schema(description = "The description of the blueprint", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private String description;
 
     private BlueprintRepoRes blueprintRepo;

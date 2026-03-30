@@ -1,6 +1,6 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.services;
 
-import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.repository.BranchRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.BranchRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

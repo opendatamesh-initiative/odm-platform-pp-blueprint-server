@@ -74,7 +74,6 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
     private void validateRequiredFields(Blueprint blueprint) {
         validateRequired("Name", blueprint.getName());
         validateRequired("Display name", blueprint.getDisplayName());
-        validateRequired("Description", blueprint.getDescription());
     }
 
     private void validateFieldConstraints(Blueprint blueprint) {
