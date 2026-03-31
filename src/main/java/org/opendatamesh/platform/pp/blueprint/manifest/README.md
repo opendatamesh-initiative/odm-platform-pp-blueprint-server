@@ -149,7 +149,7 @@ integrations.
 #### Core Schema Objects
 
 - `spec` (String, Required): The specification name, must be set to `odm-blueprint-manifest`.
-- `specVersion` (String, Required): The version of the manifest schema itself (e.g., `v1`). The orchestrator uses this
+- `specVersion` (String, Required): The version of the manifest schema itself (e.g., `1.0.0`). The orchestrator uses this
   to determine how to parse the file.
 - `name` (String, Required): The machine-readable identifier of the blueprint.
 - `displayName`(String, Optional): The human-readable identifier of the blueprint.
@@ -242,7 +242,7 @@ Single repository; parent output only. No `composition` section and no extra `in
 
 ```yaml
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: analytics-lakehouse
 displayName: Analytics Lakehouse Blueprint
 version: 1.0.0
@@ -287,7 +287,7 @@ directory layout is fixed in the manifest.
 
 ```yaml
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: full-stack-dp
 version: 2.1.0
 description: Parent blueprint composing storage and serving modules into one repo.
@@ -344,7 +344,7 @@ Suppose the user instantiates with runtime parent repository name `acme-customer
 
 ```yaml
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: split-stack-template
 version: 0.5.0
 
@@ -386,7 +386,7 @@ sets `module` (no `sourcePath` / `targetPath` on that row).
 
 ```yaml
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: mesh-polyrepo-parent
 version: 1.3.0
 
