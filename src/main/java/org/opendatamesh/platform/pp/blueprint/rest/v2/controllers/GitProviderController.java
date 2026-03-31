@@ -6,7 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 import org.opendatamesh.platform.pp.blueprint.blueprint.services.GitProvidersUtilsService;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
-import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.repository.BranchRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.BranchRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;

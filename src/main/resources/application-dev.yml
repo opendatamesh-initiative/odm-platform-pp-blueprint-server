@@ -1,6 +1,6 @@
 server:
-  port: 8087
-  baseUrl: http://localhost:8087
+  port: 8003
+  baseUrl: http://localhost:8003
 
 spring:
   datasource:
