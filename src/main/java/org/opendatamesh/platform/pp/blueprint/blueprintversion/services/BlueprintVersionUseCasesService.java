@@ -14,7 +14,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionResponseRes;
-import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionTargetRepositoryRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.RepositoryMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
@@ -34,13 +33,12 @@ public class BlueprintVersionUseCasesService {
 
     public BlueprintVersionUseCasesService(
             InstantiateBlueprintVersionFactory instantiateBlueprintVersionFactory,
-            RepositoryMapper repositoryMapper) {
+            RepositoryMapper repositoryMapper,
+            PublishBlueprintVersionFactory publishBlueprintVersionFactory,
+            BlueprintVersionMapper blueprintVersionMapper,
+            ObjectMapper objectMapper) {
         this.instantiateBlueprintVersionFactory = instantiateBlueprintVersionFactory;
         this.repositoryMapper = repositoryMapper;
-        PublishBlueprintVersionFactory publishBlueprintVersionFactory,
-        BlueprintVersionMapper blueprintVersionMapper,
-        ObjectMapper objectMapper
-    ) {
         this.publishBlueprintVersionFactory = publishBlueprintVersionFactory;
         this.blueprintVersionMapper = blueprintVersionMapper;
         this.objectMapper = objectMapper;
@@ -53,8 +51,13 @@ public class BlueprintVersionUseCasesService {
         if (command.getTargetRepositories() == null || command.getTargetRepositories().isEmpty()) {
             throw new BadRequestException("At least one target repository is required");
         }
-        InstantiateBlueprintVersionTargetRepositoryRes targetRes = command.getTargetRepositories().getFirst();
-        InstantiateBlueprintVersionCommand domainCommand = mapResToInternalCommand(command, headers, targetRes);
+        InstantiateBlueprintVersionCommand domainCommand = mapResToInternalCommand(command, headers);
+
+        InstantiateResultHolder presenter = new InstantiateResultHolder();
+        instantiateBlueprintVersionFactory.buildInstantiateBlueprintVersion(domainCommand, presenter, headers)
+                .execute();
+        return new InstantiateBlueprintVersionResponseRes();
+    }
 
     public PublishBlueprintVersionResponseRes publishBlueprintVersion(PublishBlueprintVersionCommandRes command) {
         validateCommand(command);
@@ -64,11 +67,6 @@ public class BlueprintVersionUseCasesService {
             BlueprintVersionRes.class);
         BlueprintVersion blueprintVersion = blueprintVersionMapper.toEntity(res);
 
-        InstantiateResultHolder presenter = new InstantiateResultHolder();
-        instantiateBlueprintVersionFactory.buildInstantiateBlueprintVersion(domainCommand, presenter, headers)
-                .execute();
-        InstantiateBlueprintVersionResult result = presenter.getResult();
-        return new InstantiateBlueprintVersionResponseRes();
         PublishBlueprintVersionCommand domainCommand = new PublishBlueprintVersionCommand(blueprintVersion);
         ResultHolder presenter = new ResultHolder();
         publishBlueprintVersionFactory.buildPublishBlueprintVersion(domainCommand, presenter).execute();
@@ -79,23 +77,20 @@ public class BlueprintVersionUseCasesService {
 
     private InstantiateBlueprintVersionCommand mapResToInternalCommand(
             InstantiateBlueprintVersionCommandRes command,
-            HttpHeaders headers,
-            InstantiateBlueprintVersionTargetRepositoryRes targetRes) {
+            HttpHeaders headers) {
         return new InstantiateBlueprintVersionCommand(
                 command.getBlueprintName(),
                 command.getBlueprintVersionNumber(),
                 command.getTargetRepositories().stream()
-                        .map(res -> new TargetRepositoryDto(null, res.getType(), targetRes.getBranch(),
-                                repositoryMapper.toEntity(targetRes.getRepository())))
+                        .map(res -> new TargetRepositoryDto(null, res.getType(), res.getBranch(),
+                                repositoryMapper.toEntity(res.getRepository())))
                         .toList(),
                 command.getParameters() == null ? Map.of() : new LinkedHashMap<>(command.getParameters()),
                 toHeaderMap(headers),
                 command.getCommitAuthorName(),
                 command.getCommitAuthorEmail());
     }
-    private static final class ResultHolder implements PublishBlueprintVersionPresenter {
 
-        private BlueprintVersion result;
     private Map<String, String> toHeaderMap(HttpHeaders headers) {
         Map<String, String> headerMap = new LinkedHashMap<>();
         if (headers == null) {
@@ -109,20 +104,24 @@ public class BlueprintVersionUseCasesService {
         return headerMap;
     }
 
-    private static final class InstantiateResultHolder implements InstantiateBlueprintVersionPresenter {
+    private static final class ResultHolder implements PublishBlueprintVersionPresenter {
 
-        private InstantiateBlueprintVersionResult result;
+        private BlueprintVersion result;
 
         @Override
         public void presentPublished(BlueprintVersion blueprintVersion) {
             this.result = blueprintVersion;
-        public void presentResults(InstantiateBlueprintVersionResult result) {
-            this.result = result;
         }
 
         BlueprintVersion getResult() {
-        InstantiateBlueprintVersionResult getResult() {
             return result;
+        }
+    }
+
+    private static final class InstantiateResultHolder implements InstantiateBlueprintVersionPresenter {
+
+        @Override
+        public void presentResults(InstantiateBlueprintVersionResult result) {
         }
     }
 

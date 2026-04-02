@@ -7,7 +7,6 @@ public enum RoutesV2 {
     BLUEPRINT_REGISTER("/api/v2/pp/blueprint/blueprints/register"),
     BLUEPRINT_VERSIONS("/api/v2/pp/blueprint/blueprints-versions"),
     BLUEPRINT_VERSIONS_INSTANTIATE("/api/v2/pp/blueprint/blueprints-versions/instantiate"),
-    BLUEPRINT_VERSIONS("/api/v2/pp/blueprint/blueprints-versions"),
     BLUEPRINT_VERSIONS_PUBLISH("/api/v2/pp/blueprint/blueprints-versions/publish");
 
     private final String path;
