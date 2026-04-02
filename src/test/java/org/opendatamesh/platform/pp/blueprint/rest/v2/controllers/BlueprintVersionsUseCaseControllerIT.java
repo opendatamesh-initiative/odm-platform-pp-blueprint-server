@@ -1,8 +1,9 @@
 package org.opendatamesh.platform.pp.blueprint.rest.v2.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.junit.jupiter.api.Test;
+import org.opendatamesh.platform.pp.blueprint.manifest.ManifestYamlTestSupport;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
@@ -23,23 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    private static String validManifestJson(String manifestName, String version) {
-        return """
-                {
-                  "spec": "odm-blueprint-manifest",
-                  "specVersion": "1.0.0",
-                  "name": "%s",
-                  "displayName": "Display %s",
-                  "version": "%s",
-                  "description": "Test manifest.",
-                  "instantiation": {
-                    "strategy": "monorepo"
-                  }
-                }
-                """.formatted(manifestName, manifestName, version);
-    }
+    private static final String MONOREPO_MANIFEST_RESOURCE = "/manifest/example-2.1-monorepo-no-composition.yaml";
+    private static final String WRONG_MANIFEST_RESOURCE = "/manifest/manifest-wrong.yml";
 
     private PublishBlueprintVersionCommandRes publishCommand(
             BlueprintRes blueprint,
@@ -57,7 +43,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         bv.setTag("v" + manifestVersion);
         bv.setSpec(spec);
         bv.setSpecVersion(specVersion);
-        bv.setContent(objectMapper.readTree(validManifestJson(manifestName, manifestVersion)));
+        bv.setContent(ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE));
         PublishBlueprintVersionCommandRes.BlueprintVersion.Blueprint bp =
                 new PublishBlueprintVersionCommandRes.BlueprintVersion.Blueprint();
         bp.setUuid(blueprint.getUuid());
@@ -335,9 +321,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
             bv.setTag("v1.0.0");
             bv.setSpec("odm-blueprint-manifest");
             bv.setSpecVersion("1.0.0");
-            bv.setContent(objectMapper.readTree(
-                    "{\"spec\":\"odm-blueprint-manifest\",\"specVersion\":\"1.0.0\",\"name\":\"bad-manifest\","
-                            + "\"version\":\"not-a-semver\",\"instantiation\":{\"strategy\":\"monorepo\"}}"));
+            bv.setContent(ManifestYamlTestSupport.readYamlTreeFromClasspath(WRONG_MANIFEST_RESOURCE));
             PublishBlueprintVersionCommandRes.BlueprintVersion.Blueprint bp =
                     new PublishBlueprintVersionCommandRes.BlueprintVersion.Blueprint();
             bp.setUuid(blueprintUuid);

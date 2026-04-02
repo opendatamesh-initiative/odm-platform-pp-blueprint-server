@@ -28,7 +28,7 @@ class ManifestParserTest {
 
         // then
         assertEquals(Manifest.SPEC_NAME, manifest.getSpec());
-        assertEquals("v1", manifest.getSpecVersion());
+        assertEquals("1.0.0", manifest.getSpecVersion());
         assertEquals("analytics-lakehouse", manifest.getName());
         assertEquals("Analytics Lakehouse Blueprint", manifest.getDisplayName());
         assertEquals("1.0.0", manifest.getVersion());

@@ -139,7 +139,7 @@ The required fields that needs to be filled if missing will be the following:
 
 - spec: default to `odm-blueprint-manifest`
 - specVersion: default to `v1`
-- name: default to BlueprintName
+- name: default to UUID
 - version: default to `1.0.0`
 - parameters: optional field but if it's present must follow these auto-fills if some fields are not present:
   - key: default to `parameterKey` + uuid

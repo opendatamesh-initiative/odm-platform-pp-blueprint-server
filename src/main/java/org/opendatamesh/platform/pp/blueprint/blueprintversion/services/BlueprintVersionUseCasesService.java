@@ -1,7 +1,5 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services;
 
-import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
-import org.opendatamesh.platform.pp.blueprint.blueprint.services.core.BlueprintService;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.publish.PublishBlueprintVersionFactory;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionResponseRes;
@@ -22,18 +20,15 @@ public class BlueprintVersionUseCasesService {
     private final PublishBlueprintVersionFactory publishBlueprintVersionFactory;
     private final BlueprintVersionMapper blueprintVersionMapper;
     private final ObjectMapper objectMapper;
-    private final BlueprintService blueprintService;
 
     public BlueprintVersionUseCasesService(
         PublishBlueprintVersionFactory publishBlueprintVersionFactory,
         BlueprintVersionMapper blueprintVersionMapper,
-        ObjectMapper objectMapper,
-        BlueprintService blueprintService
+        ObjectMapper objectMapper
     ) {
         this.publishBlueprintVersionFactory = publishBlueprintVersionFactory;
         this.blueprintVersionMapper = blueprintVersionMapper;
         this.objectMapper = objectMapper;
-        this.blueprintService = blueprintService;
     }
     
     public PublishBlueprintVersionResponseRes publishBlueprintVersion(PublishBlueprintVersionCommandRes command) {
@@ -43,14 +38,6 @@ public class BlueprintVersionUseCasesService {
             command.getBlueprintVersion(),
             BlueprintVersionRes.class);
         BlueprintVersion blueprintVersion = blueprintVersionMapper.toEntity(res);
-
-        if (StringUtils.hasText(blueprintVersion.getBlueprintUuid())) {
-            Blueprint parentBlueprint = blueprintService.findOne(blueprintVersion.getBlueprintUuid());
-            blueprintVersion.setBlueprint(parentBlueprint);
-        } else {
-            Blueprint parentBlueprint = blueprintService.findOne(blueprintVersion.getBlueprint().getName());
-            blueprintVersion.setBlueprint(parentBlueprint);
-        }
 
         PublishBlueprintVersionCommand domainCommand = new PublishBlueprintVersionCommand(blueprintVersion);
         ResultHolder presenter = new ResultHolder();

@@ -1,15 +1,20 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.publish;
 
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
 interface PublishBlueprintVersionManifestOutboundPort {
 
-    JsonNode autofillManifest(JsonNode content, BlueprintVersion blueprintVersion);
+    JsonNode autofillManifest(String manifestSpec, String manifestSpecVersion, JsonNode content);
 
-    void validateManifest(JsonNode content);
+    void validateManifest(String manifestSpec, String manifestSpecVersion, JsonNode content);
 
-    void setVersionFieldsFromManifestContent(BlueprintVersion blueprintVersion);
+    String extractVersionNumber(JsonNode content);
+
+    String extractSpecNumber(JsonNode content);
+
+    String extractSpecVersion(JsonNode content);
+
+    // void setVersionFieldsFromManifestContent(BlueprintVersion blueprintVersion);
 }
 

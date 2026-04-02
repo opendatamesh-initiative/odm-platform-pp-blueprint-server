@@ -1,52 +1,56 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.publish;
 
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.repositories.BlueprintVersionsRepository;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionCrudService;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestvalidator.ManifestValidatorImpl;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestvalidator.OdmBlueprintValidatorFactory;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.TransactionalOutboundPort;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-
+import org.opendatamesh.platform.pp.blueprint.blueprint.services.core.BlueprintService;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionQueryService;
 import org.springframework.stereotype.Component;
-
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFillerFactory;
 @Component
 public class PublishBlueprintVersionFactory {
 
     private final TransactionalOutboundPort transactionalOutboundPort;
     private final BlueprintVersionCrudService blueprintVersionCrudService;
-    private final BlueprintVersionsRepository blueprintVersionsRepository;
-    private final ObjectMapper objectMapper;
+    private final OdmBlueprintValidatorFactory manifestValidatorFactory;
+    private final BlueprintService blueprintService;
+    private final BlueprintVersionQueryService blueprintVersionQueryService;
+    private final OdmBlueprintManifestAutoFillerFactory manifestAutoFillerFactory;
 
     public PublishBlueprintVersionFactory(
             TransactionalOutboundPort transactionalOutboundPort,
             BlueprintVersionCrudService blueprintVersionCrudService,
-            BlueprintVersionsRepository blueprintVersionsRepository,
-            ObjectMapper objectMapper
+            OdmBlueprintValidatorFactory manifestValidatorFactory,
+            BlueprintService blueprintService,
+            BlueprintVersionQueryService blueprintVersionQueryService,
+            OdmBlueprintManifestAutoFillerFactory manifestAutoFillerFactory
+
     ) {
         this.transactionalOutboundPort = transactionalOutboundPort;
         this.blueprintVersionCrudService = blueprintVersionCrudService;
-        this.blueprintVersionsRepository = blueprintVersionsRepository;
-        this.objectMapper = objectMapper;
+        this.manifestValidatorFactory = manifestValidatorFactory;
+        this.blueprintService = blueprintService;
+        this.blueprintVersionQueryService = blueprintVersionQueryService;
+        this.manifestAutoFillerFactory = manifestAutoFillerFactory;
     }
 
     public UseCase buildPublishBlueprintVersion(
             PublishBlueprintVersionCommand command,
             PublishBlueprintVersionPresenter presenter
     ) {
-        ManifestValidatorImpl manifestValidator = new ManifestValidatorImpl(objectMapper);
         PublishBlueprintVersionManifestOutboundPort manifestPort =
-                new PublishBlueprintVersionManifestOutboundPortImpl(manifestValidator);
-        PublishBlueprintVersionSemanticOutboundPort semanticPort =
-                new PublishBlueprintVersionSemanticOutboundPortImpl(blueprintVersionsRepository);
-        PublishBlueprintVersionPersistenceOutboundPort persistencePort =
-                new PublishBlueprintVersionPersistenceOutboundPortImpl(blueprintVersionCrudService);
+                new PublishBlueprintVersionManifestOutboundPortImpl(manifestValidatorFactory, manifestAutoFillerFactory);
+        PublishBlueprintVersionPersistenceOutboundPort blueprintVersionPersistencePort =
+                new PublishBlueprintVersionPersistenceOutboundPortImpl(blueprintVersionQueryService, blueprintVersionCrudService);
+        PublishBlueprintPersistenceOutboundPort blueprintPersistencePort =
+                new PublishBlueprintPersistenceOutboundPortImpl(blueprintService);
         return new PublishBlueprintVersion(
                 command,
                 presenter,
-                semanticPort,
                 manifestPort,
-                persistencePort,
+                blueprintVersionPersistencePort,
+                blueprintPersistencePort,
                 transactionalOutboundPort
         );
     }

@@ -1,10 +1,10 @@
 # Section 2.1 — README: Monorepo, no composition
-spec: odm-blueprint-manifest
+spec: spec-wrong
 specVersion: 1.0.0
-name: analytics-lakehouse
-displayName: Analytics Lakehouse Blueprint
-version: 1.0.0
-description: Provisions storage and compute defaults for an analytics data product.
+name: name-wrong
+displayName: display-name-wrong
+version: version-wrong
+description: description-wrong
 
 parameters:
   - key: environment

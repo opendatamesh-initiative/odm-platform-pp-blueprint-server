@@ -113,7 +113,7 @@ To ensure stability, backward compatibility, and reliable lineage, the manifest 
 levels:
 
 - **Specification Versioning:** The manifest must declare the schema version of the manifest file itself (e.g.,
-  `specVersion: v1`). This allows the orchestrating system to parse the file correctly and supports future iterations or
+  `specVersion: 1.0.0`). This allows the orchestrating system to parse the file correctly and supports future iterations or
   breaking changes to the manifest schema.
 - **Blueprint Versioning:** The manifest must declare the release version of the specific Blueprint it represents (e.g.,
   `version: 1.2.0`, adhering to Semantic Versioning). This allows users to instantiate specific, stable releases of a
@@ -233,7 +233,7 @@ integrations.
 
 ### 2. Manifest Examples
 
-All examples use `spec: odm-blueprint-manifest` and `specVersion: v1`. They are **source** Blueprint manifests unless
+All examples use `spec: odm-blueprint-manifest` and `specVersion: 1.0.0`. They are **source** Blueprint manifests unless
 noted. Parameter lists are abbreviated; real manifests would declare every input the templates need.
 
 #### 2.1. Monorepo, no composition
