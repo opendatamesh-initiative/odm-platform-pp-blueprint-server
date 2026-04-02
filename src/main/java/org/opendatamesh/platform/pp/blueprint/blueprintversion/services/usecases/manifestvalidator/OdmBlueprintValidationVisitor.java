@@ -65,6 +65,9 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
             for (int i = 0; i < parameters.size(); i++) {
                 ManifestParameter parameter = parameters.get(i);
                 if (parameter != null) {
+                    if (parameter.getKey() == null || parameter.getKey().isEmpty()) {
+                        context.addError("parameters[" + i + "].", "Parameter key is required");
+                    }
                     state.currentParameterFieldPath = "parameters[" + i + "]";     
                     state.currentParameterTypeFieldPath = state.currentParameterFieldPath + ".type";
                     state.currentParameterRequiredFieldPath = state.currentParameterFieldPath + ".required";

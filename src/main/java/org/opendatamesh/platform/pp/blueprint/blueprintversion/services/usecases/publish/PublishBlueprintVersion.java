@@ -43,7 +43,7 @@ class PublishBlueprintVersion implements UseCase {
             Blueprint blueprint = blueprintPersistenceOutboundPort.findByUuidOrName(blueprintVersion.getBlueprintUuid(), blueprintVersion.getBlueprint().getName());
             blueprintVersion.setBlueprint(blueprint);
 
-            JsonNode filled = manifestOutboundPort.autofillManifest(blueprintVersion.getSpec(), blueprintVersion.getSpecVersion(), blueprintVersion.getContent());
+            JsonNode filled = manifestOutboundPort.autofillManifest(blueprintVersion.getSpec(), blueprintVersion.getSpecVersion(), blueprintVersion.getContent(), blueprint.getName());
             blueprintVersion.setContent(filled);
             manifestOutboundPort.validateManifest(blueprintVersion.getSpec(), blueprintVersion.getSpecVersion(), blueprintVersion.getContent());
             String versionNumber = manifestOutboundPort.extractVersionNumber(blueprintVersion.getContent());
@@ -54,17 +54,12 @@ class PublishBlueprintVersion implements UseCase {
             blueprintVersion.setSpec(specNumber);
             blueprintVersion.setSpecVersion(specVersion);
 
-            handleExistentBlueprintVersion(blueprintVersion);
-
+            Optional<BlueprintVersionShort> existentBlueprintVersion = blueprintVersionPersistencePort.findByBlueprintUuidAndVersionNumber(blueprintVersion.getBlueprintUuid(), blueprintVersion.getVersionNumber());
+            if (existentBlueprintVersion.isPresent()) {
+                throw new ResourceConflictException("Impossible to publish a Blueprint version already existent");
+            }
             BlueprintVersion created = blueprintVersionPersistencePort.createBlueprintVersion(blueprintVersion);
             presenter.presentPublished(created);
         });
-    }
-
-    private void handleExistentBlueprintVersion(BlueprintVersion blueprintVersion) {
-        Optional<BlueprintVersionShort> existentBlueprintVersion = blueprintVersionPersistencePort.findByBlueprintUuidAndVersionNumber(blueprintVersion.getBlueprintUuid(), blueprintVersion.getVersionNumber());
-        if (existentBlueprintVersion.isPresent()) {
-            throw new ResourceConflictException("Impossible to publish a Blueprint version already existent");
-        }
     }
 }

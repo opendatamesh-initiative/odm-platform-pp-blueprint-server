@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 interface PublishBlueprintVersionManifestOutboundPort {
 
-    JsonNode autofillManifest(String manifestSpec, String manifestSpecVersion, JsonNode content);
+    JsonNode autofillManifest(String manifestSpec, String manifestSpecVersion, JsonNode content, String blueprintName);
 
     void validateManifest(String manifestSpec, String manifestSpecVersion, JsonNode content);
 
@@ -15,6 +15,5 @@ interface PublishBlueprintVersionManifestOutboundPort {
 
     String extractSpecVersion(JsonNode content);
 
-    // void setVersionFieldsFromManifestContent(BlueprintVersion blueprintVersion);
 }
 

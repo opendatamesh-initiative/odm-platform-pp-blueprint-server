@@ -12,7 +12,7 @@ class OdmBlueprintManifestAutoFiller implements ManifestAutoFiller {
     private final ManifestParser parser = ManifestParserFactory.getParser();
 
     @Override
-    public JsonNode autofillManifest(JsonNode manifestContent) {
+    public JsonNode autofillManifest(JsonNode manifestContent, String blueprintName) {
 
         Manifest manifest;
         try {
@@ -24,7 +24,7 @@ class OdmBlueprintManifestAutoFiller implements ManifestAutoFiller {
             throw new BadRequestException("Invalid manifest content: manifest is null");
         }
 
-        OdmBlueprintManifestAutoFillerVisitor visitor = new OdmBlueprintManifestAutoFillerVisitor();
+        OdmBlueprintManifestAutoFillerVisitor visitor = new OdmBlueprintManifestAutoFillerVisitor(blueprintName);
         manifest.accept(visitor);
 
         try {

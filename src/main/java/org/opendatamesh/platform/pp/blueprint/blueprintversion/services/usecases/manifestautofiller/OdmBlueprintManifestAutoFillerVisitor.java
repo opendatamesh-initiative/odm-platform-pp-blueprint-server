@@ -16,10 +16,15 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.Manif
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationTarget;
 import org.springframework.util.StringUtils;
 import java.util.List;
-import java.util.UUID;
 
 class OdmBlueprintManifestAutoFillerVisitor implements ManifestVisitor, ManifestParameterVisitor,
 ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
+
+    private final String blueprintName;
+
+    OdmBlueprintManifestAutoFillerVisitor(String blueprintName) {
+        this.blueprintName = blueprintName;
+    }
 
     @Override
     public void visit(Manifest manifest) {
@@ -33,7 +38,7 @@ ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
             manifest.setVersion("1.0.0");
         }
         if (!StringUtils.hasText(manifest.getName())) {
-            manifest.setName("Blueprint- " + UUID.randomUUID().toString());
+            manifest.setName(blueprintName);
         }
 
         List<ManifestParameter> parameters = manifest.getParameters();
@@ -53,13 +58,9 @@ ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
 
     @Override
     public void visit(ManifestParameter manifestParameter) {
-        if (manifestParameter.getKey() == null || manifestParameter.getKey().isEmpty()) {
-            manifestParameter.setKey("parameter-" + UUID.randomUUID().toString());
+        if (manifestParameter.getKey() != null && !manifestParameter.getKey().isEmpty()) {
             if (manifestParameter.getType() == null) {
                 manifestParameter.setType(ManifestParameter.ManifestParameterType.STRING);
-            }
-            if (manifestParameter.getRequired() == null) {
-                manifestParameter.setRequired(false);
             }
         }
     }
@@ -71,7 +72,9 @@ ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
 
     @Override
     public void visit(ManifestInstantiation manifestInstantiation) {
-        manifestInstantiation.setStrategy(ManifestInstantiation.InstantiationStrategy.MONOREPO);
+        if (manifestInstantiation.getStrategy() == null) {
+            manifestInstantiation.setStrategy(ManifestInstantiation.InstantiationStrategy.MONOREPO);
+        }
     }
     
     @Override

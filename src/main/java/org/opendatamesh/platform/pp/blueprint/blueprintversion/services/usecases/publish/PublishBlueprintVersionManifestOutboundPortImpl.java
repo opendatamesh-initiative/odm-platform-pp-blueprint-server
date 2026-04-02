@@ -28,9 +28,9 @@ class PublishBlueprintVersionManifestOutboundPortImpl implements PublishBlueprin
     }
 
     @Override
-    public JsonNode autofillManifest(String manifestSpec, String manifestSpecVersion, JsonNode content) {
+    public JsonNode autofillManifest(String manifestSpec, String manifestSpecVersion, JsonNode content, String blueprintName) {
         ManifestAutoFiller manifestAutoFiller = manifestAutoFillerFactory.getManifestAutoFiller(manifestSpec, manifestSpecVersion);
-        return manifestAutoFiller.autofillManifest(content);
+        return manifestAutoFiller.autofillManifest(content, blueprintName);
     }
 
     @Override

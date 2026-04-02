@@ -4,5 +4,5 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 public interface ManifestAutoFiller {
     
-    JsonNode autofillManifest(JsonNode manifestContent);
+    JsonNode autofillManifest(JsonNode manifestContent, String blueprintName);
 }

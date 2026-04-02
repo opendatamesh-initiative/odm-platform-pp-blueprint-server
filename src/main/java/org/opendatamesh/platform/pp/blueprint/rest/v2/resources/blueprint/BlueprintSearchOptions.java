@@ -11,11 +11,26 @@ public class BlueprintSearchOptions {
     )
     private String name;
 
+    @Parameter(
+            description = "Filter blueprints by UUID. Exact match (case-insensitive).",
+            schema = @Schema(type = "string")
+    )
+    private String uuid;
+    
+
     public String getName() {
         return name;
     }
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getUuid() {
+        return uuid;
+    }
+
+    public void setUuid(String uuid) {
+        this.uuid = uuid;
     }
 }
