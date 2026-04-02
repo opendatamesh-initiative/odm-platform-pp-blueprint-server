@@ -289,9 +289,9 @@ class BaseRestUtils implements RestUtils {
 
 
     /**
-     * Adds pagination query blueprintParameters to the provided {@link UriComponents} based on the {@link Pageable} object.
+     * Adds pagination query parameters to the provided {@link UriComponents} based on the {@link Pageable} object.
      *
-     * @param uriComponents the URI components object to which pagination blueprintParameters will be added.
+     * @param uriComponents the URI components object to which pagination parameters will be added.
      * @param pageable      the pageable object containing page number, size, and sort information.
      */
     private void buildUriComponentFromPageable(UriComponents uriComponents, Pageable pageable) {
@@ -313,14 +313,14 @@ class BaseRestUtils implements RestUtils {
     }
 
     /**
-     * Adds query blueprintParameters for filters to the provided {@link UriComponents} based on the fields of the filter object.
+     * Adds query parameters for filters to the provided {@link UriComponents} based on the fields of the filter object.
      * <p>
      * This method iterates over the declared fields of the filter object, making them accessible to extract their values,
-     * and adds them as query blueprintParameters. For collections or arrays, it creates placeholders for each element.
+     * and adds them as query parameters. For collections or arrays, it creates placeholders for each element.
      * </p>
      *
-     * @param uriComponents the URI components object to which filter blueprintParameters will be added.
-     * @param filters       the filter object containing the fields to be used as query blueprintParameters.
+     * @param uriComponents the URI components object to which filter parameters will be added.
+     * @param filters       the filter object containing the fields to be used as query parameters.
      * @param <F>           the type of the filter object.
      * @throws InternalException if reflection fails or an error occurs during parameter construction.
      */
@@ -365,7 +365,7 @@ class BaseRestUtils implements RestUtils {
     }
 
     /**
-     * Utility class for building URI components with query blueprintParameters and URI variables.
+     * Utility class for building URI components with query parameters and URI variables.
      */
     private static class UriComponents {
         private final UriComponentsBuilder builder;

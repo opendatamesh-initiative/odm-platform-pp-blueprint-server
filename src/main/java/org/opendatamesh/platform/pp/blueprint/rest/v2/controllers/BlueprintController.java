@@ -45,7 +45,7 @@ public class BlueprintController {
     @ApiResponses(value = {
         @ApiResponse(responseCode = "201", description = "Blueprint created successfully",
             content = @Content(schema = @Schema(implementation = BlueprintRes.class))),
-        @ApiResponse(responseCode = "400", description = "Invalid request blueprintParameters"),
+        @ApiResponse(responseCode = "400", description = "Invalid request parameters"),
         @ApiResponse(responseCode = "500", description = "Internal server error"),
     })
     @PostMapping
@@ -77,7 +77,7 @@ public class BlueprintController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Blueprints found",
                     content = @Content(schema = @Schema(implementation = Page.class))),
-            @ApiResponse(responseCode = "400", description = "Invalid search blueprintParameters or invalid sort property"),
+            @ApiResponse(responseCode = "400", description = "Invalid search parameters or invalid sort property"),
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @GetMapping
@@ -85,7 +85,7 @@ public class BlueprintController {
     public Page<BlueprintRes> searchBlueprints(
             @Parameter(description = "Search options for filtering data products")
             BlueprintSearchOptions searchOptions,
-            @Parameter(description = "Pagination and sorting blueprintParameters. Default sort is by createdAt in descending order. " +
+            @Parameter(description = "Pagination and sorting parameters. Default sort is by createdAt in descending order. " +
                     "Valid sort properties are: uuid, name, displayName, description, createdAt, updatedAt")
             @PageableDefault(page = 0, size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable
@@ -99,7 +99,7 @@ public class BlueprintController {
             @ApiResponse(responseCode = "200", description = "Blueprint updated successfully",
                     content = @Content(schema = @Schema(implementation = BlueprintRes.class))),
             @ApiResponse(responseCode = "404", description = "Blueprint not found"),
-            @ApiResponse(responseCode = "400", description = "Invalid request blueprintParameters"),
+            @ApiResponse(responseCode = "400", description = "Invalid request parameters"),
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @PutMapping("/{uuid}")

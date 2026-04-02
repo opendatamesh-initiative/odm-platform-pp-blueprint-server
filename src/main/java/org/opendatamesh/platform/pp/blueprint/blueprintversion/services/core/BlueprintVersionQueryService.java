@@ -56,7 +56,7 @@ public interface BlueprintVersionQueryService {
      * Find all blueprint versions with pagination, returning short resources (without manifest)
      * for better performance when listing multiple versions.
      *
-     * @param pageable      pagination and sorting blueprintParameters
+     * @param pageable      pagination and sorting parameters
      * @param searchOptions filtering criteria for the search
      * @return paginated list of blueprint version short resources
      */

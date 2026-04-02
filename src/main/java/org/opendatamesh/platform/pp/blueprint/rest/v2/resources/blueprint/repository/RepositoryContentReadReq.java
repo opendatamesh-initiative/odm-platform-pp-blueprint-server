@@ -7,7 +7,7 @@ import java.util.List;
 
 @Schema(
         name = "repository_content_read_request",
-        description = "Repository content read request blueprintParameters (path variable + query blueprintParameters)"
+        description = "Repository content read request parameters (path variable + query parameters)"
 )
 public class RepositoryContentReadReq {
 

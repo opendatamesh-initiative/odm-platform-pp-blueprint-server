@@ -212,7 +212,7 @@ public class BlueprintRepositoryUtilsService {
         addIfPresent(blueprintRepo.getManifestRootPath(), ordered);
         addIfPresent(blueprintRepo.getDescriptorTemplatePath(), ordered);
         if (ordered.isEmpty()) {
-            throw new BadRequestException("No default repository paths configured; specify path query blueprintParameters");
+            throw new BadRequestException("No default repository paths configured; specify path query parameters");
         }
         return new ArrayList<>(ordered);
     }

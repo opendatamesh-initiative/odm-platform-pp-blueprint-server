@@ -54,7 +54,7 @@ public class BlueprintVersionsController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Blueprint version created successfully",
                     content = @Content(schema = @Schema(implementation = BlueprintVersionRes.class))),
-            @ApiResponse(responseCode = "400", description = "Invalid request blueprintParameters"),
+            @ApiResponse(responseCode = "400", description = "Invalid request parameters"),
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @PostMapping
@@ -88,7 +88,7 @@ public class BlueprintVersionsController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Blueprint versions found",
                     content = @Content(schema = @Schema(implementation = Page.class))),
-            @ApiResponse(responseCode = "400", description = "Invalid search blueprintParameters or invalid sort property"),
+            @ApiResponse(responseCode = "400", description = "Invalid search parameters or invalid sort property"),
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @GetMapping
@@ -96,7 +96,7 @@ public class BlueprintVersionsController {
     public Page<BlueprintVersionShortRes> searchBlueprintVersions(
             @Parameter(description = "Search options for filtering data product versions")
             BlueprintVersionSearchOptions searchOptions,
-            @Parameter(description = "Pagination and sorting blueprintParameters. Default sort is by createdAt in descending order. " +
+            @Parameter(description = "Pagination and sorting parameters. Default sort is by createdAt in descending order. " +
                     "Valid sort properties are: uuid, blueprintUuid, name, description, tag, createdAt, updatedAt")
             @PageableDefault(page = 0, size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable
@@ -110,7 +110,7 @@ public class BlueprintVersionsController {
             @ApiResponse(responseCode = "200", description = "Blueprint version updated successfully",
                     content = @Content(schema = @Schema(implementation = BlueprintVersionRes.class))),
             @ApiResponse(responseCode = "404", description = "Blueprint version not found"),
-            @ApiResponse(responseCode = "400", description = "Invalid request blueprintParameters"),
+            @ApiResponse(responseCode = "400", description = "Invalid request parameters"),
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @PutMapping("/{uuid}")

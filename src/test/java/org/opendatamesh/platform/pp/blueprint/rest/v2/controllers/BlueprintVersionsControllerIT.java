@@ -249,7 +249,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
     /**
      * Feature: Search blueprint versions — text / filter parameter
      * Given multiple blueprint versions exist with different names or searchable fields
-     * When the client sends GET with the supported search/filter query blueprintParameters
+     * When the client sends GET with the supported search/filter query parameters
      * Then the response status is 200
      * And every entry in "content" matches the filter semantics
      * And "totalElements" equals the filtered count
