@@ -1,6 +1,8 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.repositories;
 
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint_;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion_;
 import org.opendatamesh.platform.pp.blueprint.utils.repositories.PagingAndSortingAndSpecificationExecutorRepository;
 import org.opendatamesh.platform.pp.blueprint.utils.repositories.SpecsUtils;
 import org.springframework.data.jpa.domain.Specification;
@@ -27,7 +29,7 @@ public interface BlueprintVersionsRepository extends PagingAndSortingAndSpecific
                 if (!StringUtils.hasText(blueprintUuid)) {
                     return cb.conjunction();
                 }
-                return cb.equal(root.get("blueprintUuid"), blueprintUuid);
+                return cb.equal(root.get(BlueprintVersion_.blueprint).get(Blueprint_.uuid), blueprintUuid);
             };
         }
 
@@ -36,7 +38,7 @@ public interface BlueprintVersionsRepository extends PagingAndSortingAndSpecific
                 if (!StringUtils.hasText(blueprintName)) {
                     return cb.conjunction();
                 }
-                return cb.equal(cb.lower(root.get("blueprint").get("name")), blueprintName.toLowerCase());
+                return cb.equal(cb.lower(root.get(BlueprintVersion_.blueprint).get(Blueprint_.name)), blueprintName.toLowerCase());
             };
         }
 
@@ -45,7 +47,7 @@ public interface BlueprintVersionsRepository extends PagingAndSortingAndSpecific
                 if (!StringUtils.hasText(name)) {
                     return cb.conjunction();
                 }
-                return cb.equal(cb.lower(root.get("name")), name.toLowerCase());
+                return cb.equal(cb.lower(root.get(BlueprintVersion_.name)), name.toLowerCase());
             };
         }
 
@@ -54,7 +56,7 @@ public interface BlueprintVersionsRepository extends PagingAndSortingAndSpecific
                 if (!StringUtils.hasText(tag)) {
                     return cb.conjunction();
                 }
-                return cb.equal(cb.lower(root.get("tag")), tag.toLowerCase());
+                return cb.equal(cb.lower(root.get(BlueprintVersion_.tag)), tag.toLowerCase());
             };
         }
 
@@ -63,7 +65,7 @@ public interface BlueprintVersionsRepository extends PagingAndSortingAndSpecific
                 if (!StringUtils.hasText(versionNumber)) {
                     return cb.conjunction();
                 }
-                return cb.equal(cb.lower(root.get("versionNumber")), versionNumber.toLowerCase());
+                return cb.equal(cb.lower(root.get(BlueprintVersion_.versionNumber)), versionNumber.toLowerCase());
             };
         }
     }
