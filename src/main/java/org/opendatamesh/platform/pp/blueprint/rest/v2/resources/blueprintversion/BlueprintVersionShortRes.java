@@ -24,7 +24,7 @@ public class BlueprintVersionShortRes extends VersionedRes {
     @Schema(description = "The tag of the blueprint version")
     private String tag;
 
-    @Schema(description = "The descriptor version number")
+    @Schema(description = "The manifest version number")
     private String versionNumber;
 
     @Schema(description = "The user id who created the blueprint version")

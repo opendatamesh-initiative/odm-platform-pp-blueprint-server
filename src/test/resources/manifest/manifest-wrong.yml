@@ -1,10 +1,11 @@
-# Section 2.1 — README: Monorepo, no composition
-spec: odm-blueprint-manifest
+# Section 2.1 — README: Monorepo, no composition - wrong manifest
+# This manifest is wrong because it has spec wrong and version wrong (must follow semantic versioning) 
+spec: spec-wrong
 specVersion: 1.0.0
-name: analytics-lakehouse
-displayName: Analytics Lakehouse Blueprint
-version: 1.0.0
-description: Provisions storage and compute defaults for an analytics data product.
+name: name
+displayName: display-name
+version: version-wrong
+description: description
 
 parameters:
   - key: environment
