@@ -566,7 +566,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
                 "  \"displayName\": \"Analytics Lakehouse Blueprint\",\n" +
                 "  \"version\": \"1.0.0\",\n" +
                 "  \"description\": \"Provisions storage and compute defaults for an analytics data product.\",\n" +
-                "  \"blueprintParameters\": [\n" +
+                "  \"parameters\": [\n" +
                 "    {\n" +
                 "      \"key\": \"environment\",\n" +
                 "      \"type\": \"string\",\n" +
