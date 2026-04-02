@@ -633,8 +633,8 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
 
             JsonNode retrievedContent = getResponse.getBody().getContent();
             assertThat(retrievedContent.has("spec")).isTrue();
-            assertThat(retrievedContent.get("blueprintParameters").get(0).has("key")).isTrue();
-            assertThat(retrievedContent.get("blueprintParameters").get(0).get("key").asText()).isEqualTo("environment");
+            assertThat(retrievedContent.get("parameters").get(0).has("key")).isTrue();
+            assertThat(retrievedContent.get("parameters").get(0).get("key").asText()).isEqualTo("environment");
             assertThat(retrievedContent.get("protectedResources").get(0).asText())
                     .isEqualTo("infrastructure/core/**");
 
