@@ -1,0 +1,8 @@
+pipeline:
+  name: deploy-$environment
+  stages:
+    - build
+    - test
+    - release
+settings:
+  retentionDays: $retentionDays

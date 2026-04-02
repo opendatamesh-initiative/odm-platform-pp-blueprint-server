@@ -188,7 +188,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
     /**
      * Feature: Search blueprints — filters
      * Given blueprints exist with distinguishable field values (e.g. name or other supported filter fields)
-     * When the client sends GET to "/api/v2/pp/blueprint/blueprints" including supported filter query parameters
+     * When the client sends GET to "/api/v2/pp/blueprint/blueprints" including supported filter query blueprintParameters
      * Then the response status is 200
      * And every item in "content" satisfies the filter
      * And "totalElements" equals the count of matching rows

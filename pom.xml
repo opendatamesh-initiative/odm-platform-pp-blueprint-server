@@ -193,6 +193,12 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.apache.velocity</groupId>
+            <artifactId>velocity-engine-core</artifactId>
+            <version>2.4.1</version>
+        </dependency>
+
         <!-- Git Utils (Git provider abstraction + JGit) -->
         <dependency>
             <groupId>org.opendatamesh</groupId>

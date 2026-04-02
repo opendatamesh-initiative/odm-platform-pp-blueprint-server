@@ -28,6 +28,7 @@ The ODM Platform Blueprint Server is a microservice in the [Open Data Mesh Platf
     * [Additional Endpoints](#additional-endpoints)
     * [Architecture](#architecture)
     * [Testing](#testing)
+        * [IntelliJ: unit tests with coverage and Apache Velocity](#intellij-unit-tests-with-coverage-and-apache-velocity)
     * [License](#license)
 
 <!-- TOC -->
@@ -207,6 +208,25 @@ mvn -B verify -Dspring.profiles.active=test
 ```
 
 Docker must be available for Testcontainers when integration tests run.
+
+### IntelliJ: unit tests with coverage and Apache Velocity
+
+This project uses **Apache Velocity** (for example blueprint templating). If you run tests **with IntelliJ’s code coverage** enabled, you may see:
+
+`VelocityException: Could not initialize property keys deprecation map because DeprecatedRuntimeConstants.__$hits$__ field isn't properly named`
+
+**Cause:** IntelliJ’s coverage instrumentation adds synthetic fields to bytecode. Velocity’s `DeprecationAwareExtProperties` reflects on `DeprecatedRuntimeConstants` and expects specific field names; the injected coverage fields break that check. This is a known interaction (see JetBrains **IDEA-350212** and related issues); workarounds that rely on newer bytecode behavior do not apply cleanly to Velocity’s Java 8–compiled classes.
+
+**Fix in IntelliJ:** exclude the class from coverage for your test run configuration:
+
+1. **Run → Edit Configurations…**
+2. Select your JUnit (or TestNG) configuration.
+3. Open the **Coverage** tab (use **Modify options** if the tab is hidden).
+4. Add to **classes/packages to exclude** (wording may vary):  
+   `org.apache.velocity.runtime.DeprecatedRuntimeConstants`  
+   If problems persist, widen the exclusion to `org.apache.velocity.**`.
+
+**CI / Maven:** if you use JaCoCo with `mvn` and hit the same error, add an equivalent **exclude** for that class or `org.apache.velocity.runtime.*` in the JaCoCo configuration.
 
 ## License
 

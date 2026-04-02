@@ -31,7 +31,7 @@ public interface GitProvidersUtilsService {
      * @param providerIdentifier   the provider identifier information (type, baseUrl)
      * @param showUserRepositories whether to show user repositories (true) or organization repositories (false)
      * @param organizationRes      the organization information (can be null for user repositories)
-     * @param parameters           filter parameters for the repositories (e.g., project filter)
+     * @param parameters           filter blueprintParameters for the repositories (e.g., project filter)
      * @param headers              HTTP headers containing authentication credentials
      * @param pageable             pagination information
      * @return page of repositories
@@ -81,7 +81,7 @@ public interface GitProvidersUtilsService {
      *
      * @param providerIdentifier the provider identifier information (type, baseUrl)
      * @param customResourceType the type of custom resource to retrieve (e.g., "project", "workspace")
-     * @param parameters         filter parameters for the custom resources (e.g., organization filter)
+     * @param parameters         filter blueprintParameters for the custom resources (e.g., organization filter)
      * @param headers            HTTP headers containing authentication credentials
      * @param pageable           pagination information
      * @return a paginated list of provider-specific custom resources

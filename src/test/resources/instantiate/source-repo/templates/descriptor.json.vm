@@ -1,0 +1,7 @@
+{
+  "dataProductDescriptor": "1.0.0",
+  "info": {
+    "environment": "$environment",
+    "retentionDays": $retentionDays
+  }
+}

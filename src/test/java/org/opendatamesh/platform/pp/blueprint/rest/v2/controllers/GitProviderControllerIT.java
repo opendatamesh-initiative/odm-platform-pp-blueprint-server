@@ -160,7 +160,7 @@ public class GitProviderControllerIT extends BlueprintApplicationIT {
         Pageable pageable = PageRequest.of(0, 10);
         Page<Repository> mockPage = new PageImpl<>(mockRepositories, pageable, 2);
 
-        // Mock the GitProvider method to return our test data - use any() for all parameters
+        // Mock the GitProvider method to return our test data - use any() for all blueprintParameters
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         User mockUser = new User();
         mockUser.setId("123");
@@ -533,7 +533,7 @@ public class GitProviderControllerIT extends BlueprintApplicationIT {
         createRepositoryReq.setDescription("Test repository");
         createRepositoryReq.setIsPrivate(false);
 
-        // When - missing required userId and username parameters
+        // When - missing required userId and username blueprintParameters
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories?providerType=GITHUB&providerBaseUrl=https://api.github.com"),
                 org.springframework.http.HttpMethod.POST,

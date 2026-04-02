@@ -1,0 +1,7 @@
+create schema if not exists analytics_$environment;
+
+create table if not exists analytics_$environment.events (
+  event_id varchar(64) primary key,
+  payload text not null,
+  created_at timestamp not null default current_timestamp
+);

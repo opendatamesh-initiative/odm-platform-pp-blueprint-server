@@ -249,7 +249,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
     /**
      * Feature: Search blueprint versions — text / filter parameter
      * Given multiple blueprint versions exist with different names or searchable fields
-     * When the client sends GET with the supported search/filter query parameters
+     * When the client sends GET with the supported search/filter query blueprintParameters
      * Then the response status is 200
      * And every entry in "content" matches the filter semantics
      * And "totalElements" equals the filtered count
@@ -566,7 +566,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
                 "  \"displayName\": \"Analytics Lakehouse Blueprint\",\n" +
                 "  \"version\": \"1.0.0\",\n" +
                 "  \"description\": \"Provisions storage and compute defaults for an analytics data product.\",\n" +
-                "  \"parameters\": [\n" +
+                "  \"blueprintParameters\": [\n" +
                 "    {\n" +
                 "      \"key\": \"environment\",\n" +
                 "      \"type\": \"string\",\n" +
@@ -633,8 +633,8 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
 
             JsonNode retrievedContent = getResponse.getBody().getContent();
             assertThat(retrievedContent.has("spec")).isTrue();
-            assertThat(retrievedContent.get("parameters").get(0).has("key")).isTrue();
-            assertThat(retrievedContent.get("parameters").get(0).get("key").asText()).isEqualTo("environment");
+            assertThat(retrievedContent.get("blueprintParameters").get(0).has("key")).isTrue();
+            assertThat(retrievedContent.get("blueprintParameters").get(0).get("key").asText()).isEqualTo("environment");
             assertThat(retrievedContent.get("protectedResources").get(0).asText())
                     .isEqualTo("infrastructure/core/**");
 

@@ -582,7 +582,7 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
     }
 
     /**
-     * REPO-READ-004 — Default paths when no path query parameters
+     * REPO-READ-004 — Default paths when no path query blueprintParameters
      */
     @Test
     void whenReadRepositoryContentWithoutPathParamsThenUsesDefaultTriple(@TempDir Path tempDir) throws Exception {

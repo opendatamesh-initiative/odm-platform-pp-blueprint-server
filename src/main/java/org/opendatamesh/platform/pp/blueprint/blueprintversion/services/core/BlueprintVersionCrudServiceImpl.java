@@ -1,5 +1,8 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.opendatamesh.platform.pp.blueprint.blueprint.services.core.BlueprintService;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.repositories.BlueprintVersionsRepository;
@@ -9,8 +12,8 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionSearchOptions;
 import org.opendatamesh.platform.pp.blueprint.utils.repositories.PagingAndSortingAndSpecificationExecutorRepository;
+import org.opendatamesh.platform.pp.blueprint.utils.repositories.SpecsUtils;
 import org.opendatamesh.platform.pp.blueprint.utils.services.GenericMappedAndFilteredCrudServiceImpl;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -29,7 +32,6 @@ public class BlueprintVersionCrudServiceImpl extends GenericMappedAndFilteredCru
     private final BlueprintVersionsRepository repository;
     private final BlueprintService blueprintService;
 
-    @Autowired
     public BlueprintVersionCrudServiceImpl(
             BlueprintVersionMapper mapper,
             BlueprintVersionsRepository repository,
@@ -89,7 +91,25 @@ public class BlueprintVersionCrudServiceImpl extends GenericMappedAndFilteredCru
 
     @Override
     protected Specification<BlueprintVersion> getSpecFromFilters(BlueprintVersionSearchOptions searchOptions) {
-        return (root, query, cb) -> cb.conjunction();
+        List<Specification<BlueprintVersion>> specs = new ArrayList<>();
+        if (searchOptions != null) {
+            if (StringUtils.hasText(searchOptions.getBlueprintUuid())) {
+                specs.add(BlueprintVersionsRepository.Specs.hasBlueprintUuid(searchOptions.getBlueprintUuid()));
+            }
+            if (StringUtils.hasText(searchOptions.getBlueprintName())) {
+                specs.add(BlueprintVersionsRepository.Specs.hasBlueprintName(searchOptions.getBlueprintName()));
+            }
+            if (StringUtils.hasText(searchOptions.getName())) {
+                specs.add(BlueprintVersionsRepository.Specs.hasName(searchOptions.getName()));
+            }
+            if (StringUtils.hasText(searchOptions.getTag())) {
+                specs.add(BlueprintVersionsRepository.Specs.hasTag(searchOptions.getTag()));
+            }
+            if (StringUtils.hasText(searchOptions.getVersionNumber())) {
+                specs.add(BlueprintVersionsRepository.Specs.hasVersionNumber(searchOptions.getVersionNumber()));
+            }
+        }
+        return SpecsUtils.combineWithAnd(specs);
     }
 
     @Override

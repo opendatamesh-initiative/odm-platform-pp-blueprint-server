@@ -35,13 +35,13 @@ public class GitProviderController {
     public Page<OrganizationRes> getOrganizations(
             @Parameter(description = "Git provider configuration")
             ProviderIdentifierRes providerIdentifier,
-            @Parameter(description = "Pagination and sorting parameters. Default sort is by name in descending order")
+            @Parameter(description = "Pagination and sorting blueprintParameters. Default sort is by name in descending order")
             @PageableDefault(page = 0, size = 20, sort = "name", direction = Sort.Direction.DESC)
             Pageable pageable,
             @Parameter(description = "HTTP headers for Git provider authentication")
             @RequestHeader HttpHeaders headers
     ) {
-        // Validate required parameters
+        // Validate required blueprintParameters
         if (providerIdentifier == null) {
             throw new BadRequestException("Provider identifier is required");
         }
@@ -64,15 +64,15 @@ public class GitProviderController {
             ProviderIdentifierRes providerIdentifier,
             @Parameter(description = "Search options for filtering repositories")
             RepositorySearchOptions searchOptions,
-            @Parameter(description = "Provider specific parameters.")
+            @Parameter(description = "Provider specific blueprintParameters.")
             @RequestParam(required = false) MultiValueMap<String, String> parameters,
-            @Parameter(description = "Pagination and sorting parameters. Default sort is by name in ascending order")
+            @Parameter(description = "Pagination and sorting blueprintParameters. Default sort is by name in ascending order")
             @PageableDefault(page = 0, size = 20, sort = "name", direction = Sort.Direction.ASC)
             Pageable pageable,
             @Parameter(description = "HTTP headers for Git provider authentication")
             @RequestHeader HttpHeaders headers
     ) {
-        // Validate required parameters
+        // Validate required blueprintParameters
         if (providerIdentifier == null) {
             throw new BadRequestException("Provider identifier is required");
         }
@@ -88,7 +88,7 @@ public class GitProviderController {
             organizationRes = new OrganizationRes(searchOptions.getOrganizationId(), searchOptions.getOrganizationName(), null);
         }
 
-        // Use empty map if parameters not provided
+        // Use empty map if blueprintParameters not provided
         if (parameters == null) {
             parameters = new LinkedMultiValueMap<>();
         }
@@ -120,7 +120,7 @@ public class GitProviderController {
         if (!StringUtils.hasText(providerBaseUrl)) {
             throw new BadRequestException("Provider base URL is required");
         }
-        // Create DTOs from individual parameters
+        // Create DTOs from individual blueprintParameters
         ProviderIdentifierRes providerIdentifier = new ProviderIdentifierRes(providerType, providerBaseUrl);
         OrganizationRes organizationRes = null;
         if (organizationId != null && !organizationId.trim().isEmpty()) {
@@ -143,7 +143,7 @@ public class GitProviderController {
             @RequestParam String providerType,
             @Parameter(description = "Base URL of the Git provider")
             @RequestParam String providerBaseUrl,
-            @Parameter(description = "Pagination and sorting parameters. Default sort is by name in ascending order")
+            @Parameter(description = "Pagination and sorting blueprintParameters. Default sort is by name in ascending order")
             @PageableDefault(page = 0, size = 20, sort = "name", direction = Sort.Direction.ASC)
             Pageable pageable,
             @Parameter(description = "HTTP headers for Git provider authentication")
@@ -155,7 +155,7 @@ public class GitProviderController {
         if (!StringUtils.hasText(providerBaseUrl)) {
             throw new BadRequestException("Provider base URL is required");
         }
-        // Create DTO from individual parameters
+        // Create DTO from individual blueprintParameters
         ProviderIdentifierRes providerIdentifier = new ProviderIdentifierRes(providerType, providerBaseUrl);
 
         // Call service to get branches
@@ -171,7 +171,7 @@ public class GitProviderController {
             @Parameter(description = "Git provider configuration")
             ProviderIdentifierRes providerIdentifier
     ) {
-        // Validate required parameters
+        // Validate required blueprintParameters
         if (providerIdentifier == null) {
             throw new BadRequestException("Provider identifier is required");
         }
@@ -193,15 +193,15 @@ public class GitProviderController {
             @RequestParam("resourceType") String resourceType,
             @Parameter(description = "Git provider configuration")
             ProviderIdentifierRes providerIdentifier,
-            @Parameter(description = "Filter parameters for the custom resources (e.g., organization filter). Can be passed as query parameters.")
+            @Parameter(description = "Filter blueprintParameters for the custom resources (e.g., organization filter). Can be passed as query blueprintParameters.")
             @RequestParam(required = false) MultiValueMap<String, String> parameters,
-            @Parameter(description = "Pagination and sorting parameters. Default sort is by displayName in ascending order")
+            @Parameter(description = "Pagination and sorting blueprintParameters. Default sort is by displayName in ascending order")
             @PageableDefault(page = 0, size = 20, sort = "displayName", direction = Sort.Direction.ASC)
             Pageable pageable,
             @Parameter(description = "HTTP headers for Git provider authentication")
             @RequestHeader HttpHeaders headers
     ) {
-        // Validate required parameters
+        // Validate required blueprintParameters
         if (providerIdentifier == null) {
             throw new BadRequestException("Provider identifier is required");
         }
@@ -212,7 +212,7 @@ public class GitProviderController {
             throw new BadRequestException("Provider base URL is required");
         }
 
-        // Use empty map if parameters not provided
+        // Use empty map if blueprintParameters not provided
         if (parameters == null) {
             parameters = new LinkedMultiValueMap<>();
         }
