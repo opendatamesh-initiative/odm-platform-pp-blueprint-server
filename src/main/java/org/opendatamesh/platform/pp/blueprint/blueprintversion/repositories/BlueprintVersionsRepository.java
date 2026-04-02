@@ -16,4 +16,6 @@ public interface BlueprintVersionsRepository extends PagingAndSortingAndSpecific
      * Check if a BlueprintVersion exists by versionNumber and blueprintUuid excluding a specific UUID (case-insensitive)
      */
     boolean existsByVersionNumberIgnoreCaseAndBlueprintUuidAndUuidNot(String versionNumber, String blueprintUuid, String uuid);
+
+    boolean existsByBlueprint_UuidAndNameIgnoreCaseAndTagIgnoreCase(String blueprintUuid, String name, String tag);
 }

@@ -26,16 +26,16 @@ public class BlueprintVersionRes extends VersionedRes {
     @Schema(description = "The tag of the blueprint version")
     private String tag;
 
-    @Schema(description = "The descriptor specification")
+    @Schema(description = "The manifest specification")
     private String spec;
 
-    @Schema(description = "The descriptor specification version")
+    @Schema(description = "The manifest specification version")
     private String specVersion;
 
-    @Schema(description = "The descriptor version")
+    @Schema(description = "The manifest version number")
     private String versionNumber;
 
-    @Schema(description = "The descriptor content")
+    @Schema(description = "The manifest content")
     private JsonNode content;
 
     @Schema(description = "The user id who created the blueprint version")
