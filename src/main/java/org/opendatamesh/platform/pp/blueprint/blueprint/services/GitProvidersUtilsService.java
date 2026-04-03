@@ -10,7 +10,7 @@ import org.springframework.util.MultiValueMap;
 /**
  * Service interface for interacting with Git providers (GitHub, GitLab, Bitbucket, Azure DevOps).
  * <p>
- * This service provides methods to list organizations, repositories, branches, and other resources
+ * This service provides methods to list organizations, repositories, branches, tags, and other resources
  * from various Git providers using standardized authentication via HTTP headers.
  */
 public interface GitProvidersUtilsService {
@@ -60,6 +60,18 @@ public interface GitProvidersUtilsService {
      * @return page of branches
      */
     Page<BranchRes> listBranches(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, Pageable pageable);
+
+    /**
+     * List tags from a Git provider repository with pagination.
+     *
+     * @param providerIdentifier the provider identifier information (type, baseUrl)
+     * @param repositoryId       the repository ID
+     * @param ownerId            the owner ID (organization or user ID)
+     * @param headers            HTTP headers containing authentication credentials
+     * @param pageable           pagination information
+     * @return page of tags
+     */
+    Page<TagRes> listTags(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, Pageable pageable);
 
     /**
      * Get custom resource definitions for a specific resource type with a given provider.

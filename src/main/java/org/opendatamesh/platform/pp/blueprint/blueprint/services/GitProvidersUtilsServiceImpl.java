@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.opendatamesh.platform.git.model.Branch;
+import org.opendatamesh.platform.git.model.Tag;
 import org.opendatamesh.platform.git.model.Organization;
 import org.opendatamesh.platform.git.model.ProviderCustomResource;
 import org.opendatamesh.platform.git.model.ProviderCustomResourceDefinition;
@@ -31,6 +32,8 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.Pro
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.ProviderIdentifierRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.RepositoryMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.RepositoryRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.TagMapper;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.TagRes;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
@@ -46,15 +49,17 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
     private final ProviderCustomResourceDefinitionMapper providerCustomResourceDefinitionMapper;
     private final ProviderCustomResourceMapper providerCustomResourceMapper;
     private final BranchMapper branchMapper;
+    private final TagMapper tagMapper;
 
     private final GitProviderFactory gitProviderFactory;
 
-    public GitProvidersUtilsServiceImpl(OrganizationMapper organizationMapper, RepositoryMapper repositoryMapper, ProviderCustomResourceDefinitionMapper providerCustomResourceDefinitionMapper, ProviderCustomResourceMapper providerCustomResourceMapper, BranchMapper branchMapper, GitProviderFactory gitProviderFactory) {
+    public GitProvidersUtilsServiceImpl(OrganizationMapper organizationMapper, RepositoryMapper repositoryMapper, ProviderCustomResourceDefinitionMapper providerCustomResourceDefinitionMapper, ProviderCustomResourceMapper providerCustomResourceMapper, BranchMapper branchMapper, TagMapper tagMapper, GitProviderFactory gitProviderFactory) {
         this.organizationMapper = organizationMapper;
         this.repositoryMapper = repositoryMapper;
         this.providerCustomResourceDefinitionMapper = providerCustomResourceDefinitionMapper;
         this.providerCustomResourceMapper = providerCustomResourceMapper;
         this.branchMapper = branchMapper;
+        this.tagMapper = tagMapper;
         this.gitProviderFactory = gitProviderFactory;
     }
 
@@ -177,6 +182,25 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
 
         // Map to DTOs
         return branches.map(branchMapper::toRes);
+    }
+
+    @Override
+    public Page<TagRes> listTags(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, Pageable pageable) {
+        GitProvider provider = gitProviderFactory.buildGitProvider(
+                new GitProviderIdentifier(providerIdentifier.getProviderType(), providerIdentifier.getProviderBaseUrl()),
+                headers
+        );
+
+        Optional<Repository> repositoryOpt = provider.getRepository(repositoryId, ownerId);
+        if (repositoryOpt.isEmpty()) {
+            throw new BadRequestException("Repository not found with ID: " + repositoryId);
+        }
+
+        Repository repository = repositoryOpt.get();
+
+        Page<Tag> tags = provider.listTags(repository, pageable);
+
+        return tags.map(tagMapper::toRes);
     }
 
     /**
