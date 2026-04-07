@@ -162,6 +162,35 @@ public class GitProviderController {
         return gitProviderService.listBranches(providerIdentifier, repositoryId, ownerId, headers, pageable);
     }
 
+    @Operation(summary = "Get repository tags", description = "Retrieves a paginated list of tags from a Git provider repository")
+    @GetMapping("/repositories/{repositoryId}/tags")
+    @ResponseStatus(HttpStatus.OK)
+    public Page<TagRes> getRepositoryTags(
+            @Parameter(description = "Repository ID", required = true)
+            @PathVariable String repositoryId,
+            @Parameter(description = "Owner ID")
+            @RequestParam String ownerId,
+            @Parameter(description = "Type of the Git provider")
+            @RequestParam String providerType,
+            @Parameter(description = "Base URL of the Git provider")
+            @RequestParam String providerBaseUrl,
+            @Parameter(description = "Pagination and sorting parameters. Default sort is by name in ascending order")
+            @PageableDefault(page = 0, size = 20, sort = "name", direction = Sort.Direction.ASC)
+            Pageable pageable,
+            @Parameter(description = "HTTP headers for Git provider authentication")
+            @RequestHeader HttpHeaders headers
+    ) {
+        if (!StringUtils.hasText(providerType)) {
+            throw new BadRequestException("Provider type is required");
+        }
+        if (!StringUtils.hasText(providerBaseUrl)) {
+            throw new BadRequestException("Provider base URL is required");
+        }
+        ProviderIdentifierRes providerIdentifier = new ProviderIdentifierRes(providerType, providerBaseUrl);
+
+        return gitProviderService.listTags(providerIdentifier, repositoryId, ownerId, headers, pageable);
+    }
+
     @Operation(summary = "Get custom provider resource definition", description = "Retrieves a resource custom definition given a specific provider.")
     @GetMapping("/custom-resources/definitions")
     @ResponseStatus(HttpStatus.OK)

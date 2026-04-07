@@ -24,9 +24,11 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 public class GitProviderControllerIT extends BlueprintApplicationIT {
@@ -499,6 +501,94 @@ public class GitProviderControllerIT extends BlueprintApplicationIT {
         );
 
         // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    public void whenGetRepositoryTagsWithValidParametersThenReturnTags() throws Exception {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        Tag mockTag1 = new Tag("v1.0.0", "sha111");
+        Tag mockTag2 = new Tag("v2.0.0", "sha222");
+        List<Tag> mockTags = Arrays.asList(mockTag1, mockTag2);
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Tag> mockPage = new PageImpl<>(mockTags, pageable, 2);
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("repo-123"), eq("owner-1"))).thenReturn(Optional.of(mockRepo));
+        when(mockGitProvider.listTags(eq(mockRepo), any(Pageable.class))).thenReturn(mockPage);
+
+        TagRes expectedTag1 = new TagRes("v1.0.0", "sha111");
+        TagRes expectedTag2 = new TagRes("v2.0.0", "sha222");
+
+        ResponseEntity<JsonNode> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/tags?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com&page=0&size=10"),
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(headers),
+                JsonNode.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+
+        JsonNode responseBody = response.getBody();
+        assertThat(responseBody.has("content")).isTrue();
+        assertThat(responseBody.has("totalElements")).isTrue();
+        assertThat(responseBody.get("totalElements").asInt()).isEqualTo(2);
+
+        JsonNode content = responseBody.get("content");
+        assertThat(content.isArray()).isTrue();
+        assertThat(content.size()).isEqualTo(2);
+
+        TagRes actualTag1 = objectMapper.treeToValue(content.get(0), TagRes.class);
+        TagRes actualTag2 = objectMapper.treeToValue(content.get(1), TagRes.class);
+        assertThat(actualTag1).usingRecursiveComparison().isEqualTo(expectedTag1);
+        assertThat(actualTag2).usingRecursiveComparison().isEqualTo(expectedTag2);
+    }
+
+    @Test
+    public void whenGetRepositoryTagsWithoutProviderBaseUrlThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/tags?ownerId=owner-1&providerType=GITHUB&page=0&size=10"),
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    public void whenGetRepositoryTagsWithoutProviderTypeThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/tags?ownerId=owner-1&providerBaseUrl=https://api.github.com&page=0&size=10"),
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    public void whenGetRepositoryTagsWhenRepositoryNotFoundThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("missing-repo"), eq("owner-1"))).thenReturn(Optional.empty());
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/missing-repo/tags?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com&page=0&size=10"),
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(headers),
+                String.class
+        );
+
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 

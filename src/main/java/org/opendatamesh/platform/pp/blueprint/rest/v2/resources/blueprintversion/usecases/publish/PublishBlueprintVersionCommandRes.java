@@ -16,6 +16,7 @@ public class PublishBlueprintVersionCommandRes {
         private String spec;
         private String specVersion;
         private JsonNode content;
+        private String createdBy;
         private Blueprint blueprint;
 
         public static class Blueprint {
@@ -94,7 +95,16 @@ public class PublishBlueprintVersionCommandRes {
         public void setContent(JsonNode content) {
             this.content = content;
         }
-        
+
+        @Schema(description = "The user id who created the blueprint version")
+        public String getCreatedBy() {
+            return createdBy;
+        }
+
+        public void setCreatedBy(String createdBy) {
+            this.createdBy = createdBy;
+        }
+
         public Blueprint getBlueprint() {
             return blueprint;
         }
