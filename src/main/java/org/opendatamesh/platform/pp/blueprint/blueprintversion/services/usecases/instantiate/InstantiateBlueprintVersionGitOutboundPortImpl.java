@@ -100,7 +100,7 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
             String commitAuthorName,
             String commitAuthorEmail) {
         File repositoryPathFile = targetRepositoryPath.toFile();
-        gitProvider.gitOperation().addFiles(repositoryPathFile, List.of(repositoryPathFile));
+        gitProvider.gitOperation().addAll(repositoryPathFile);
         gitProvider.gitOperation().commit(repositoryPathFile, new Commit(
                 commitMessage,
                 StringUtils.hasText(commitAuthorName) ? commitAuthorName : DEFAULT_COMMIT_AUTHOR_NAME,

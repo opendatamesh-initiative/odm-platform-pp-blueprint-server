@@ -128,7 +128,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         // Git: populate flow stages changes, commits with the expected message, then pushes (no force-push).
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -156,7 +156,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
-        doNothing().when(mockGitOperation).addFiles(any(), any());
+        doNothing().when(mockGitOperation).addAll(any());
         doAnswer(invocation -> {
             commitRef.set(invocation.getArgument(1));
             return null;
@@ -188,7 +188,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -215,7 +215,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
-        doNothing().when(mockGitOperation).addFiles(any(), any());
+        doNothing().when(mockGitOperation).addAll(any());
         doAnswer(invocation -> {
             commitRef.set(invocation.getArgument(1));
             return null;
@@ -247,7 +247,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -282,7 +282,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -308,7 +308,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
-        doNothing().when(mockGitOperation).addFiles(any(), any());
+        doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
         doNothing().when(mockGitOperation).push(any(), anyBoolean());
 
@@ -329,7 +329,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -356,7 +356,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
-        doNothing().when(mockGitOperation).addFiles(any(), any());
+        doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
         doNothing().when(mockGitOperation).push(any(), anyBoolean());
 
@@ -380,7 +380,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(1).getRefValue()).isEqualTo("feature/custom");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -556,7 +556,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
-        doNothing().when(mockGitOperation).addFiles(any(), any());
+        doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
         doThrow(new GitOperationException("push failed")).when(mockGitOperation).push(any(), anyBoolean());
 
@@ -570,7 +570,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         // Git: clone source and target, stage and commit succeed; push fails and surfaces as client error.
         verify(mockGitOperation, times(2)).readRepository(any(), any(), any());
-        verify(mockGitOperation).addFiles(any(), any());
+        verify(mockGitOperation).addAll(any());
         verify(mockGitOperation).commit(any(), any());
         verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         deleteCreatedBlueprint(context);
@@ -607,7 +607,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -646,7 +646,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
-        gitOpOrder.verify(mockGitOperation).addFiles(eq(targetDir.toFile()), any());
+        gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
@@ -669,7 +669,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
 
-        doNothing().when(mockGitOperation).addFiles(any(), any());
+        doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
         doNothing().when(mockGitOperation).push(any(), anyBoolean());
         return mockGitOperation;
