@@ -35,6 +35,14 @@ class InstantiateBlueprintVersionTemplatingOutboundPortImpl implements Instantia
     private static final String ODM_BLUEPRINT_DIR = ".odm/blueprint";
     private static final String MANIFEST_DEFAULT_FILENAME = "blueprint-manifest.yaml";
 
+    /**
+     * File or directory names (last path segment) excluded from {@link #copyTree(Path, Path)}.
+     * Add entries here to skip copying/overwriting e.g. VCS metadata or tool-specific paths.
+     */
+    private static final Set<String> COPY_TREE_SKIP_NAMES = Set.of(
+            ".git"
+    );
+
     @Override
     public void renderAndCopy(
             BlueprintVersion blueprintVersion,
@@ -173,7 +181,8 @@ class InstantiateBlueprintVersionTemplatingOutboundPortImpl implements Instantia
         return ctx;
     }
 
-    private static Object jsonNodeToJava(JsonNode node) {
+    /** Maps JSON arrays/objects to List/Map for Velocity; scalars unchanged. */
+    private Object jsonNodeToJava(JsonNode node) {
         if (node == null || node.isNull()) {
             return null;
         }
@@ -191,6 +200,9 @@ class InstantiateBlueprintVersionTemplatingOutboundPortImpl implements Instantia
         }
         if (node.isTextual()) {
             return node.asText();
+        }
+        if (node.isArray() || node.isObject()) {
+            return YAML_OBJECT_MAPPER.convertValue(node, Object.class);
         }
         return node.toString();
     }
@@ -224,6 +236,9 @@ class InstantiateBlueprintVersionTemplatingOutboundPortImpl implements Instantia
         Files.walkFileTree(from, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                if (isCopyTreeSkippedName(dir.getFileName())) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
                 Path targetDir = to.resolve(from.relativize(dir));
                 if (!Files.exists(targetDir)) {
                     Files.createDirectories(targetDir);
@@ -233,12 +248,19 @@ class InstantiateBlueprintVersionTemplatingOutboundPortImpl implements Instantia
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                if (isCopyTreeSkippedName(file.getFileName())) {
+                    return FileVisitResult.CONTINUE;
+                }
                 Path dest = to.resolve(from.relativize(file));
                 Files.createDirectories(Objects.requireNonNull(dest.getParent()));
                 Files.copy(file, dest, StandardCopyOption.REPLACE_EXISTING);
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    private static boolean isCopyTreeSkippedName(Path pathName) {
+        return pathName != null && COPY_TREE_SKIP_NAMES.contains(pathName.toString());
     }
 
     private void deleteRecursively(Path root) {

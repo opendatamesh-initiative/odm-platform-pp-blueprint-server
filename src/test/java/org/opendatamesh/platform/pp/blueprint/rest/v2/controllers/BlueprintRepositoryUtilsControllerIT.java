@@ -12,6 +12,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,17 +64,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
     private static final String TEST_PAT_TOKEN = "test-pat-token";
     private static final String TEST_PAT_USERNAME = "test-user";
 
-    /**
-     * Realistic ODM-style manifest (YAML).
-     */
-    private static final String EXPECTED_MANIFEST_YAML = """
-            apiVersion: blueprint.odm/v1
-            kind: BlueprintManifest
-            metadata:
-              name: sample-blueprint
-            spec:
-              description: Integration test manifest
-            """;
+    private static final String EXPECTED_MANIFEST_YAML = loadClasspathResource(
+            "instantiate/source-repo/manifest.yaml");
 
     /**
      * Valid JSON with nested object (pretty-printed as sent in the request body).
@@ -96,6 +90,18 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
             - Item one
             - Item two
             """;
+
+    private static String loadClasspathResource(String classpathRelative) {
+        try (InputStream in = BlueprintRepositoryUtilsControllerIT.class.getClassLoader()
+                .getResourceAsStream(classpathRelative)) {
+            if (in == null) {
+                throw new IllegalStateException("Test resource not found: " + classpathRelative);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
@@ -199,9 +205,9 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         assertThat(Files.readString(readmePath, StandardCharsets.UTF_8)).isEqualTo(EXPECTED_README_MD);
 
         JsonNode yamlTree = YAML.readTree(Files.newBufferedReader(manifestPath, StandardCharsets.UTF_8));
-        assertThat(yamlTree.path("apiVersion").asText()).isEqualTo("blueprint.odm/v1");
-        assertThat(yamlTree.path("kind").asText()).isEqualTo("BlueprintManifest");
-        assertThat(yamlTree.path("metadata").path("name").asText()).isEqualTo("sample-blueprint");
+        assertThat(yamlTree.path("spec").asText()).isEqualTo("odm-blueprint-manifest");
+        assertThat(yamlTree.path("name").asText()).isEqualTo("analytics-lakehouse");
+        assertThat(yamlTree.path("specVersion").asText()).isEqualTo("1.0.0");
 
         JsonNode jsonTree = JSON.readTree(Files.newBufferedReader(jsonPath, StandardCharsets.UTF_8));
         assertThat(jsonTree.path("schemaVersion").asInt()).isEqualTo(1);

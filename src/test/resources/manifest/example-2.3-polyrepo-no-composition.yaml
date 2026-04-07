@@ -1,6 +1,6 @@
 # Section 2.3 — README: Polyrepo, no composition
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: split-stack-template
 version: 0.5.0
 

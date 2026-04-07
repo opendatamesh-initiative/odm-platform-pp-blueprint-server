@@ -1,5 +1,5 @@
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: ext-test
 version: 1.0.0
 dumb_extension:

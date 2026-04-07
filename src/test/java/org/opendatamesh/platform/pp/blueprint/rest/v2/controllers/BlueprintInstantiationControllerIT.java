@@ -714,7 +714,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         versionRes.setTag("v" + version);
         versionRes.setVersionNumber(version);
         versionRes.setSpec("odm-blueprint-manifest");
-        versionRes.setSpecVersion("v1");
+        versionRes.setSpecVersion("1.0.0");
         versionRes.setBlueprint(createdBlueprint.getBody());
         versionRes.setContent(content);
 

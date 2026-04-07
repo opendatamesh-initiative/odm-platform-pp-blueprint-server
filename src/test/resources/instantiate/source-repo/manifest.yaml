@@ -1,7 +1,7 @@
 # Fixture: blueprint manifest at repo root (mirrors manifest/example-2.1 shape).
 # Instantiation moves this to .odm/blueprint/blueprint-manifest.yaml with stored version content.
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: analytics-lakehouse
 displayName: Analytics Lakehouse Blueprint
 version: 1.0.0
