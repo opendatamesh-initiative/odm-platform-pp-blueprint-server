@@ -48,6 +48,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
                 new PublishBlueprintVersionCommandRes.BlueprintVersion.Blueprint();
         bp.setUuid(blueprint.getUuid());
         bv.setBlueprint(bp);
+        bv.setCreatedBy("it-created-by");
         cmd.setBlueprintVersion(bv);
         return cmd;
     }
@@ -97,6 +98,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
             assertThat(created.getBlueprint().getUuid()).isNotNull();
             assertThat(created.getBlueprint().getName()).isEqualTo(prefix + "-bp");
             assertThat(created.getVersionNumber()).isEqualTo("1.0.0");
+            assertThat(created.getCreatedBy()).isEqualTo("it-created-by");
 
             ResponseEntity<BlueprintVersionRes> getResponse = rest.getForEntity(
                     apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + created.getUuid()),
@@ -105,6 +107,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
             assertThat(getResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(getResponse.getBody().getName()).isEqualTo(prefix + "-version");
             assertThat(getResponse.getBody().getVersionNumber()).isEqualTo("1.0.0");
+            assertThat(getResponse.getBody().getCreatedBy()).isEqualTo("it-created-by");
 
             rest.delete(apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + created.getUuid()));
         } finally {

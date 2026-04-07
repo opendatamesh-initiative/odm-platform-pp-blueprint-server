@@ -118,10 +118,10 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
             context.addError(state.currentParameterTypeFieldPath, "Parameter type is required");
         }
 
-        if (manifestParameter.getRequired() != null) {
-            if (!manifestParameter.getRequired().booleanValue()) {
-                context.addError(state.currentParameterRequiredFieldPath, "Parameter required must be a boolean type (true or false)");
-            }
+        Boolean required = manifestParameter.getRequired();
+        if (required != null && !Boolean.TRUE.equals(required) && !Boolean.FALSE.equals(required)) {
+            context.addError(state.currentParameterRequiredFieldPath,
+                    "Parameter required must be the boolean true or false");
         }
 
         if (manifestParameter.getDefaultValue() != null && !manifestParameter.getDefaultValue().isNull()) {
