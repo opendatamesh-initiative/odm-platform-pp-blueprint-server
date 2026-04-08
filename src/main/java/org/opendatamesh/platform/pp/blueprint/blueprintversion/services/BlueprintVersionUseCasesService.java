@@ -68,8 +68,5 @@ public class BlueprintVersionUseCasesService {
         if (!StringUtils.hasText(command.getBlueprintVersion().getBlueprint().getName()) && !StringUtils.hasText(command.getBlueprintVersion().getBlueprint().getUuid())) {
             throw new BadRequestException("Blueprint name or uuid is required to publish a blueprint version");
         }
-        if (!StringUtils.hasText(command.getBlueprintVersion().getReadme())) {
-            throw new BadRequestException("Readme is required to publish a blueprint version");
-        }
     }
 }

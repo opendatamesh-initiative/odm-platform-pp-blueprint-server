@@ -1,5 +1,6 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.services;
 
+import java.io.File;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,9 +13,7 @@ import org.opendatamesh.platform.git.model.ProviderCustomResourceDefinition;
 import org.opendatamesh.platform.git.model.ProviderCustomResourceProperty;
 import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.git.model.RepositoryOwnerType;
-import org.opendatamesh.platform.git.model.RepositoryPointer;
 import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
-import org.opendatamesh.platform.git.model.RepositoryPointerCommit;
 import org.opendatamesh.platform.git.model.RepositoryVisibility;
 import org.opendatamesh.platform.git.model.User;
 import org.opendatamesh.platform.git.provider.GitProvider;
@@ -221,14 +220,21 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
                 .orElseThrow(() -> new BadRequestException("Repository not found with ID: " + repositoryId));
 
         String defaultBranch = StringUtils.hasText(gitRepo.getDefaultBranch()) ? gitRepo.getDefaultBranch() : null;
-        RepositoryPointer repositoryPointer = resolveRepositoryPointerForTag(createRepositoryTagReqRes, defaultBranch);
-        String tagTargetCommit = resolveTagTargetCommit(createRepositoryTagReqRes);
+        String branchName = StringUtils.hasText(createRepositoryTagReqRes.getBranchName())
+                ? createRepositoryTagReqRes.getBranchName()
+                : defaultBranch;
+        if (!StringUtils.hasText(branchName)) {
+            throw new BadRequestException(
+                    "Either branchName or a repository default branch is required to locate the clone state");
+        }
+        RepositoryPointerBranch repositoryPointer = new RepositoryPointerBranch(branchName);
 
         try {
             provider.gitOperation().readRepository(gitRepo, repositoryPointer, repository -> {
+                String targetSha = retrieveTagTargetCommit(createRepositoryTagReqRes, repository, provider, defaultBranch);
                 Tag newTag = new Tag();
-                newTag.setName(createRepositoryTagReqRes.getName().trim());
-                newTag.setCommitHash(tagTargetCommit);
+                newTag.setName(createRepositoryTagReqRes.getName());
+                newTag.setCommitHash(targetSha);
                 if (StringUtils.hasText(createRepositoryTagReqRes.getMessage())) {
                     newTag.setMessage(createRepositoryTagReqRes.getMessage());
                 }
@@ -248,23 +254,14 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
         }
     }
 
-    private RepositoryPointer resolveRepositoryPointerForTag(CreateRepositoryTagReqRes req, String defaultBranch) {
+    private String retrieveTagTargetCommit(CreateRepositoryTagReqRes req, File repository, GitProvider provider, String defaultBranch) {
         if (StringUtils.hasText(req.getCommitHash())) {
-            return new RepositoryPointerCommit(req.getCommitHash().trim());
+            return req.getCommitHash();
         }
-        String branch = StringUtils.hasText(req.getBranchName()) ? req.getBranchName().trim() : defaultBranch;
-        if (!StringUtils.hasText(branch)) {
-            throw new BadRequestException(
-                    "Either commitHash, branchName, or a repository default branch is required to locate the clone state");
+        if (StringUtils.hasText(req.getBranchName())) {
+            return provider.gitOperation().getHeadSha(repository, req.getBranchName());
         }
-        return new RepositoryPointerBranch(branch);
-    }
-
-    private String resolveTagTargetCommit(CreateRepositoryTagReqRes req) {
-        if (StringUtils.hasText(req.getCommitHash())) {
-            return req.getCommitHash().trim();
-        }
-        return "HEAD";
+        return provider.gitOperation().getHeadSha(repository, defaultBranch);
     }
 
     /**
