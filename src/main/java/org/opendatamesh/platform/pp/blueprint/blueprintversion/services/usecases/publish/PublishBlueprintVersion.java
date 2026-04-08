@@ -8,6 +8,8 @@ import org.opendatamesh.platform.pp.blueprint.exceptions.ResourceConflictExcepti
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersionShort;
 import java.util.Optional;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.util.StringUtils;
+import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 
 class PublishBlueprintVersion implements UseCase {
 
@@ -42,6 +44,7 @@ class PublishBlueprintVersion implements UseCase {
 
             Blueprint blueprint = blueprintPersistenceOutboundPort.findByUuidOrName(blueprintVersion.getBlueprintUuid(), blueprintVersion.getBlueprint().getName());
             blueprintVersion.setBlueprint(blueprint);
+            validateExistingReadme(blueprint, blueprintVersion);
 
             JsonNode filled = manifestOutboundPort.autofillManifest(blueprintVersion.getSpec(), blueprintVersion.getSpecVersion(), blueprintVersion.getContent(), blueprint.getName());
             blueprintVersion.setContent(filled);
@@ -61,5 +64,11 @@ class PublishBlueprintVersion implements UseCase {
             BlueprintVersion created = blueprintVersionPersistencePort.createBlueprintVersion(blueprintVersion);
             presenter.presentPublished(created);
         });
+    }
+
+    private void validateExistingReadme(Blueprint blueprint, BlueprintVersion blueprintVersion) {
+        if (blueprint.getBlueprintRepo() != null && StringUtils.hasText(blueprint.getBlueprintRepo().getReadmePath()) && !StringUtils.hasText(blueprintVersion.getReadme())) {
+            throw new BadRequestException("Readme is required to publish a blueprint version if readme path is specified");
+        }
     }
 }

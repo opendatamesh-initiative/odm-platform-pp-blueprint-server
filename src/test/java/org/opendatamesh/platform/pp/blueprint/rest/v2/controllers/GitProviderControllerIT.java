@@ -22,14 +22,29 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import org.mockito.Mockito;
+import org.opendatamesh.platform.git.git.GitOperation;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
 
 public class GitProviderControllerIT extends BlueprintApplicationIT {
 
@@ -593,6 +608,107 @@ public class GitProviderControllerIT extends BlueprintApplicationIT {
     }
 
     @Test
+    public void whenCreateRepositoryTagWithValidParametersThenReturnsOk() throws Exception {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        when(gitProviderFactoryMock.getMockGitProvider().getRepository(eq("repo-123"), eq("owner-1")))
+                .thenReturn(Optional.of(mockRepo));
+        String resolvedTipSha = "deadbeef0123456789abcdef";
+        GitOperation mockGitOperation = setupMockGitOperationForRepositoryTagCreationWithBranch("main", resolvedTipSha);
+
+        CreateRepositoryTagReqRes body = new CreateRepositoryTagReqRes();
+        body.setName("v1.2.0");
+        body.setBranchName("main");
+        body.setMessage("Release 1.2.0");
+        body.setAuthorName("Tag Author");
+        body.setAuthorEmail("tagger@example.com");
+
+        ResponseEntity<Void> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS,
+                        "/repositories/repo-123/tags?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com"),
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                Void.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        verify(mockGitOperation).getHeadSha(any(File.class), eq("main"));
+        verify(mockGitOperation).addTag(any(File.class), argThat(tag ->
+                "v1.2.0".equals(tag.getName())
+                        && resolvedTipSha.equals(tag.getCommitHash())
+                        && "Release 1.2.0".equals(tag.getMessage())
+                        && "Tag Author".equals(tag.getAuthor())
+                        && "tagger@example.com".equals(tag.getAuthorEmail())));
+        verify(mockGitOperation).push(any(File.class), eq(true));
+    }
+
+    @Test
+    public void whenCreateRepositoryTagWithoutNameThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+
+        CreateRepositoryTagReqRes body = new CreateRepositoryTagReqRes();
+        body.setBranchName("main");
+        body.setAuthorName("A");
+        body.setAuthorEmail("a@example.com");
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS,
+                        "/repositories/repo-123/tags?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com"),
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    public void whenCreateRepositoryTagWithCommitHashThenTagPointsToThatCommit() throws Exception {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        when(gitProviderFactoryMock.getMockGitProvider().getRepository(eq("repo-123"), eq("owner-1")))
+                .thenReturn(Optional.of(mockRepo));
+        GitOperation mockGitOperation = setupMockGitOperationForRepositoryTagCreation("abc123def456");
+
+        CreateRepositoryTagReqRes body = new CreateRepositoryTagReqRes();
+        body.setName("v2.0.0");
+        body.setCommitHash("abc123def456");
+
+        ResponseEntity<Void> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS,
+                        "/repositories/repo-123/tags?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com"),
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                Void.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        verify(mockGitOperation, never()).getHeadSha(any(File.class), anyString());
+        verify(mockGitOperation).addTag(any(File.class), argThat(tag ->
+                "v2.0.0".equals(tag.getName()) && "abc123def456".equals(tag.getCommitHash())));
+        verify(mockGitOperation).push(any(File.class), eq(true));
+    }
+
+    @Test
+    public void whenCreateRepositoryTagWithoutProviderBaseUrlThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+        CreateRepositoryTagReqRes body = minimalCreateRepositoryTagRequest();
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/tags?ownerId=owner-1&providerType=GITHUB"),
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     public void whenCreateRepositoryWithoutProviderBaseUrlThenReturnBadRequest() {
         // Given - providerType present but providerBaseUrl missing
         HttpHeaders headers = createTestHeaders();
@@ -815,6 +931,56 @@ public class GitProviderControllerIT extends BlueprintApplicationIT {
         repo.setCloneUrlSsh("git@github.com:test/" + name + ".git");
         repo.setDefaultBranch("main");
         return repo;
+    }
+
+    /**
+     * Same arrangement as {@code DataProductDescriptorControllerIT.setupMockGitOperationForTagCreation}
+     * in registry-server: temp clone dir, {@code readRepository} callback, {@code getHeadSha} for default-branch
+     * resolution, {@code addTag}/{@code push} no-ops.
+     */
+    private GitOperation setupMockGitOperationForRepositoryTagCreation(String commitShaWhenHeadResolved) throws Exception {
+        File mockRepoDir = Files.createTempDirectory("blueprint-mock-repo-tag-").toFile();
+        mockRepoDir.deleteOnExit();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(gitProviderFactoryMock.getMockGitProvider().gitOperation()).thenReturn(mockGitOperation);
+        doAnswer(invocation -> {
+            Consumer<File> consumer = invocation.getArgument(2);
+            consumer.accept(mockRepoDir);
+            return null;
+        }).when(mockGitOperation).readRepository(any(), any(), any());
+        when(mockGitOperation.getHeadSha(any(File.class), anyString())).thenReturn(commitShaWhenHeadResolved);
+        doNothing().when(mockGitOperation).addTag(any(File.class), any(Tag.class));
+        doNothing().when(mockGitOperation).push(any(File.class), anyBoolean());
+        return mockGitOperation;
+    }
+
+    /**
+     * Same arrangement as {@code DataProductDescriptorControllerIT.setupMockGitOperationForTagCreationWithBranch}
+     * in registry-server.
+     */
+    private GitOperation setupMockGitOperationForRepositoryTagCreationWithBranch(String branchName, String commitSha)
+            throws Exception {
+        File mockRepoDir = Files.createTempDirectory("blueprint-mock-repo-tag-branch-").toFile();
+        mockRepoDir.deleteOnExit();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(gitProviderFactoryMock.getMockGitProvider().gitOperation()).thenReturn(mockGitOperation);
+        doAnswer(invocation -> {
+            Consumer<File> consumer = invocation.getArgument(2);
+            consumer.accept(mockRepoDir);
+            return null;
+        }).when(mockGitOperation).readRepository(any(), any(), any());
+        when(mockGitOperation.getHeadSha(any(File.class), eq(branchName))).thenReturn(commitSha);
+        doNothing().when(mockGitOperation).addTag(any(File.class), any(Tag.class));
+        doNothing().when(mockGitOperation).push(any(File.class), anyBoolean());
+        return mockGitOperation;
+    }
+
+    private static CreateRepositoryTagReqRes minimalCreateRepositoryTagRequest() {
+        CreateRepositoryTagReqRes body = new CreateRepositoryTagReqRes();
+        body.setName("v1.0.0");
+        body.setAuthorName("A");
+        body.setAuthorEmail("a@example.com");
+        return body;
     }
 
     @Test

@@ -1,8 +1,10 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.services;
 
+import java.io.File;
 import java.util.List;
 import java.util.Optional;
 
+import org.opendatamesh.platform.git.exceptions.GitOperationException;
 import org.opendatamesh.platform.git.model.Branch;
 import org.opendatamesh.platform.git.model.Tag;
 import org.opendatamesh.platform.git.model.Organization;
@@ -11,6 +13,7 @@ import org.opendatamesh.platform.git.model.ProviderCustomResourceDefinition;
 import org.opendatamesh.platform.git.model.ProviderCustomResourceProperty;
 import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.git.model.RepositoryOwnerType;
+import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
 import org.opendatamesh.platform.git.model.RepositoryVisibility;
 import org.opendatamesh.platform.git.model.User;
 import org.opendatamesh.platform.git.provider.GitProvider;
@@ -22,6 +25,7 @@ import org.opendatamesh.platform.pp.blueprint.git.provider.GitProviderFactory;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.BranchMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.BranchRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.CreateRepositoryReqRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.CreateRepositoryTagReqRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.OrganizationMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.OrganizationRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.ProviderCustomResourceDefinitionMapper;
@@ -201,6 +205,63 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
         Page<Tag> tags = provider.listTags(repository, pageable);
 
         return tags.map(tagMapper::toRes);
+    }
+
+    @Override
+    public void createRepositoryTag(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, CreateRepositoryTagReqRes createRepositoryTagReqRes) {
+        validateCreateRepositoryTagReqRes(createRepositoryTagReqRes);
+
+        GitProvider provider = gitProviderFactory.buildGitProvider(
+                new GitProviderIdentifier(providerIdentifier.getProviderType(), providerIdentifier.getProviderBaseUrl()),
+                headers
+        );
+
+        Repository gitRepo = provider.getRepository(repositoryId, ownerId)
+                .orElseThrow(() -> new BadRequestException("Repository not found with ID: " + repositoryId));
+
+        String defaultBranch = StringUtils.hasText(gitRepo.getDefaultBranch()) ? gitRepo.getDefaultBranch() : null;
+        String branchName = StringUtils.hasText(createRepositoryTagReqRes.getBranchName())
+                ? createRepositoryTagReqRes.getBranchName()
+                : defaultBranch;
+        if (!StringUtils.hasText(branchName)) {
+            throw new BadRequestException(
+                    "Either branchName or a repository default branch is required to locate the clone state");
+        }
+        RepositoryPointerBranch repositoryPointer = new RepositoryPointerBranch(branchName);
+
+        try {
+            provider.gitOperation().readRepository(gitRepo, repositoryPointer, repository -> {
+                String targetSha = retrieveTagTargetCommit(createRepositoryTagReqRes, repository, provider, defaultBranch);
+                Tag newTag = new Tag();
+                newTag.setName(createRepositoryTagReqRes.getName());
+                newTag.setCommitHash(targetSha);
+                if (StringUtils.hasText(createRepositoryTagReqRes.getMessage())) {
+                    newTag.setMessage(createRepositoryTagReqRes.getMessage());
+                }
+                newTag.setAuthor(createRepositoryTagReqRes.getAuthorName());
+                newTag.setAuthorEmail(createRepositoryTagReqRes.getAuthorEmail());
+                provider.gitOperation().addTag(repository, newTag);
+                provider.gitOperation().push(repository, true);
+            });
+        } catch (GitOperationException e) {
+            throw new BadRequestException("Failed to create tag on repository " + repositoryId + " with owner ID " + ownerId + ": " + e.getMessage(), e);
+        }
+    }
+
+    private void validateCreateRepositoryTagReqRes(CreateRepositoryTagReqRes req) {
+        if (!StringUtils.hasText(req.getName())) {
+            throw new BadRequestException("Tag name is required");
+        }
+    }
+
+    private String retrieveTagTargetCommit(CreateRepositoryTagReqRes req, File repository, GitProvider provider, String defaultBranch) {
+        if (StringUtils.hasText(req.getCommitHash())) {
+            return req.getCommitHash();
+        }
+        if (StringUtils.hasText(req.getBranchName())) {
+            return provider.gitOperation().getHeadSha(repository, req.getBranchName());
+        }
+        return provider.gitOperation().getHeadSha(repository, defaultBranch);
     }
 
     /**
