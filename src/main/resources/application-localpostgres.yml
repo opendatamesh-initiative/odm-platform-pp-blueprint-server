@@ -8,8 +8,3 @@ spring:
     url: jdbc:postgresql://localhost:5432/postgres?useSSL=false
     username: postgres
     password: my-secret-password
-
-odm:
-  product-plane:
-    policy-service:
-      active: false
