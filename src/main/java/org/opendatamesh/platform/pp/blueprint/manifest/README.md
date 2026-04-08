@@ -16,6 +16,7 @@
     * [Specification](#specification)
         * [1. Specification Definition with Schema](#1-specification-definition-with-schema)
             * [Core Schema Objects](#core-schema-objects)
+            * [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui)
         * [2. Manifest Examples](#2-manifest-examples)
             * [2.1. Monorepo, no composition](#21-monorepo-no-composition)
             * [2.2. Monorepo + composition](#22-monorepo--composition)
@@ -68,15 +69,11 @@ The manifest must explicitly declare all parameters required to successfully ins
 - It must define the parameter keys, expected data types, and any default values or validation rules.
 - These parameters will act as variables that are injected and resolved within the Blueprint files during the
   instantiation process.
-- **UI/UX Presentation:** The specification must support presentation metadata for parameters to drive dynamic frontend
-  forms during instantiation. This includes:
-    - **Grouping:** Categorizing related parameters into logical sections or steps (e.g., "Networking", "Database
-      Config").
-    - **Labeling:** Defining human-readable display names distinct from the underlying variable keys.
-    - **Descriptions/Tooltips:** Providing helper text to guide the user in supplying the correct values.
-    - **Input Types:** Suggesting specific UI components (e.g., dropdowns for enums, password fields for secrets,
-      toggles for booleans).
-    - **Required parameters:** If the parameter is mandatory or not, used also for validation.
+- **UI/UX Presentation:** The specification must support presentation metadata for parameters to drive collection UIs
+  during instantiation. The `parameters[].ui` object carries this metadata; see
+  [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui) for supported fields and how to apply them.
+    - **Required parameters:** Declare mandatory inputs with `required` on the parameter. Treat `required` as binding for
+      validation and mark the corresponding control as required in the collection UI.
 
 #### 3.2. Resource Protection
 
@@ -113,7 +110,8 @@ To ensure stability, backward compatibility, and reliable lineage, the manifest 
 levels:
 
 - **Specification Versioning:** The manifest must declare the schema version of the manifest file itself (e.g.,
-  `specVersion: 1.0.0`). This allows the orchestrating system to parse the file correctly and supports future iterations or
+  `specVersion: 1.0.0`). This allows the orchestrating system to parse the file correctly and supports future iterations
+  or
   breaking changes to the manifest schema.
 - **Blueprint Versioning:** The manifest must declare the release version of the specific Blueprint it represents (e.g.,
   `version: 1.2.0`, adhering to Semantic Versioning). This allows users to instantiate specific, stable releases of a
@@ -149,7 +147,8 @@ integrations.
 #### Core Schema Objects
 
 - `spec` (String, Required): The specification name, must be set to `odm-blueprint-manifest`.
-- `specVersion` (String, Required): The version of the manifest schema itself (e.g., `1.0.0`). The orchestrator uses this
+- `specVersion` (String, Required): The version of the manifest schema itself (e.g., `1.0.0`). The orchestrator uses
+  this
   to determine how to parse the file.
 - `name` (String, Required): The machine-readable identifier of the blueprint.
 - `displayName`(String, Optional): The human-readable identifier of the blueprint.
@@ -172,15 +171,10 @@ integrations.
           types).
         - `min` (Number, Optional): Minimum numeric value, or minimum length/item count for strings and arrays.
         - `max` (Number, Optional): Maximum numeric value, or maximum length/item count for strings and arrays.
-    - `ui` (Object, Optional): Metadata driving the frontend form generation.
-        - `group` (String, Optional): Categorizes the parameter into logical sections for UI presentation. Supports
-          nested groups using a forward slash (`/`) delimiter (e.g., `General Configuration/Product/Advanced`), allowing
-          the frontend to render hierarchical menus, tabs, or wizard steps.
-        - `label` (String, Optional): A human-readable display name for the parameter distinct from the programmatic
-          key.
-        - `description` (String, Optional): Helper text or tooltip to guide the user in supplying the correct value.
-        - `formType` (String, Optional): Suggests the specific UI component for the frontend to render (e.g., `text`,
-          `number`, `dropdown`, `tags`, `json-editor`).
+    - `ui` (Object, Optional): Presentation metadata for dynamic forms. Standard fields (all optional strings unless
+      noted) are `group`, `label`, `description`, and `formType`. The parser preserves any additional keys on this
+      object
+      for forward compatibility. See [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui) for how to use them.
 - `protectedResources` (Array of Objects, Optional): Files, directories, or globs marked immutable after initial
   generation. Each item:
     - `path` (String, Required): Path relative to the repository root, or a glob (e.g., `infrastructure/`*).
@@ -228,6 +222,57 @@ integrations.
           `repositoryNamePostfix`.
         - An entry uses **either** the `module` shape **or** the `sourcePath` / `targetPath` shape, matching whether
           `composition` is in use; do not mix both on the same object.
+
+#### UI metadata (`parameters[].ui`)
+
+Optional hints for tools that collect parameter values (web UI, CLI wizard, IDE plugin, and so on).
+
+**Authors:** Add `ui` to steer grouping, labels, help text, and control style. Limit the block to the four standard
+string fields unless a target client documents additional keys.
+
+**Clients:** Support `group`, `label`, `description`, and `formType`. Bind each field to widgets and layout in the
+collection flow; keep the same manifest behaving the same way across product releases. Preserve unknown keys on round-trip
+when the tool reads and writes manifests; drop or ignore extra properties only if the product definition says so.
+
+##### Fields
+
+| Field | Purpose |
+| --- | --- |
+| `group` | **Authors:** Split the form into sections with a `/`-separated path (trim segments; ignore extra spaces around `/`). Example: `Networking / Firewall`. Leave empty or omit to mark the parameter as ungrouped. **Clients:** List ungrouped parameters after every grouped section. |
+| `label` | **Authors:** Set a short title for the field. **Clients:** Show `label` when present; display `key` when `label` is absent. |
+| `description` | **Authors:** Add helper text for the field. **Clients:** Show it as tooltip, caption, or inline help next to the control. |
+| `formType` | **Authors:** Suggest a control style; combine with `type` and `validation` (see below). **Clients:** Interpret `formType` together with `type` and `validation` when picking a control. |
+
+##### Grouping
+
+**Authors:** Use `group` to mirror the user’s task (wizard steps, accordions, columns). Treat each path segment as one
+level of nesting.
+
+**Clients:** Build nested sections from the path. Pick one ordering rule—manifest order, alphabetical segment order, or
+fixed platform order—and apply it to sibling groups and to fields inside each group for every run.
+
+##### Relating `type`, `validation`, and `formType`
+
+**Clients:** Pick a single control per parameter that collects values compatible with `type` and `validation`.
+
+**Authors:** Set `type` first, add `validation` constraints, then set `ui.formType` to one of the supported values for
+that `type` (or omit it and rely on defaults described below).
+
+| Parameter `type` | Supported `formType` values | Use `validation` for |
+| --- | --- | --- |
+| `string` | `text` — single-line input (default when omitting `formType`). `textarea` — multi-line input. `dropdown` — fixed choices; omit `formType` when `validation.allowedValues` is set and a choice control is intended. | `allowedValues` (enforce choice list), `pattern` (regex), `format` (e.g. `textarea` / `multiline` with `textarea`-style `formType`), `min` / `max` (string length) |
+| `integer` | `number` — numeric input (default when omitting `formType`). `text` — free-form field; still coerce to integer before submit. | `min`, `max` |
+| `boolean` | `checkbox`, `switch` — two-state controls (omit `formType` to use the same semantics with a default style). | — |
+| `array` | `json` — structured editor or JSON text for arbitrary array content (default when omitting `formType`). `stringList` — row or line-based editor for an array of strings. | `min` / `max` (item count or length per product rules) |
+| `object` | `json` — structured editor or JSON text (default when omitting `formType`). | `min` / `max` (property count per product rules, if used) |
+
+**Authors:** Avoid contradictory combinations (for example `type: boolean` with `formType: dropdown` unless
+`validation.allowedValues` defines the choices). **Clients:** Reject ambiguous manifests at validation time or apply a
+deterministic fallback and warn the user.
+
+**Non-standard `formType` strings** (`tags`, `password`, `json-editor`, vendor-specific names): **Authors:** Prefer the
+table above for portability. **Clients:** Map them to the closest control in the same row, treat as plain text, or omit;
+record that mapping in product documentation.
 
 ---
 
@@ -309,7 +354,6 @@ parameters:
     ui:
       group: Security
       label: Enable PII masking
-      formType: toggle
 
 composition:
   - module: storage
@@ -426,15 +470,21 @@ instantiation:
 
 ## Java API
 
-The Blueprint Server ships a Jackson-based parser for the manifest model (`org.opendatamesh.platform.pp.blueprint.manifest`).
+The Blueprint Server ships a Jackson-based parser for the manifest model (
+`org.opendatamesh.platform.pp.blueprint.manifest`).
 
 ### Using the parser
 
-1. **Obtain a parser** — `ManifestParserFactory.getParser()` builds a default `ObjectMapper` with empty values omitted on write (`JsonInclude.Include.NON_EMPTY`). Use `ManifestParserFactory.getParser(ObjectMapper)` if you need a custom mapper (modules, YAML at the root, etc.).
+1. **Obtain a parser** — `ManifestParserFactory.getParser()` builds a default `ObjectMapper` with empty values omitted
+   on write (`JsonInclude.Include.NON_EMPTY`). Use `ManifestParserFactory.getParser(ObjectMapper)` if you need a custom
+   mapper (modules, YAML at the root, etc.).
 
-2. **Load the document to a `JsonNode`** — The parser API is **tree in, tree out** (`deserialize` / `serialize`). You choose the format when reading:
-   - **JSON:** `new ObjectMapper().readTree(inputStream)` or `readTree(jsonString)`.
-   - **YAML:** use `new ObjectMapper(new YAMLFactory())` from `jackson-dataformat-yaml` and call `readTree` on the manifest file or string. Ensure that artifact is on your **runtime** classpath if the service loads YAML manifests (it is not always pulled in transitively).
+2. **Load the document to a `JsonNode`** — The parser API is **tree in, tree out** (`deserialize` / `serialize`). You
+   choose the format when reading:
+    - **JSON:** `new ObjectMapper().readTree(inputStream)` or `readTree(jsonString)`.
+    - **YAML:** use `new ObjectMapper(new YAMLFactory())` from `jackson-dataformat-yaml` and call `readTree` on the
+      manifest file or string. Ensure that artifact is on your **runtime** classpath if the service loads YAML
+      manifests (it is not always pulled in transitively).
 
 3. **Parse and emit:**
 
@@ -449,16 +499,21 @@ Invalid or unsupported shapes fail during binding (Jackson), similar to the desc
 
 ### Extending the specification
 
-Every schema object in the manifest model inherits from `ManifestComponentBase`. **Standard fields** map to typed Java properties; **any other property** in the document is captured as raw JSON in `additionalProperties` (forward compatibility).
+Every schema object in the manifest model inherits from `ManifestComponentBase`. **Standard fields** map to typed Java
+properties; **any other property** in the document is captured as raw JSON in `additionalProperties` (forward
+compatibility).
 
 To give a **vendor- or platform-specific** key a typed representation:
 
 1. **Define a POJO** extending `ManifestComponentBase` with the fields you need (Jackson will bind nested content).
 
-2. **Implement `ManifestComponentBaseExtendedConverter<T>`** (`org.opendatamesh.platform.pp.blueprint.manifest.extensions`):
-   - `supports(String key, Class<? extends ManifestComponentBase> parentClass)` — return `true` for the extension property name and the parent node type (for example root manifest: `Manifest.class` and your top-level key).
-   - `deserialize(ObjectMapper, JsonNode)` — produce your subtype (typically `mapper.treeToValue(jsonNode, MyExtension.class)`).
-   - `serialize(ObjectMapper, T)` — produce a `JsonNode` for that property (typically `mapper.valueToTree(value)`).
+2. **Implement `ManifestComponentBaseExtendedConverter<T>`** (
+   `org.opendatamesh.platform.pp.blueprint.manifest.extensions`):
+    - `supports(String key, Class<? extends ManifestComponentBase> parentClass)` — return `true` for the extension
+      property name and the parent node type (for example root manifest: `Manifest.class` and your top-level key).
+    - `deserialize(ObjectMapper, JsonNode)` — produce your subtype (typically
+      `mapper.treeToValue(jsonNode, MyExtension.class)`).
+    - `serialize(ObjectMapper, T)` — produce a `JsonNode` for that property (typically `mapper.valueToTree(value)`).
 
 3. **Register the converter on the parser** (fluent), then deserialize or serialize as usual:
 
@@ -467,6 +522,10 @@ To give a **vendor- or platform-specific** key a typed representation:
        .register(new MyExtensionConverter());
    ```
 
-On **deserialization**, matching keys are removed from `additionalProperties` and the typed instance is stored in `parsedProperties`. On **serialization**, parsed extensions are written back into the JSON tree for those keys. Keys that are **not** covered by a registered converter remain in `additionalProperties` only.
+On **deserialization**, matching keys are removed from `additionalProperties` and the typed instance is stored in
+`parsedProperties`. On **serialization**, parsed extensions are written back into the JSON tree for those keys. Keys
+that are **not** covered by a registered converter remain in `additionalProperties` only.
 
-You can register multiple converters; the first converter whose `supports` method matches wins. Extension handling walks the full manifest tree (root, parameters, composition, instantiation, nested objects), so you can target extension fields on child nodes by returning the appropriate `parentClass` from `supports`.
+You can register multiple converters; the first converter whose `supports` method matches wins. Extension handling walks
+the full manifest tree (root, parameters, composition, instantiation, nested objects), so you can target extension
+fields on child nodes by returning the appropriate `parentClass` from `supports`.
