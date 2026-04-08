@@ -12,6 +12,12 @@ public class BlueprintVersionSearchOptions {
     private String blueprintUuid;
 
     @Parameter(
+            description = "Filter blueprint versions by parent blueprint name. Exact match (case-insensitive).",
+            schema = @Schema(type = "string")
+    )
+    private String blueprintName;
+
+    @Parameter(
             description = "Filter blueprint versions by name. Exact match (case-insensitive).",
             schema = @Schema(type = "string")
     )
@@ -49,6 +55,14 @@ public class BlueprintVersionSearchOptions {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getBlueprintName() {
+        return blueprintName;
+    }
+
+    public void setBlueprintName(String blueprintName) {
+        this.blueprintName = blueprintName;
     }
 
     public String getTag() {

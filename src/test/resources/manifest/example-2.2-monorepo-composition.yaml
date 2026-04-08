@@ -1,6 +1,6 @@
 # Section 2.2 — README: Monorepo + composition
 spec: odm-blueprint-manifest
-specVersion: v1
+specVersion: 1.0.0
 name: full-stack-dp
 version: 2.1.0
 description: Parent blueprint composing storage and serving modules into one repo.

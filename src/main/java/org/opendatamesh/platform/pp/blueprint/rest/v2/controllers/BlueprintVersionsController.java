@@ -1,34 +1,31 @@
 package org.opendatamesh.platform.pp.blueprint.rest.v2.controllers;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionCrudService;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionQueryService;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.MediaType;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.web.PageableDefault;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.BlueprintVersionUseCasesService;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionCrudService;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionQueryService;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.ErrorRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionSearchOptions;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionShortRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionCommandRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionResponseRes;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping(value = "/api/v2/pp/blueprint/blueprints-versions", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -48,6 +45,9 @@ public class BlueprintVersionsController {
      */
     @Autowired
     private BlueprintVersionQueryService blueprintVersionQueryService;
+
+    @Autowired
+    private BlueprintVersionUseCasesService blueprintVersionUseCasesService;
 
     @Hidden
     @Operation(summary = "Create a new blueprint version", description = "Creates a new blueprint version")
@@ -138,6 +138,29 @@ public class BlueprintVersionsController {
             @PathVariable("uuid") String uuid
     ) {
         blueprintVersionCrudService.delete(uuid);
+    }
+
+    @Operation(
+            summary = "Instantiate blueprint version into target repositories",
+            description = "Populates target repository content from a selected blueprint version and parameter values."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Instantiation completed successfully",
+                    content = @Content(schema = @Schema(implementation = InstantiateBlueprintVersionResponseRes.class))),
+            @ApiResponse(responseCode = "400", description = "Validation failed for request or manifest parameters; unsupported manifest for this phase; or Git operation failure (see global exception handling)",
+                    content = @Content(schema = @Schema(implementation = ErrorRes.class))),
+            @ApiResponse(responseCode = "500", description = "Internal server error",
+                    content = @Content(schema = @Schema(implementation = ErrorRes.class)))
+    })
+    @PostMapping("/instantiate")
+    @ResponseStatus(HttpStatus.OK)
+    public InstantiateBlueprintVersionResponseRes instantiateBlueprintVersion(
+            @Parameter(description = "Instantiation command", required = true)
+            @RequestBody InstantiateBlueprintVersionCommandRes command,
+            @Parameter(description = "HTTP headers for Git provider authentication")
+            @RequestHeader HttpHeaders headers
+    ) {
+        return blueprintVersionUseCasesService.instantiateBlueprintVersion(command, headers);
     }
 
 }

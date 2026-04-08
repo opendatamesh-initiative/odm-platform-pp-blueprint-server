@@ -561,7 +561,7 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
             // Create a JSON content
             String jsonContent = "{\n" +
                 "  \"spec\": \"odm-blueprint-manifest\",\n" +
-                "  \"specVersion\": \"v1\",\n" +
+                "  \"specVersion\": \"1.0.0\",\n" +
                 "  \"name\": \"analytics-lakehouse\",\n" +
                 "  \"displayName\": \"Analytics Lakehouse Blueprint\",\n" +
                 "  \"version\": \"1.0.0\",\n" +
