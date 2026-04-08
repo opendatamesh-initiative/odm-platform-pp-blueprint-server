@@ -191,6 +191,27 @@ public class GitProviderController {
         return gitProviderService.listTags(providerIdentifier, repositoryId, ownerId, headers, pageable);
     }
 
+    @Operation(summary = "Create repository tag", description = "Clones the repository at a pointer (branch, tag, or commit), creates a Git tag via JGit, and pushes tags to the remote")
+    @PostMapping("/repositories/{repositoryId}/tags")
+    @ResponseStatus(HttpStatus.OK)
+    public void createRepositoryTag(
+            @Parameter(description = "Repository ID", required = true)
+            @PathVariable String repositoryId,
+            @Parameter(description = "Owner ID")
+            @RequestParam String ownerId,
+            @Parameter(description = "Type of the Git provider")
+            @RequestParam String providerType,
+            @Parameter(description = "Base URL of the Git provider")
+            @RequestParam String providerBaseUrl,
+            @Parameter(description = "Repository tag creation request")
+            @RequestBody CreateRepositoryTagReqRes createRepositoryTagReqRes,
+            @Parameter(description = "HTTP headers for Git provider authentication")
+            @RequestHeader HttpHeaders headers
+    ) {
+        ProviderIdentifierRes providerIdentifier = new ProviderIdentifierRes(providerType, providerBaseUrl);
+        gitProviderService.createRepositoryTag(providerIdentifier, repositoryId, ownerId, headers, createRepositoryTagReqRes);
+    }
+
     @Operation(summary = "Get custom provider resource definition", description = "Retrieves a resource custom definition given a specific provider.")
     @GetMapping("/custom-resources/definitions")
     @ResponseStatus(HttpStatus.OK)

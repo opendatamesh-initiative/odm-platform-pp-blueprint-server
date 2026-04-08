@@ -294,7 +294,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
 
         boolean isValid = switch (type) {
             case STRING -> defaultValue.isTextual();
-            case INTEGER -> defaultValue.isInt() || defaultValue.isLong() || defaultValue.isBigInteger();
+            case INTEGER -> defaultValue.isIntegralNumber();
             case BOOLEAN -> defaultValue.isBoolean();
             case ARRAY -> defaultValue.isArray();
             case OBJECT -> defaultValue.isObject();

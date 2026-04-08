@@ -74,6 +74,17 @@ public interface GitProvidersUtilsService {
     Page<TagRes> listTags(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, Pageable pageable);
 
     /**
+     * Create a Git tag on a repository via a local clone and push tags to the remote.
+     *
+     * @param providerIdentifier the provider identifier information (type, baseUrl)
+     * @param repositoryId       the repository ID
+     * @param ownerId            the owner ID (organization or user ID)
+     * @param headers            HTTP headers containing authentication credentials
+     * @param command            tag name, optional pointer (branch/tag/commit), author, optional message
+     */
+    void createRepositoryTag(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, CreateRepositoryTagReqRes command);
+
+    /**
      * Get custom resource definitions for a specific resource type with a given provider.
      * <p>
      * Custom resources are provider-specific resources (e.g., Bitbucket projects, Azure DevOps projects)
