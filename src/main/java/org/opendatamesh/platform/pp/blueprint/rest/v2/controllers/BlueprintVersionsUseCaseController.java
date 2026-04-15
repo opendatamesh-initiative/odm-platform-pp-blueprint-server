@@ -9,8 +9,11 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.BlueprintVersionUseCasesService;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionResponseRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedocumentationfields.UpdateBlueprintVersionDocumentationFieldsCommandRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedocumentationfields.UpdateBlueprintVersionDocumentationFieldsReponseRes;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -43,5 +46,21 @@ public class BlueprintVersionsUseCaseController {
             @RequestBody PublishBlueprintVersionCommandRes command
     ) {
         return blueprintVersionUseCasesService.publishBlueprintVersion(command);
+    }
+
+    @Operation(summary = "Update blueprint version documentation fields", description = "Updates name and description of a blueprint version")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Blueprint version updated successfully",
+                    content = @Content(schema = @Schema(implementation = BlueprintVersionRes.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request"),
+            @ApiResponse(responseCode = "404", description = "Blueprint version not found"),
+            @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @PostMapping("/update-documentation-fields")
+    public UpdateBlueprintVersionDocumentationFieldsReponseRes updateBlueprintVersionDocumentationFields(
+            @Parameter(description = "Documentation update command", required = true)
+            @RequestBody UpdateBlueprintVersionDocumentationFieldsCommandRes command
+    ) {
+        return blueprintVersionUseCasesService.updateBlueprintVersionDocumentationFields(command);
     }
 }

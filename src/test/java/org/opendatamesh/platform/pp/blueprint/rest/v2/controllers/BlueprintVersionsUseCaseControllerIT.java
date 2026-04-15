@@ -10,8 +10,12 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.Bluepr
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionResponseRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedocumentationfields.UpdateBlueprintVersionDocumentationFieldsCommandRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedocumentationfields.UpdateBlueprintVersionDocumentationFieldsReponseRes;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.io.IOException;
@@ -344,6 +348,170 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
                     JsonNode.class
             );
             assertThat(countAfter.getBody().get("totalElements").asInt()).isEqualTo(totalBefore);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /**
+     * Editor updates blueprint version name and description only.
+     */
+    @Test
+    public void whenUpdatesBlueprintVersionNameAndDescriptionThenOnlyThoseFieldsAreUpdated() throws IOException {
+        String prefix = "docFields001";
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes publishCmd = publishCommand(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    prefix + "-manifest",
+                    "1.0.0",
+                    "odm-blueprint-manifest",
+                    "1.0.0"
+            );
+            ResponseEntity<PublishBlueprintVersionResponseRes> published = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(publishCmd),
+                    PublishBlueprintVersionResponseRes.class
+            );
+            assertThat(published.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            String versionUuid = published.getBody().getBlueprintVersion().getUuid();
+
+            ResponseEntity<BlueprintVersionRes> beforeGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid),
+                    BlueprintVersionRes.class
+            );
+            assertThat(beforeGet.getBody()).isNotNull();
+            BlueprintVersionRes before = beforeGet.getBody();
+
+            UpdateBlueprintVersionDocumentationFieldsCommandRes update = new UpdateBlueprintVersionDocumentationFieldsCommandRes();
+            update.setUuid(versionUuid);
+            update.setName("New version name");
+            update.setDescription("New description text");
+            update.setUpdatedBy("editor-user-1");
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<UpdateBlueprintVersionDocumentationFieldsReponseRes> post = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DOCUMENTATION_FIELDS),
+                    new HttpEntity<>(update, headers),
+                    UpdateBlueprintVersionDocumentationFieldsReponseRes.class
+            );
+
+            assertThat(post.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(post.getBody()).isNotNull();
+            assertThat(post.getBody().getBlueprintVersion()).isNotNull();
+            assertThat(post.getBody().getBlueprintVersion().getName()).isEqualTo("New version name");
+            assertThat(post.getBody().getBlueprintVersion().getDescription()).isEqualTo("New description text");
+            assertThat(post.getBody().getBlueprintVersion().getUpdatedBy()).isEqualTo("editor-user-1");
+            assertThat(post.getBody().getBlueprintVersion().getUuid()).isEqualTo(versionUuid);
+
+            ResponseEntity<BlueprintVersionRes> afterGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid),
+                    BlueprintVersionRes.class
+            );
+            BlueprintVersionRes after = afterGet.getBody();
+            assertThat(after).isNotNull();
+            assertThat(after.getUuid()).isEqualTo(before.getUuid());
+            assertThat(after.getReadme()).isEqualTo(before.getReadme());
+            assertThat(after.getTag()).isEqualTo(before.getTag());
+            assertThat(after.getSpec()).isEqualTo(before.getSpec());
+            assertThat(after.getSpecVersion()).isEqualTo(before.getSpecVersion());
+            assertThat(after.getVersionNumber()).isEqualTo(before.getVersionNumber());
+            assertThat(after.getContent()).isEqualTo(before.getContent());
+            assertThat(after.getBlueprint().getUuid()).isEqualTo(before.getBlueprint().getUuid());
+            assertThat(after.getBlueprint().getName()).isEqualTo(before.getBlueprint().getName());
+            assertThat(after.getCreatedBy()).isEqualTo(before.getCreatedBy());
+            assertThat(after.getUpdatedBy()).isEqualTo("editor-user-1");
+
+            rest.delete(apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid));
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /**
+     * Invalid documentation update returns 400 and leaves the version unchanged.
+     */
+    @Test
+    public void whenSendsInvalidBlueprintVersionUpdateFieldThenBadRequest() throws IOException {
+        String prefix = "docFields002";
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes publishCmd = publishCommand(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    prefix + "-manifest",
+                    "1.0.0",
+                    "odm-blueprint-manifest",
+                    "1.0.0"
+            );
+            ResponseEntity<PublishBlueprintVersionResponseRes> published = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(publishCmd),
+                    PublishBlueprintVersionResponseRes.class
+            );
+            assertThat(published.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            String versionUuid = published.getBody().getBlueprintVersion().getUuid();
+
+            ResponseEntity<BlueprintVersionRes> beforeGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid),
+                    BlueprintVersionRes.class
+            );
+            BlueprintVersionRes before = beforeGet.getBody();
+            assertThat(before).isNotNull();
+
+            UpdateBlueprintVersionDocumentationFieldsCommandRes update = new UpdateBlueprintVersionDocumentationFieldsCommandRes();
+            update.setName("   ");
+            update.setDescription("should-not-persist");
+            update.setUpdatedBy("editor");
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<String> post = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DOCUMENTATION_FIELDS),
+                    new HttpEntity<>(update, headers),
+                    String.class
+            );
+
+            assertThat(post.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+            ResponseEntity<BlueprintVersionRes> afterGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid),
+                    BlueprintVersionRes.class
+            );
+            BlueprintVersionRes after = afterGet.getBody();
+            assertThat(after).isNotNull();
+            assertThat(after.getName()).isEqualTo(before.getName());
+            assertThat(after.getDescription()).isEqualTo(before.getDescription());
+            assertThat(after.getUpdatedBy()).isEqualTo(before.getUpdatedBy());
+            assertThat(after.getContent()).isEqualTo(before.getContent());
+
+            rest.delete(apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid));
         } finally {
             rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
         }

@@ -8,6 +8,8 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.Bluepr
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.register.RegisterBlueprintCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.register.RegisterBlueprintResponseRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.BlueprintUpdateDocumentationFieldsCommandRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.UpdateBlueprintDocumentationFieldsResponseRes;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -164,6 +166,163 @@ public class BlueprintUseCaseControllerIT extends BlueprintApplicationIT {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Updates documentation fields only — blueprintRepo must remain unchanged (specs.md).
+     */
+    @Test
+    public void whenUpdateDocumentationFieldsWithoutRepoThenRepoUnchanged() {
+        String namePrefix = "whenUpdateDocumentationFieldsWithoutRepoThenRepoUnchanged";
+
+        RegisterBlueprintCommandRes register = new RegisterBlueprintCommandRes();
+        register.setBlueprint(validBlueprintWithRepo(namePrefix));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<RegisterBlueprintResponseRes> registered = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_REGISTER),
+                new HttpEntity<>(register, headers),
+                RegisterBlueprintResponseRes.class
+        );
+        assertThat(registered.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = registered.getBody().getBlueprint().getUuid();
+
+        try {
+            ResponseEntity<BlueprintRes> beforeEntity = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(beforeEntity.getBody()).isNotNull();
+            BlueprintRes before = beforeEntity.getBody();
+            assertThat(before.getBlueprintRepo()).isNotNull();
+
+            BlueprintUpdateDocumentationFieldsCommandRes update = new BlueprintUpdateDocumentationFieldsCommandRes();
+            update.setUuid(blueprintUuid);
+            update.setDisplayName("new-display-" + namePrefix);
+            update.setDescription("new-description-" + namePrefix);
+
+            ResponseEntity<UpdateBlueprintDocumentationFieldsResponseRes> post = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS,  "/update-documentation-fields"),
+                    new HttpEntity<>(update, headers),
+                    UpdateBlueprintDocumentationFieldsResponseRes.class
+            );
+
+            assertThat(post.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(post.getBody()).isNotNull();
+            assertThat(post.getBody().getBlueprint()).isNotNull();
+            assertThat(post.getBody().getBlueprint().getDisplayName()).isEqualTo("new-display-" + namePrefix);
+            assertThat(post.getBody().getBlueprint().getDescription()).isEqualTo("new-description-" + namePrefix);
+
+            ResponseEntity<BlueprintRes> afterGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(afterGet.getBody()).isNotNull();
+            assertThat(afterGet.getBody().getName()).isEqualTo(before.getName());
+            assertThat(afterGet.getBody().getUuid()).isEqualTo(before.getUuid());
+            assertThat(afterGet.getBody().getDisplayName()).isEqualTo("new-display-" + namePrefix);
+            assertThat(afterGet.getBody().getDescription()).isEqualTo("new-description-" + namePrefix);
+            assertThat(afterGet.getBody().getBlueprintRepo())
+                    .usingRecursiveComparison()
+                    .isEqualTo(before.getBlueprintRepo());
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /**
+     * Updates documentation fields and full repository configuration (specs.md).
+     */
+    @Test
+    public void whenUpdateDocumentationFieldsWithRepoThenRepoAndBlueprintUpdated() {
+        String namePrefix = "whenUpdateDocumentationFieldsWithRepoThenRepoAndBlueprintUpdated";
+
+        RegisterBlueprintCommandRes register = new RegisterBlueprintCommandRes();
+        register.setBlueprint(validBlueprintWithRepo(namePrefix));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<RegisterBlueprintResponseRes> registered = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_REGISTER),
+                new HttpEntity<>(register, headers),
+                RegisterBlueprintResponseRes.class
+        );
+        assertThat(registered.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = registered.getBody().getBlueprint().getUuid();
+
+        try {
+            ResponseEntity<BlueprintRes> beforeEntity = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            BlueprintRes before = beforeEntity.getBody();
+            assertThat(before).isNotNull();
+
+            BlueprintUpdateDocumentationFieldsCommandRes update = new BlueprintUpdateDocumentationFieldsCommandRes();
+            update.setUuid(blueprintUuid);
+            update.setDisplayName("repo-upd-display-" + namePrefix);
+            update.setDescription("repo-upd-desc-" + namePrefix);
+
+            BlueprintUpdateDocumentationFieldsCommandRes.BlueprintRepo repo =
+                    new BlueprintUpdateDocumentationFieldsCommandRes.BlueprintRepo();
+            repo.setExternalIdentifier("ext-id-new");
+            repo.setName("repo-name-new");
+            repo.setDescription("repo-desc-new");
+            repo.setManifestRootPath("/manifest-new");
+            repo.setDescriptorTemplatePath("/template-new");
+            repo.setReadmePath("/readme-new");
+            repo.setRemoteUrlHttp("https://github.com/other-org/other-repo.git");
+            repo.setRemoteUrlSsh("git@github.com:other-org/other-repo.git");
+            repo.setDefaultBranch("develop");
+            repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+            repo.setProviderBaseUrl("https://github.com");
+            repo.setOwnerId("other-org");
+            repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+            update.setBlueprintRepo(repo);
+
+            ResponseEntity<UpdateBlueprintDocumentationFieldsResponseRes> post = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS,  "/update-documentation-fields"),
+                    new HttpEntity<>(update, headers),
+                    UpdateBlueprintDocumentationFieldsResponseRes.class
+            );
+
+            assertThat(post.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(post.getBody()).isNotNull();
+            assertThat(post.getBody().getBlueprint()).isNotNull();
+            assertThat(post.getBody().getBlueprint().getName()).isEqualTo(before.getName());
+            assertThat(post.getBody().getBlueprint().getUuid()).isEqualTo(before.getUuid());
+            assertThat(post.getBody().getBlueprint().getDisplayName()).isEqualTo("repo-upd-display-" + namePrefix);
+            assertThat(post.getBody().getBlueprint().getDescription()).isEqualTo("repo-upd-desc-" + namePrefix);
+
+            BlueprintRes.BlueprintRepoRes expected = new BlueprintRes.BlueprintRepoRes();
+            expected.setExternalIdentifier("ext-id-new");
+            expected.setName("repo-name-new");
+            expected.setDescription("repo-desc-new");
+            expected.setManifestRootPath("/manifest-new");
+            expected.setDescriptorTemplatePath("/template-new");
+            expected.setReadmePath("/readme-new");
+            expected.setRemoteUrlHttp("https://github.com/other-org/other-repo.git");
+            expected.setRemoteUrlSsh("git@github.com:other-org/other-repo.git");
+            expected.setDefaultBranch("develop");
+            expected.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+            expected.setProviderBaseUrl("https://github.com");
+            expected.setOwnerId("other-org");
+            expected.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+            expected.setBlueprintUuid(blueprintUuid);
+
+            ResponseEntity<BlueprintRes> afterGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(afterGet.getBody()).isNotNull();
+            assertThat(afterGet.getBody().getBlueprintRepo())
+                    .usingRecursiveComparison()
+                    .ignoringFields("uuid") // ignore uuid field because when updating the blueprintRepo, the uuid is generated as new one
+                    .isEqualTo(expected);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
     }
 
     private static BlueprintRes validBlueprintWithRepo(String namePrefix) {
