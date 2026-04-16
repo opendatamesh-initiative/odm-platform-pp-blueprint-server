@@ -30,11 +30,12 @@ class UpdateBlueprintVersionDocumentationFields implements UseCase {
     public void execute() {
         transactionalOutboundPort.doInTransaction(() -> {
             BlueprintVersion blueprintVersion = persistenceOutboundPort.findByUuid(command.uuid());
-            validationOutboundPort.validate(command);
 
             blueprintVersion.setName(command.name());
             blueprintVersion.setDescription(command.description());
             blueprintVersion.setUpdatedBy(command.updatedBy());
+
+            validationOutboundPort.validate(command);
 
             BlueprintVersion updated = persistenceOutboundPort.update(blueprintVersion);
             presenter.presentUpdated(updated);

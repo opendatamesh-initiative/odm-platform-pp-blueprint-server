@@ -37,15 +37,15 @@ class UpdateBlueprintDocumentationFields implements UseCase {
             
             blueprint.setDisplayName(command.displayName());
             blueprint.setDescription(command.description());
-            
-            structuralValidationOutboundPort.validate(blueprint);
-            semanticValidationOutboundPort.validate(blueprint);
 
             // replace the blueprint repo with the new one. If null preserve the existing one.
             if (command.blueprintRepo() != null) {
                 command.blueprintRepo().setBlueprint(blueprint);
                 blueprint.setBlueprintRepo(command.blueprintRepo());
             }
+
+            structuralValidationOutboundPort.validate(blueprint);
+            semanticValidationOutboundPort.validate(blueprint);
 
             Blueprint blueprintUpdated = persistenceOutboundPort.update(blueprint);
             presenter.presentUpdated(blueprintUpdated);
