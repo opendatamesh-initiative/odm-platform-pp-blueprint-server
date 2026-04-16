@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.opendatamesh.platform.pp.blueprint.blueprint.services.BlueprintUseCasesService;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.register.RegisterBlueprintCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.register.RegisterBlueprintResponseRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.BlueprintUpdateDocumentationFieldsCommandRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.UpdateBlueprintDocumentationFieldsResponseRes;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -42,5 +44,21 @@ public class BlueprintUseCaseController {
             @RequestBody RegisterBlueprintCommandRes command
     ) {
         return blueprintUseCasesService.registerBlueprint(command);
+    }
+
+    @Operation(summary = "Update blueprint documentation fields", description = "Updates display name, description, and optionally nested repository configuration")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Blueprint updated successfully",
+                    content = @Content(schema = @Schema(implementation = UpdateBlueprintDocumentationFieldsResponseRes.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request (including semantic validation failure)"),
+            @ApiResponse(responseCode = "404", description = "Blueprint not found"),
+            @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @PostMapping("/update-documentation-fields")
+    public UpdateBlueprintDocumentationFieldsResponseRes updateBlueprintDocumentationFields(
+            @Parameter(description = "Update command", required = true) 
+            @RequestBody BlueprintUpdateDocumentationFieldsCommandRes command
+    ) {
+        return blueprintUseCasesService.updateBlueprintDocumentationFields(command);
     }
 }
