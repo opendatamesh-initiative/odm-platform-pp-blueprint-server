@@ -12,15 +12,18 @@ public class InstantiateBlueprintVersionFactory {
     private final GitProviderFactory gitProviderFactory;
     private final BlueprintService blueprintService;
     private final BlueprintVersionCrudService blueprintVersionCrudService;
+    private final BlueprintDataProductDescriptorService blueprintDataProductDescriptorService;
 
     public InstantiateBlueprintVersionFactory(
             GitProviderFactory gitProviderFactory,
             BlueprintService blueprintService,
-            BlueprintVersionCrudService blueprintVersionCrudService
+            BlueprintVersionCrudService blueprintVersionCrudService,
+            BlueprintDataProductDescriptorService blueprintDataProductDescriptorService
     ) {
         this.gitProviderFactory = gitProviderFactory;
         this.blueprintService = blueprintService;
         this.blueprintVersionCrudService = blueprintVersionCrudService;
+        this.blueprintDataProductDescriptorService = blueprintDataProductDescriptorService;
     }
 
     public UseCase buildInstantiateBlueprintVersion(
@@ -41,7 +44,8 @@ public class InstantiateBlueprintVersionFactory {
                 persistencyPort,
                 manifestPort,
                 templatingPort,
-                gitPort
+                gitPort,
+                blueprintDataProductDescriptorService
         );
     }
 }

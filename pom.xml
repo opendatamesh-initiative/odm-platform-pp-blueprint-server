@@ -56,6 +56,7 @@
         <org.flyway.version>11.11.2</org.flyway.version>
         <org.postgresql.version>42.7.3</org.postgresql.version>
         <org.hibernate.jpamodelgen.version>6.4.1.Final</org.hibernate.jpamodelgen.version>
+        <odm.dpds.parser.version>2.4.0</odm.dpds.parser.version>
     </properties>
 
     <dependencies>
@@ -204,6 +205,12 @@
             <groupId>org.opendatamesh</groupId>
             <artifactId>git-utils</artifactId>
             <version>1.0.2</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendatamesh</groupId>
+            <artifactId>odm-specification-dpdescriptor-parser</artifactId>
+            <version>${odm.dpds.parser.version}</version>
         </dependency>
 
     </dependencies>

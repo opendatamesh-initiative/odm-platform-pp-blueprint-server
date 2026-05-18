@@ -19,6 +19,9 @@ import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.git.model.RepositoryPointer;
 import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
 import org.opendatamesh.platform.git.model.RepositoryPointerTag;
+import org.opendatamesh.dpds.model.DataProductVersion;
+import org.opendatamesh.dpds.parser.Parser;
+import org.opendatamesh.dpds.parser.ParserFactory;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
@@ -133,6 +136,15 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
+
+        Path descriptorOnTarget = targetDir.resolve("templates/descriptor.json");
+        assertThat(Files.isRegularFile(descriptorOnTarget)).isTrue();
+        JsonNode descriptorRoot = OBJECT_MAPPER.readTree(descriptorOnTarget.toFile());
+        Parser dpdsParser = ParserFactory.getParser();
+        DataProductVersion parsedDescriptor = dpdsParser.deserialize(descriptorRoot);
+        assertThat(parsedDescriptor.getblueprint()).isNotNull();
+        assertThat(parsedDescriptor.getblueprint().getBlueprintVersionUuid()).isEqualTo(context.blueprintVersionUuid);
+        assertThat(parsedDescriptor.getblueprint().getBlueprintUuid()).isEqualTo(context.blueprintUuid);
 
         deleteCreatedBlueprint(context);
     }
@@ -725,7 +737,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         );
         assertThat(createdVersion.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(createdVersion.getBody()).isNotNull();
-        return new BlueprintContext(createdBlueprint.getBody().getUuid(), uniqueBlueprintName, version);
+        return new BlueprintContext(
+                createdBlueprint.getBody().getUuid(),
+                uniqueBlueprintName,
+                version,
+                createdVersion.getBody().getUuid()
+        );
     }
 
     private BlueprintRes.BlueprintRepoRes buildBlueprintRepo() {
@@ -734,7 +751,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         blueprintRepo.setName("source-blueprint-repository");
         blueprintRepo.setDescription("source");
         blueprintRepo.setManifestRootPath("/manifest.yaml");
-        blueprintRepo.setDescriptorTemplatePath("/templates");
+        blueprintRepo.setDescriptorTemplatePath("templates/descriptor.json.vm");
         blueprintRepo.setReadmePath("/README.md");
         blueprintRepo.setRemoteUrlHttp("https://github.com/org/source-blueprint-repository.git");
         blueprintRepo.setRemoteUrlSsh("git@github.com:org/source-blueprint-repository.git");
@@ -853,11 +870,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         private final String blueprintUuid;
         private final String blueprintName;
         private final String versionNumber;
+        private final String blueprintVersionUuid;
 
-        private BlueprintContext(String blueprintUuid, String blueprintName, String versionNumber) {
+        private BlueprintContext(String blueprintUuid, String blueprintName, String versionNumber, String blueprintVersionUuid) {
             this.blueprintUuid = blueprintUuid;
             this.blueprintName = blueprintName;
             this.versionNumber = versionNumber;
+            this.blueprintVersionUuid = blueprintVersionUuid;
         }
     }
 }
