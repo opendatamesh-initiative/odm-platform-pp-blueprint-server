@@ -1,4 +1,6 @@
-# Specs - Populate target repository from blueprint version
+# SPDD Analysis: Populate target repository from blueprint version
+
+## Spec
 
 ## Scope
 
@@ -108,7 +110,6 @@ This specification defines testable behavior for populating a **single** target 
 **Given** population runs successfully  
 **When** generated files are written to the target repository tree  
 **Then** a YAML snapshot is written to **`.odm/blueprint/blueprint-manifest.yaml`** containing the stored blueprint version manifest content (including blueprint identity and resolved parameter context as serialized in that snapshot)
-
 
 ## High-level acceptance requirements
 

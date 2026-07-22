@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration tests for {@link org.opendatamesh.platform.pp.blueprint.rest.v2.controllers.BlueprintController}.
- * Scenarios trace to {@code agentspecs/changes/blueprint/spec.md} (Gherkin).
+ * Scenarios trace to {@code spdd/analysis/GGQPA-XXX-202603261546-[Analysis]-blueprint-anemic-crud.md} (Gherkin).
  */
 public class BlueprintControllerIT extends BlueprintApplicationIT {
 

@@ -101,7 +101,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Successful monorepo population and push.
+     * Spec — Scenario: Successful monorepo population and push.
      */
     @Test
     void whenInstantiateMonorepoThenReturn200(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -150,7 +150,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Commit author can be customized with default fallback (provided identity).
+     * Spec — Scenario: Commit author can be customized with default fallback (provided identity).
      */
     @Test
     void whenCommitAuthorIsProvidedThenCommitUsesProvidedIdentity(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -209,7 +209,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Commit author can be customized with default fallback (defaults when omitted).
+     * Spec — Scenario: Commit author can be customized with default fallback (defaults when omitted).
      */
     @Test
     void whenCommitAuthorOmittedThenCommitUsesServerDefaults(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -268,7 +268,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Instantiation strategy is derived from manifest metadata.
+     * Spec — Scenario: Instantiation strategy is derived from manifest metadata.
      */
     @Test
     void whenInstantiateWithoutMethodFieldThenNotRejectedForMissingMethod(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -303,7 +303,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Target branch defaults to repository default.
+     * Spec — Scenario: Target branch defaults to repository default.
      */
     @Test
     void whenTargetBranchOmittedThenGitUsesRepositoryDefaultBranch(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -351,7 +351,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Target branch can be overridden.
+     * Spec — Scenario: Target branch can be overridden.
      */
     @Test
     void whenTargetBranchSetThenGitUsesThatBranch(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -402,7 +402,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Exactly one root target is required in this phase (empty list).
+     * Spec — Scenario: Exactly one root target is required in this phase (empty list).
      */
     @Test
     void whenNoTargetRepositoriesThenReturn400() throws Exception {
@@ -423,7 +423,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Exactly one root target is required in this phase (more than one).
+     * Spec — Scenario: Exactly one root target is required in this phase (more than one).
      */
     @Test
     void whenMoreThanOneTargetRepositoryThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -452,7 +452,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Exactly one root target is required in this phase (wrong type).
+     * Spec — Scenario: Exactly one root target is required in this phase (wrong type).
      */
     @Test
     void whenTargetTypeNotRootThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -476,7 +476,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Missing required parameters are rejected.
+     * Spec — Scenario: Missing required parameters are rejected.
      */
     @Test
     void whenRequiredParameterMissingThenReturn400() throws Exception {
@@ -496,7 +496,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Invalid parameter types or constraints are rejected.
+     * Spec — Scenario: Invalid parameter types or constraints are rejected.
      */
     @Test
     void whenParameterTypeOrConstraintInvalidThenReturn400() throws Exception {
@@ -515,7 +515,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Unsupported composition manifests are rejected.
+     * Spec — Scenario: Unsupported composition manifests are rejected.
      */
     @Test
     void whenManifestContainsCompositionThenReturn400() throws Exception {
@@ -533,7 +533,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Unsupported non-monorepo strategy is rejected.
+     * Spec — Scenario: Unsupported non-monorepo strategy is rejected.
      */
     @Test
     void whenManifestIsPolyrepoThenReturn400() throws Exception {
@@ -551,7 +551,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Git operation failures are surfaced as client or server errors per global handling.
+     * Spec — Scenario: Git operation failures are surfaced as client or server errors per global handling.
      */
     @Test
     void whenGitPushFailsThenResponseReflectsGlobalExceptionHandling(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -589,7 +589,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Blueprint README declared in repository metadata is not left at repository root.
+     * Spec — Scenario: Blueprint README declared in repository metadata is not left at repository root.
      */
     @Test
     void whenPopulateThenReadmeIsRelocatedUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -629,7 +629,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Manifest lineage snapshot is persisted under `.odm/blueprint/`.
+     * Spec — Scenario: Manifest lineage snapshot is persisted under `.odm/blueprint/`.
      */
     @Test
     void whenPopulateThenManifestSnapshotIsWrittenUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {

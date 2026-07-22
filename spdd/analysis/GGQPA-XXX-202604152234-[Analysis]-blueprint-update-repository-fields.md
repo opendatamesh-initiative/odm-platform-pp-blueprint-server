@@ -1,6 +1,8 @@
-# Blueprint — use-case update of documentation and repository configuration
+# SPDD Analysis: Blueprint update of documentation and repository fields
 
-**Purpose:** This document is the **development guide for code logic**. It explains why and how; the companion `specs.md` defines testable requirements (Gherkin). Implementers should follow this proposal when writing code and use `specs.md` when writing tests.
+## Proposal
+
+**Purpose:** This document is the **development guide for code logic**. It explains why and how; the Spec section below defines testable requirements (Gherkin). Implementers should follow this proposal when writing code and use the Spec section when writing tests.
 
 **Note:** Every bullet list below is **variable length** (0 to N items). The folder name `blueprint_update_repository_fields` reflects that this use case may change **blueprint** presentation fields and **nested repository configuration** together.
 
@@ -22,10 +24,10 @@ A caller invokes **one POST use-case endpoint** to update an **existing** bluepr
 - **In scope**
   - New REST entry on `**BlueprintUseCaseController**` (or equivalent), **POST**, path as agreed (e.g. `**/api/v2/pp/blueprint/blueprints/update-documentation-fields**`).
   - Dedicated `**CommandRes**` carrying `**displayName**`, `**description**`, and an optional nested **repository configuration** DTO mirroring what validation needs (same conceptual shape as `**BlueprintRepoRes**` / entity fields when repo is updated).
-  - Use-case package: command (domain types), presenter, factory, outbound ports — **per `agentspecs/guidelines/USE_CASE_IMPLEMENTATION.md`** — persistence port loads the existing `**Blueprint**`, applies allowed mutations, saves **outside** the generic overwrite template (direct repository / dedicated service method / entity merge inside the port).
+  - Use-case package: command (domain types), presenter, factory, outbound ports — **per `spdd/norms/USE_CASE_IMPLEMENTATION.md`** — persistence port loads the existing `**Blueprint**`, applies allowed mutations, saves **outside** the generic overwrite template (direct repository / dedicated service method / entity merge inside the port).
   - **Validation:** Run **semantic validation** on the aggregate (or merged repo) using the **same rules** as **RegisterBlueprintSemanticValidationOutboundPortImpl**. Run **structural / required / length / enum** validation consistent with **BlueprintServiceImpl**. For now, duplicate the validation rules when necessary and don't reuse the validation that are already implemented but use the same logic.
   - Transaction boundary via `**TransactionalOutboundPort**` where other use cases do.
-  - Integration tests per `**specs.md**`.
+  - Integration tests per the Spec section.
 - **Out of scope**
   - Implementing this behavior inside `**BlueprintController.put**` or `**overwriteResource**`.
   - Changing blueprint **`name`** or **`uuid`** through this endpoint.
@@ -41,8 +43,49 @@ A caller invokes **one POST use-case endpoint** to update an **existing** bluepr
 
 ## Success criteria
 
-- Gherkin scenarios in `**specs.md**` pass as integration tests.
+- Gherkin scenarios in the Spec section pass as integration tests.
 - Successful POST updates persisted `**displayName**` / `**description**` and, when provided, repository fields; `**GET**` matches.
 - Invalid repo URLs, SSH URLs, unsafe paths, invalid provider/owner types, missing required repo fields, or invalid blueprint fields → **400**; no partial persist.
 - Semantic behavior matches register (`**RegisterBlueprintSemanticValidationOutboundPortImpl**`) for the same inputs on repo fields.
 - **No** use of `**overwriteResource**` / generic CRUD update path for this capability.
+
+## Spec
+
+**Feature:** A **POST** use-case endpoint updates an existing blueprint’s **`displayName`** and **`description`**, and may update **nested repository configuration** in the same request. Validation must match **registration quality**: semantic rules equivalent to `**RegisterBlueprintSemanticValidationOutboundPortImpl**` (URLs, paths), plus required/length/enumeration rules **aligned with `**BlueprintServiceImpl**` validation** for blueprint and `**BlueprintRepo**`. **`uuid`** and blueprint **`name`** are not modified. This flow **does not** use generic CRUD **`PUT` / `overwriteResource`**.
+
+**Implementation note:** Dedicated `**CommandRes**`, use-case stack under `**...services.usecases.*`**, persistence outside `**overwriteResource**` and follow the guidelines inside `**guidelines`** folder. Tests extend `**BlueprintApplicationIT**` (or project standard).
+
+---
+
+## Update display name and description only (repository omitted)
+
+**Requirement:** When the command body sets `**displayName**` and `**description**` and **does not** include nested repository configuration (per API contract for “omit”), the API returns **200**, those two fields persist, and **`name`**, **`uuid`**, and existing **`blueprintRepo`** (if any) remain **unchanged** field-by-field except for audit timestamps if applicable.
+
+**Test:** `whenUpdateDocumentationFieldsWithoutRepoThenRepoUnchanged`
+
+```gherkin
+Given a blueprint exists with uuid "B" and a configured blueprintRepo
+And known values for name, uuid, displayName, description, and all blueprintRepo fields
+When the client sends POST to the update-documentation-fields endpoint for blueprint "B"
+  with body containing only displayName and description (no nested repository payload)
+Then the response status is 200
+And the response body shows the new displayName and description
+And GET "/api/v2/pp/blueprint/blueprints/B" returns the same name, uuid, and blueprintRepo field values as before the request
+```
+
+---
+
+## Update documentation and full repository configuration
+
+**Requirement:** When the command includes a **complete** nested repository configuration (per product rules), the API returns **200** after validation; `**displayName**` and `**description**` persist as sent; `**blueprintRepo**` reflects the new configuration; **`name`** and **`uuid`** of the blueprint are unchanged.
+
+**Test:** `whenUpdateDocumentationFieldsWithRepoThenRepoAndBlueprintUpdated`
+
+```gherkin
+Given a blueprint exists with uuid "B" and a configured blueprintRepo
+When the client sends POST to the update-documentation-fields endpoint for blueprint "B"
+  with body containing displayName, description, and nested repository fields that differ from the stored repo but are valid
+Then the response status is 200
+And GET by uuid "B" shows the updated displayName, description, and blueprintRepo matching the submitted configuration
+And blueprint name and uuid are unchanged from before the request
+```

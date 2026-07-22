@@ -20,13 +20,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration tests for {@link BlueprintUseCaseController}.
- * Scenarios trace to {@code agentspecs/changes/blueprint/register_blueprint_use_case/specs.md} (Gherkin).
+ * Scenarios trace to {@code spdd/analysis/GGQPA-XXX-202603261636-[Analysis]-blueprint-use-case-register.md} (Gherkin).
  */
 public class BlueprintUseCaseControllerIT extends BlueprintApplicationIT {
 
     /**
      * REG-BP-001 — Scenario: Successful registration returns 201 and created blueprint
-     * (specs.md — Feature: Register blueprint via public use-case endpoint)
+     * (Spec — Feature: Register blueprint via public use-case endpoint)
      */
     @Test
     public void whenRegisterBlueprintThenReturn201AndCreatedBlueprint() {
@@ -169,7 +169,7 @@ public class BlueprintUseCaseControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Updates documentation fields only — blueprintRepo must remain unchanged (specs.md).
+     * Updates documentation fields only — blueprintRepo must remain unchanged (Spec section).
      */
     @Test
     public void whenUpdateDocumentationFieldsWithoutRepoThenRepoUnchanged() {
@@ -232,7 +232,7 @@ public class BlueprintUseCaseControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Updates documentation fields and full repository configuration (specs.md).
+     * Updates documentation fields and full repository configuration (Spec section).
      */
     @Test
     public void whenUpdateDocumentationFieldsWithRepoThenRepoAndBlueprintUpdated() {

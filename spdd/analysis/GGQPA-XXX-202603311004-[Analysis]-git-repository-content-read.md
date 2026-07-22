@@ -1,4 +1,6 @@
-# Blueprint Git repository content — read (GET) — testable requirements
+# SPDD Analysis: Blueprint Git repository content read
+
+## Spec
 
 **Feature:** Expose `GET /api/v2/pp/blueprint/blueprints/{uuid}/repository-content` so clients can read UTF-8 text from files in the blueprint’s linked Git repository at a **repository pointer** (branch, tag, or commit hash), using the same Git provider authentication as `POST .../repository-content`. When no file paths are requested, the server reads the default triple from `BlueprintRepo`: `readmePath`, `manifestRootPath`, `descriptorTemplatePath`.
 
@@ -178,4 +180,3 @@ Then the response status is 404
 - **Default pointer behavior:** If none of `branch`, `tag`, `commit` is provided, the API uses `defaultBranch` from `BlueprintRepo`; if no default branch is configured, it returns **400**.
 - **OpenAPI:** Document query parameter names for `branch`, `tag`, `commit`, repeated `path`, the default pointer behavior, and response schema.
 - **Tests:** Each integration test method should cite the **Requirement ID** or scenario title in a comment at the top of the method.
-

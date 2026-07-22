@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration tests for {@link BlueprintVersionsUseCaseController}.
- * Scenarios trace to {@code agentspecs/specs/blueprint_version/blueprint_use_case_publish/spec.md} (Gherkin).
+ * Scenarios trace to {@code spdd/analysis/GGQPA-XXX-202603311547-[Analysis]-blueprint-use-case-publish.md} (Gherkin).
  */
 public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT {
 
