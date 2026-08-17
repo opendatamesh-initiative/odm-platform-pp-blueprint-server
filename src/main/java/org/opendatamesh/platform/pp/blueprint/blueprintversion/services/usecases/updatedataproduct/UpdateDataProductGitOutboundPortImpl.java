@@ -1,7 +1,10 @@
-package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate;
+package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.updatedataproduct;
 
+import org.opendatamesh.platform.git.exceptions.GitOperationException;
 import org.opendatamesh.platform.git.model.Commit;
-import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
+import org.opendatamesh.platform.git.model.CreatePullRequest;
+import org.opendatamesh.platform.git.model.PullRequest;
+import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.git.model.RepositoryPointerTag;
 import org.opendatamesh.platform.git.model.Tag;
 import org.opendatamesh.platform.git.provider.GitProvider;
@@ -13,17 +16,22 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.util.StringUtils;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.function.BiConsumer;
 
-class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBlueprintVersionGitOutboundPort {
+class UpdateDataProductGitOutboundPortImpl implements UpdateDataProductGitOutboundPort {
 
     private final HttpHeaders gitProviderHttpHeaders;
     private final GitProviderFactory gitProviderFactory;
     private GitProvider gitProvider;
 
-    public InstantiateBlueprintVersionGitOutboundPortImpl(HttpHeaders gitProviderHttpHeaders,
-                                                          GitProviderFactory gitProviderFactory) {
+    UpdateDataProductGitOutboundPortImpl(HttpHeaders gitProviderHttpHeaders, GitProviderFactory gitProviderFactory) {
         this.gitProviderHttpHeaders = gitProviderHttpHeaders;
         this.gitProviderFactory = gitProviderFactory;
     }
@@ -31,30 +39,48 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
     @Override
     public void init(Blueprint blueprint) {
         gitProvider = gitProviderFactory.buildGitProvider(
-                new GitProviderIdentifier(blueprint.getBlueprintRepo().getProviderType().name(),
+                new GitProviderIdentifier(
+                        blueprint.getBlueprintRepo().getProviderType().name(),
                         blueprint.getBlueprintRepo().getProviderBaseUrl()),
                 gitProviderHttpHeaders);
     }
 
     @Override
-    public void withClonedSourceAndTarget(
-            SourceRepositoryDto source,
-            TargetRepositoryDto target,
-            String integrationBranch,
+    public void withClonedSourceAndTargetAtCheckpoint(
+            Repository sourceRepository,
+            String sourceTag,
+            Repository targetRepository,
+            String currentCheckpointTag,
             BiConsumer<Path, Path> operation) {
-        // Target repositories always point to a branch, sources are frozen with tag snapshots.
         gitProvider.gitOperation().readRepository(
-                target.repository(),
-                new RepositoryPointerBranch(integrationBranch),
+                targetRepository,
+                new RepositoryPointerTag(currentCheckpointTag),
                 targetRepoDir -> gitProvider.gitOperation().readRepository(
-                        source.repository(),
-                        new RepositoryPointerTag(source.tag()),
+                        sourceRepository,
+                        new RepositoryPointerTag(sourceTag),
                         sourceRepoDir -> operation.accept(sourceRepoDir.toPath(), targetRepoDir.toPath())));
     }
 
     @Override
-    public void createAndCheckoutOrphanBranch(Path targetRepository, String branchName) {
-        gitProvider.gitOperation().createAndCheckoutOrphanBranch(targetRepository.toFile(), branchName);
+    public void createAndCheckoutBranch(Path targetRepository, String branchName) {
+        gitProvider.gitOperation().createAndCheckoutBranch(targetRepository.toFile(), branchName);
+    }
+
+    @Override
+    public void cleanWorkingTreePreservingGit(Path targetRepository) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(targetRepository)) {
+            for (Path entry : stream) {
+                if (".git".equals(entry.getFileName().toString())) {
+                    continue;
+                }
+                deleteRecursively(entry);
+            }
+        } catch (IOException e) {
+            throw new GitOperationException(
+                    "cleanWorkingTree",
+                    "Failed to clean working tree while preserving .git: " + e.getMessage(),
+                    e);
+        }
     }
 
     @Override
@@ -90,11 +116,6 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
     }
 
     @Override
-    public void mergeBranch(Path targetRepository, String sourceBranch, String targetBranch) {
-        gitProvider.gitOperation().mergeBranch(targetRepository.toFile(), sourceBranch, targetBranch);
-    }
-
-    @Override
     public void pushBranch(Path targetRepository, String branchName) {
         gitProvider.gitOperation().pushBranch(targetRepository.toFile(), branchName);
     }
@@ -102,6 +123,19 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
     @Override
     public void pushTag(Path targetRepository, String tagName) {
         gitProvider.gitOperation().pushTag(targetRepository.toFile(), tagName);
+    }
+
+    @Override
+    public String openPullRequest(
+            Repository repository,
+            String sourceBranch,
+            String targetBranch,
+            String title,
+            String body
+    ) {
+        CreatePullRequest createPullRequest = new CreatePullRequest(sourceBranch, targetBranch, title, body);
+        PullRequest pullRequest = gitProvider.createPullRequest(repository, createPullRequest);
+        return pullRequest != null ? pullRequest.getWebUrl() : null;
     }
 
     private String resolveAuthorName(String commitAuthorName) {
@@ -114,5 +148,24 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
         return StringUtils.hasText(commitAuthorEmail)
                 ? commitAuthorEmail
                 : BlueprintGitNamingConventions.DEFAULT_COMMIT_AUTHOR_EMAIL;
+    }
+
+    private void deleteRecursively(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.delete(dir);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 }

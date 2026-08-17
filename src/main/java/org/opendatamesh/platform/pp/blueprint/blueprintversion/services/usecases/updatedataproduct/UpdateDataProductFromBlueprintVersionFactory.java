@@ -1,6 +1,5 @@
-package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate;
+package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.updatedataproduct;
 
-import org.opendatamesh.platform.pp.blueprint.blueprint.services.core.BlueprintService;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionCrudService;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintDataProductDescriptorService;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintRenderService;
@@ -10,42 +9,40 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 
 @Component
-public class InstantiateBlueprintVersionFactory {
+public class UpdateDataProductFromBlueprintVersionFactory {
+
     private final GitProviderFactory gitProviderFactory;
-    private final BlueprintService blueprintService;
     private final BlueprintVersionCrudService blueprintVersionCrudService;
     private final BlueprintRenderService blueprintRenderService;
     private final BlueprintDataProductDescriptorService blueprintDataProductDescriptorService;
 
-    public InstantiateBlueprintVersionFactory(
+    public UpdateDataProductFromBlueprintVersionFactory(
             GitProviderFactory gitProviderFactory,
-            BlueprintService blueprintService,
             BlueprintVersionCrudService blueprintVersionCrudService,
             BlueprintRenderService blueprintRenderService,
             BlueprintDataProductDescriptorService blueprintDataProductDescriptorService
     ) {
         this.gitProviderFactory = gitProviderFactory;
-        this.blueprintService = blueprintService;
         this.blueprintVersionCrudService = blueprintVersionCrudService;
         this.blueprintRenderService = blueprintRenderService;
         this.blueprintDataProductDescriptorService = blueprintDataProductDescriptorService;
     }
 
-    public UseCase buildInstantiateBlueprintVersion(
-            InstantiateBlueprintVersionCommand command,
-            InstantiateBlueprintVersionPresenter presenter,
+    public UseCase buildUpdateDataProduct(
+            UpdateDataProductCommand command,
+            UpdateDataProductPresenter presenter,
             HttpHeaders headers
     ) {
-        InstantiateBlueprintVersionGitOutboundPort gitPort =
-                new InstantiateBlueprintVersionGitOutboundPortImpl(headers, gitProviderFactory);
-        InstantiateBlueprintVersionPersistencyOutboundPort persistencyPort =
-                new InstantiateBlueprintVersionPersistencyOutboundPortImpl(blueprintService, blueprintVersionCrudService);
-        InstantiateBlueprintVersionManifestOutboundPort manifestPort =
-                new InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl();
-        InstantiateBlueprintVersionTemplatingOutboundPort templatingPort =
-                new InstantiateBlueprintVersionTemplatingOutboundPortImpl(
+        UpdateDataProductGitOutboundPort gitPort =
+                new UpdateDataProductGitOutboundPortImpl(headers, gitProviderFactory);
+        UpdateDataProductPersistencyOutboundPort persistencyPort =
+                new UpdateDataProductPersistencyOutboundPortImpl(blueprintVersionCrudService);
+        UpdateDataProductManifestOutboundPort manifestPort =
+                new UpdateDataProductOdmBlueprintManifestOutboundPortImpl();
+        UpdateDataProductTemplatingOutboundPort templatingPort =
+                new UpdateDataProductTemplatingOutboundPortImpl(
                         blueprintRenderService, blueprintDataProductDescriptorService);
-        return new InstantiateBlueprintVersion(
+        return new UpdateDataProductFromBlueprintVersion(
                 command,
                 presenter,
                 persistencyPort,

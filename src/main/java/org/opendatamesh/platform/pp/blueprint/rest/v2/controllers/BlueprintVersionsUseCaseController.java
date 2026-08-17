@@ -14,11 +14,15 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionResponseRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedocumentationfields.UpdateBlueprintVersionDocumentationFieldsCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedocumentationfields.UpdateBlueprintVersionDocumentationFieldsReponseRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedataproduct.UpdateDataProductCommandRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedataproduct.UpdateDataProductResultRes;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,5 +66,29 @@ public class BlueprintVersionsUseCaseController {
             @RequestBody UpdateBlueprintVersionDocumentationFieldsCommandRes command
     ) {
         return blueprintVersionUseCasesService.updateBlueprintVersionDocumentationFields(command);
+    }
+
+    @Operation(
+            summary = "Update a data product repository from a new blueprint version",
+            description = "Creates a temporary update branch from the current data-product checkpoint tag, "
+                    + "renders the next blueprint version, tags the next checkpoint, pushes branch and tag, "
+                    + "and optionally opens a pull request (best-effort)."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Data product updated successfully (warnings may be present for side-operation failures)",
+                    content = @Content(schema = @Schema(implementation = UpdateDataProductResultRes.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request, validation failure, or Git operation failure"),
+            @ApiResponse(responseCode = "404", description = "Blueprint or blueprint version not found"),
+            @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @PostMapping("/update-data-product")
+    @ResponseStatus(HttpStatus.OK)
+    public UpdateDataProductResultRes updateDataProduct(
+            @Parameter(description = "Update data product command", required = true)
+            @RequestBody UpdateDataProductCommandRes command,
+            @Parameter(description = "HTTP headers for Git provider authentication")
+            @RequestHeader HttpHeaders headers
+    ) {
+        return blueprintVersionUseCasesService.updateDataProduct(command, headers);
     }
 }

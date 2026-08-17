@@ -1,4 +1,4 @@
-package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate;
+package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.updatedataproduct;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
@@ -8,12 +8,12 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import java.nio.file.Path;
 import java.util.Map;
 
-class InstantiateBlueprintVersionTemplatingOutboundPortImpl implements InstantiateBlueprintVersionTemplatingOutboundPort {
+class UpdateDataProductTemplatingOutboundPortImpl implements UpdateDataProductTemplatingOutboundPort {
 
     private final BlueprintRenderService blueprintRenderService;
     private final BlueprintDataProductDescriptorService blueprintDataProductDescriptorService;
 
-    InstantiateBlueprintVersionTemplatingOutboundPortImpl(
+    UpdateDataProductTemplatingOutboundPortImpl(
             BlueprintRenderService blueprintRenderService,
             BlueprintDataProductDescriptorService blueprintDataProductDescriptorService
     ) {

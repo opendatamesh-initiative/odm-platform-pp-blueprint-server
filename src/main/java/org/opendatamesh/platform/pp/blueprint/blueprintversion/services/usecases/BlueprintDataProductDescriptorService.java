@@ -1,4 +1,4 @@
-package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate;
+package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -18,7 +18,7 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.Blueprin
 import org.opendatamesh.platform.pp.blueprint.exceptions.InternalException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +35,7 @@ import java.util.Map;
  * {@link org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint}
  * entity.
  */
-@Component
+@Service
 public class BlueprintDataProductDescriptorService {
 
     private static final Logger log = LoggerFactory.getLogger(BlueprintDataProductDescriptorService.class);
@@ -43,8 +43,8 @@ public class BlueprintDataProductDescriptorService {
     private static final ObjectMapper JSON_DPDS = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
     private static final ObjectMapper YAML_DPDS = new ObjectMapper(
-            new YAMLFactory().disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
-    ).setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
+            new YAMLFactory().disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER))
+            .setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
 
     private enum DescriptorFormat {
         JSON,
@@ -54,38 +54,35 @@ public class BlueprintDataProductDescriptorService {
     public void enrichDescriptorWithBlueprintMetadata(
             Path rootTargetPath,
             BlueprintVersion blueprintVersion,
-            Map<String, JsonNode> resolvedParameters
-    ) {
-        if(StringUtils.isEmpty(blueprintVersion.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath())) {
-           log.info("Blueprint repository descriptor template path is not configured; cannot write descriptor lineage for blueprint {}", blueprintVersion.getBlueprint().getUuid());
-           return;
+            Map<String, JsonNode> resolvedParameters) {
+        if (StringUtils.isEmpty(blueprintVersion.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath())) {
+            log.info(
+                    "Blueprint repository descriptor template path is not configured; cannot write descriptor lineage for blueprint {}",
+                    blueprintVersion.getBlueprint().getUuid());
+            return;
         }
-        
+
         BlueprintRepo repo = blueprintVersion.getBlueprint().getBlueprintRepo();
         String blueprintId = blueprintVersion.getBlueprint().getUuid();
         log.debug(
                 "Descriptor lineage enrichment for blueprint {} at root {}",
                 blueprintId,
-                rootTargetPath
-        );
+                rootTargetPath);
 
         String relativeDescriptorPath = renderedDescriptorRelativePath(repo.getDescriptorTemplatePath());
         if (relativeDescriptorPath.isEmpty()) {
             throw new InternalException(
                     "Blueprint repository descriptor template path is not configured; cannot write descriptor lineage for blueprint %s"
-                            .formatted(blueprintId)
-            );
+                            .formatted(blueprintId));
         }
 
         Path descriptorFile = rootTargetPath.resolve(relativeDescriptorPath);
         if (!Files.isRegularFile(descriptorFile)) {
             throw new InternalException(
                     "Expected rendered data product descriptor at '%s' after templating; file missing"
-                            .formatted(descriptorFile)
-            );
+                            .formatted(descriptorFile));
         }
 
-        
         byte[] bytes;
         try {
             bytes = Files.readAllBytes(descriptorFile);
@@ -93,10 +90,9 @@ public class BlueprintDataProductDescriptorService {
             throw new InternalException(
                     "Failed to read data product descriptor at '%s' for lineage enrichment"
                             .formatted(descriptorFile),
-                    e
-            );
+                    e);
         }
-        
+
         DescriptorFormat format = detectFormat(descriptorFile.getFileName().toString(), bytes);
         ObjectMapper rootMapper = format == DescriptorFormat.JSON ? JSON_DPDS : YAML_DPDS;
         Parser parser = ParserFactory.getParser(rootMapper);
@@ -108,14 +104,12 @@ public class BlueprintDataProductDescriptorService {
             throw new InternalException(
                     "Failed to parse data product descriptor at '%s' for lineage enrichment"
                             .formatted(descriptorFile),
-                    e
-            );
+                    e);
         }
 
         DataProductVersion dpv = parseDpdsDescriptor(descriptorFile, parser, rootNode);
 
-        org.opendatamesh.dpds.model.blueprint.Blueprint lineage =
-                toDpdsBlueprint(blueprintVersion, resolvedParameters);
+        org.opendatamesh.dpds.model.blueprint.Blueprint lineage = toDpdsBlueprint(blueprintVersion, resolvedParameters);
         dpv.setblueprint(lineage);
 
         JsonNode serialized = serializeDpdsDescriptor(descriptorFile, parser, dpv);
@@ -134,8 +128,7 @@ public class BlueprintDataProductDescriptorService {
             throw new InternalException(
                     "Failed to write enriched data product descriptor to '%s'"
                             .formatted(descriptorFile),
-                    e
-            );
+                    e);
         }
     }
 
@@ -147,8 +140,7 @@ public class BlueprintDataProductDescriptorService {
             throw new InternalException(
                     "DPDS parser could not serialize data product descriptor after lineage enrichment ('%s')"
                             .formatted(descriptorFile),
-                    e
-            );
+                    e);
         }
         return serialized;
     }
@@ -161,17 +153,16 @@ public class BlueprintDataProductDescriptorService {
             throw new InternalException(
                     "DPDS parser could not deserialize data product descriptor at '%s'"
                             .formatted(descriptorFile),
-                    e
-            );
+                    e);
         }
         return dpv;
     }
 
     static org.opendatamesh.dpds.model.blueprint.Blueprint toDpdsBlueprint(
             BlueprintVersion blueprintVersion,
-            Map<String, JsonNode> resolvedParameters
-    ) {
-        org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint platformBp = blueprintVersion.getBlueprint();
+            Map<String, JsonNode> resolvedParameters) {
+        org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint platformBp = blueprintVersion
+                .getBlueprint();
         org.opendatamesh.dpds.model.blueprint.Blueprint out = new org.opendatamesh.dpds.model.blueprint.Blueprint();
         out.setSchemaVersion("1");
         out.setBlueprintUuid(platformBp.getUuid());
@@ -193,7 +184,8 @@ public class BlueprintDataProductDescriptorService {
     }
 
     /**
-     * Repository-relative path to the rendered descriptor (Velocity output), without {@code .vm}.
+     * Repository-relative path to the rendered descriptor (Velocity output),
+     * without {@code .vm}.
      */
     private String renderedDescriptorRelativePath(String descriptorTemplatePath) {
         if (descriptorTemplatePath == null || descriptorTemplatePath.isBlank()) {
@@ -224,7 +216,6 @@ public class BlueprintDataProductDescriptorService {
         }
         throw new InternalException(
                 "Cannot determine data product descriptor format for file name '%s'; use extension .json, .yaml, .yml, or start the file with '---' or '{'"
-                        .formatted(fileName)
-        );
+                        .formatted(fileName));
     }
 }
