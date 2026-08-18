@@ -8,6 +8,7 @@ public enum RoutesV2 {
     BLUEPRINT_VERSIONS_UPDATE_DOCUMENTATION_FIELDS("/api/v2/pp/blueprint/blueprints-versions/update-documentation-fields"),
     BLUEPRINT_VERSIONS("/api/v2/pp/blueprint/blueprints-versions"),
     BLUEPRINT_VERSIONS_INSTANTIATE("/api/v2/pp/blueprint/blueprints-versions/instantiate"),
+    BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT("/api/v2/pp/blueprint/blueprints-versions/update-data-product"),
     BLUEPRINT_VERSIONS_PUBLISH("/api/v2/pp/blueprint/blueprints-versions/publish");
 
     private final String path;

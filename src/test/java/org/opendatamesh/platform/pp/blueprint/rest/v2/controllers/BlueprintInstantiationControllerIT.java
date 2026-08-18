@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,17 +11,14 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mockito;
-import org.opendatamesh.platform.git.exceptions.GitOperationException;
-import org.opendatamesh.platform.git.git.GitOperation;
-import org.opendatamesh.platform.git.model.Commit;
-import org.opendatamesh.platform.git.model.Repository;
-import org.opendatamesh.platform.git.model.RepositoryPointer;
-import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
-import org.opendatamesh.platform.git.model.RepositoryPointerTag;
 import org.opendatamesh.dpds.model.DataProductVersion;
 import org.opendatamesh.dpds.parser.Parser;
 import org.opendatamesh.dpds.parser.ParserFactory;
+import org.opendatamesh.platform.git.exceptions.GitOperationException;
+import org.opendatamesh.platform.git.git.GitOperation;
+import org.opendatamesh.platform.git.model.*;
 import org.opendatamesh.platform.git.provider.GitProvider;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
@@ -32,16 +28,10 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.Bluepr
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionResponseRes;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionTargetRepositoryRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.RepositoryRes;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 
 import java.io.File;
 import java.io.IOException;
@@ -49,26 +39,14 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Integration tests for blueprint instantiation endpoint.
@@ -101,7 +79,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Successful monorepo population and push.
+     * Spec — Scenario: Successful monorepo population and push.
      */
     @Test
     void whenInstantiateMonorepoThenReturn200(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -124,16 +102,20 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         // Git: populate flow stages changes, commits with the expected message, then pushes (no force-push).
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
 
@@ -150,7 +132,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Commit author can be customized with default fallback (provided identity).
+     * Spec — Scenario: Commit author can be customized with default fallback (provided identity).
      */
     @Test
     void whenCommitAuthorIsProvidedThenCommitUsesProvidedIdentity(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -165,15 +147,20 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         AtomicReference<Commit> commitRef = new AtomicReference<>();
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
+            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
+        doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
         doNothing().when(mockGitOperation).addAll(any());
         doAnswer(invocation -> {
             commitRef.set(invocation.getArgument(1));
             return null;
         }).when(mockGitOperation).commit(any(), any());
-        doNothing().when(mockGitOperation).push(any(), anyBoolean());
+        when(mockGitOperation.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).addTag(any(), any(Tag.class));
+        when(mockGitOperation.mergeBranch(any(), anyString(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).pushBranch(any(), anyString());
+        doNothing().when(mockGitOperation).pushTag(any(), anyString());
 
         InstantiateBlueprintVersionCommandRes request =
                 buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365, "Jane Doe", "jane.doe@example.org", null);
@@ -194,22 +181,26 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
         deleteCreatedBlueprint(context);
     }
 
     /**
-     * specs.md — Scenario: Commit author can be customized with default fallback (defaults when omitted).
+     * Spec — Scenario: Commit author can be customized with default fallback (defaults when omitted).
      */
     @Test
     void whenCommitAuthorOmittedThenCommitUsesServerDefaults(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -224,15 +215,20 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         AtomicReference<Commit> commitRef = new AtomicReference<>();
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
+            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
+        doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
         doNothing().when(mockGitOperation).addAll(any());
         doAnswer(invocation -> {
             commitRef.set(invocation.getArgument(1));
             return null;
         }).when(mockGitOperation).commit(any(), any());
-        doNothing().when(mockGitOperation).push(any(), anyBoolean());
+        when(mockGitOperation.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).addTag(any(), any(Tag.class));
+        when(mockGitOperation.mergeBranch(any(), anyString(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).pushBranch(any(), anyString());
+        doNothing().when(mockGitOperation).pushTag(any(), anyString());
 
         InstantiateBlueprintVersionCommandRes request =
                 buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365, null, null, null);
@@ -253,22 +249,26 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
         deleteCreatedBlueprint(context);
     }
 
     /**
-     * specs.md — Scenario: Instantiation strategy is derived from manifest metadata.
+     * Spec — Scenario: Instantiation strategy is derived from manifest metadata.
      */
     @Test
     void whenInstantiateWithoutMethodFieldThenNotRejectedForMissingMethod(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -288,22 +288,26 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
         deleteCreatedBlueprint(context);
     }
 
     /**
-     * specs.md — Scenario: Target branch defaults to repository default.
+     * Spec — Scenario: Target branch defaults to repository default.
      */
     @Test
     void whenTargetBranchOmittedThenGitUsesRepositoryDefaultBranch(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -317,12 +321,17 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         AtomicInteger callCounter = new AtomicInteger(0);
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
+            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
+        doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
         doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
-        doNothing().when(mockGitOperation).push(any(), anyBoolean());
+        when(mockGitOperation.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).addTag(any(), any(Tag.class));
+        when(mockGitOperation.mergeBranch(any(), anyString(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).pushBranch(any(), anyString());
+        doNothing().when(mockGitOperation).pushTag(any(), anyString());
 
         rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
@@ -335,15 +344,19 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
 
@@ -351,7 +364,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Target branch can be overridden.
+     * Spec — Scenario: Target branch can be overridden.
      */
     @Test
     void whenTargetBranchSetThenGitUsesThatBranch(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -365,12 +378,17 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         AtomicInteger callCounter = new AtomicInteger(0);
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
+            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
+        doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
         doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
-        doNothing().when(mockGitOperation).push(any(), anyBoolean());
+        when(mockGitOperation.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).addTag(any(), any(Tag.class));
+        when(mockGitOperation.mergeBranch(any(), anyString(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).pushBranch(any(), anyString());
+        doNothing().when(mockGitOperation).pushTag(any(), anyString());
 
         InstantiateBlueprintVersionCommandRes request =
                 buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365, null, null, "feature/custom");
@@ -386,15 +404,19 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("feature/custom");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("feature/custom");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
 
@@ -402,7 +424,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Exactly one root target is required in this phase (empty list).
+     * Spec — Scenario: Exactly one root target is required in this phase (empty list).
      */
     @Test
     void whenNoTargetRepositoriesThenReturn400() throws Exception {
@@ -423,7 +445,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Exactly one root target is required in this phase (more than one).
+     * Spec — Scenario: Exactly one root target is required in this phase (more than one).
      */
     @Test
     void whenMoreThanOneTargetRepositoryThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -452,7 +474,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Exactly one root target is required in this phase (wrong type).
+     * Spec — Scenario: Exactly one root target is required in this phase (wrong type).
      */
     @Test
     void whenTargetTypeNotRootThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -476,7 +498,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Missing required parameters are rejected.
+     * Spec — Scenario: Missing required parameters are rejected.
      */
     @Test
     void whenRequiredParameterMissingThenReturn400() throws Exception {
@@ -496,7 +518,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Invalid parameter types or constraints are rejected.
+     * Spec — Scenario: Invalid parameter types or constraints are rejected.
      */
     @Test
     void whenParameterTypeOrConstraintInvalidThenReturn400() throws Exception {
@@ -515,7 +537,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Unsupported composition manifests are rejected.
+     * Spec — Scenario: Unsupported composition manifests are rejected.
      */
     @Test
     void whenManifestContainsCompositionThenReturn400() throws Exception {
@@ -533,7 +555,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Unsupported non-monorepo strategy is rejected.
+     * Spec — Scenario: Unsupported non-monorepo strategy is rejected.
      */
     @Test
     void whenManifestIsPolyrepoThenReturn400() throws Exception {
@@ -551,7 +573,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Git operation failures are surfaced as client or server errors per global handling.
+     * Spec — Scenario: Git operation failures are surfaced as client or server errors per global handling.
      */
     @Test
     void whenGitPushFailsThenResponseReflectsGlobalExceptionHandling(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -565,12 +587,16 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         AtomicInteger callCounter = new AtomicInteger(0);
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
+            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
+        doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
         doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
-        doThrow(new GitOperationException("push failed")).when(mockGitOperation).push(any(), anyBoolean());
+        when(mockGitOperation.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).addTag(any(), any(Tag.class));
+        when(mockGitOperation.mergeBranch(any(), anyString(), anyString())).thenReturn("deadbeefcafebabe");
+        doThrow(new GitOperationException("push failed")).when(mockGitOperation).pushBranch(any(), anyString());
 
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
@@ -580,16 +606,16 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        // Git: clone source and target, stage and commit succeed; push fails and surfaces as client error.
+        // Git: clone source and target, stage and commit succeed; pushBranch fails and surfaces as client error.
         verify(mockGitOperation, times(2)).readRepository(any(), any(), any());
         verify(mockGitOperation).addAll(any());
         verify(mockGitOperation).commit(any(), any());
-        verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
         deleteCreatedBlueprint(context);
     }
 
     /**
-     * specs.md — Scenario: Blueprint README declared in repository metadata is not left at repository root.
+     * Spec — Scenario: Blueprint README declared in repository metadata is not left at repository root.
      */
     @Test
     void whenPopulateThenReadmeIsRelocatedUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -613,15 +639,19 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
 
@@ -629,7 +659,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * specs.md — Scenario: Manifest lineage snapshot is persisted under `.odm/blueprint/`.
+     * Spec — Scenario: Manifest lineage snapshot is persisted under `.odm/blueprint/`.
      */
     @Test
     void whenPopulateThenManifestSnapshotIsWrittenUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -652,15 +682,19 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
+        gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
         gitOpOrder.verify(mockGitOperation).addAll(eq(targetDir.toFile()));
         gitOpOrder.verify(mockGitOperation).commit(eq(targetDir.toFile()), commitCaptor.capture());
-        gitOpOrder.verify(mockGitOperation).push(eq(targetDir.toFile()), eq(false));
+        gitOpOrder.verify(mockGitOperation).addTag(eq(targetDir.toFile()), any(Tag.class));
+        gitOpOrder.verify(mockGitOperation).mergeBranch(eq(targetDir.toFile()), anyString(), anyString());
+        gitOpOrder.verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), anyString());
+        gitOpOrder.verify(mockGitOperation).pushTag(eq(targetDir.toFile()), anyString());
         assertThat(commitCaptor.getValue().getMessage()).isEqualTo(
                 "Populate repository from blueprint " + context.blueprintName + "@" + context.versionNumber);
 
@@ -677,13 +711,18 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         AtomicInteger callCounter = new AtomicInteger(0);
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? sourceDir.toFile() : targetDir.toFile());
+            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
 
+        doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
         doNothing().when(mockGitOperation).addAll(any());
         doNothing().when(mockGitOperation).commit(any(), any());
-        doNothing().when(mockGitOperation).push(any(), anyBoolean());
+        when(mockGitOperation.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).addTag(any(), any(Tag.class));
+        when(mockGitOperation.mergeBranch(any(), anyString(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).pushBranch(any(), anyString());
+        doNothing().when(mockGitOperation).pushTag(any(), anyString());
         return mockGitOperation;
     }
 

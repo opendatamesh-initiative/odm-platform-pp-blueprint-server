@@ -110,6 +110,16 @@ public class ResponseExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(e, errorRes, headers, HttpStatus.BAD_REQUEST, request);
     }
 
+    @ExceptionHandler(UnsupportedOperationException.class)
+    protected ResponseEntity<Object> handleUnsupportedOperationException(UnsupportedOperationException e, WebRequest request) {
+        logger.info("Unsupported operation: " + e.getMessage());
+        String url = getUrl(request);
+        ErrorRes errorRes = new ErrorRes(HttpStatus.BAD_REQUEST.value(), "NotSupported", e.getMessage(), url);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return handleExceptionInternal(e, errorRes, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
     @ExceptionHandler({RuntimeException.class})
     protected ResponseEntity<Object> handleRuntimeException(RuntimeException e, WebRequest request) {
         logger.error("Unknown server error: ", e);

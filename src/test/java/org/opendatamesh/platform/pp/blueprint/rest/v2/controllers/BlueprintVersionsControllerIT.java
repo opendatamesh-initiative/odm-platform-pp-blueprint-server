@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration tests for {@link BlueprintVersionsController}.
- * Scenarios trace to {@code agentspecs/changes/blueprint_version/spec.md} (Gherkin).
+ * Scenarios trace to {@code spdd/analysis/GGQPA-XXX-202603261547-[Analysis]-blueprint-version-anemic-crud.md} (Gherkin).
  */
 public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
 

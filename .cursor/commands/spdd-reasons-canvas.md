@@ -54,13 +54,27 @@ Input can be provided in two ways:
    - If any file cannot be read, report the error and ask user to provide alternative
    - Confirm the consolidated context contains sufficient information to proceed
 
-2. **Read relevant codebase context**
+2. **Read norms (mandatory — do this before generating or writing the canvas)**
+
+   **CRITICAL**: You MUST read norm files using the Read tool before populating **N — Norms** or writing `spdd/prompt/*.md`. Do NOT skip, partially read, rely on memory from prior sessions, or use a hardcoded norm file list.
+
+   a. Read `spdd/norms/README.md` completely — it is the **norms registry** and the only source of truth for which norm files exist
+
+   b. **Derive norm files from the registry**: parse the **Norm index** table (and any other `spdd/norms/*.md` links in README) to build the list of norm file paths. Do NOT assume or hardcode filenames — new norms added to the registry must be picked up automatically
+
+   c. **Read derived norm files**: using registry topic descriptions and business context, read every applicable norm file from (b) completely with the Read tool. If feature scope is unclear, read **all** registry-listed norm files
+
+   d. The **N — Norms** section MUST cite only `spdd/norms/...` paths you read in this step and MUST NOT invent standards that contradict those files
+
+   **Norms read gate**: If README cannot be read, or any required derived norm file cannot be read, report the error and STOP — do not generate the canvas or write `spdd/prompt/*.md` until resolved.
+
+3. **Read relevant codebase context**
    - Search for related existing implementations
    - Read relevant entity classes, services, controllers
    - Understand current architecture patterns
    - Identify existing data structures and APIs
 
-3. **Apply the REASONS-Canvas Framework**
+4. **Apply the REASONS-Canvas Framework**
 
    Generate fully-populated content for each of the 7 stages using the built-in construction guidance:
 
@@ -300,7 +314,9 @@ Input can be provided in two ways:
 
    ### N - Norms
 
-   **Objective**: Define unified coding standards and common implementation patterns
+   **Objective**: Define unified coding standards and common implementation patterns for **this repository** (odm-platform-pp-blueprint-server)
+
+   **Mandatory context**: Step 2 MUST already be complete — norm files were derived from `spdd/norms/README.md` and read via the Read tool. Summarize only norms that apply to this feature; link `spdd/norms/...` paths so `/spdd-generate` can re-read them. Do not invent parallel standards that contradict those files.
 
    **Output Format**:
 
@@ -323,6 +339,7 @@ Input can be provided in two ways:
    ```
 
    **Construction Guidance**:
+   - **Start from the norms registry**: Norm files come from `spdd/norms/README.md` index — summarize applicable norms in the prompt; link paths (`spdd/norms/...`) so `/spdd-generate` can re-read them
    - **Standardization**: Define unified coding standards and configuration patterns
    - **Reusability**: Extract reusable common implementation patterns
    - **Consistency**: Ensure all components follow the same standards
@@ -371,7 +388,7 @@ Input can be provided in two ways:
    - Verifiable
    - Complete coverage
 
-4. **Construct the final structured prompt**
+5. **Construct the final structured prompt**
 
    Create a comprehensive, ready-to-implement prompt with:
 
@@ -403,7 +420,9 @@ Input can be provided in two ways:
    - No placeholders or "TODO" items
    - Clear, executable implementation tasks in Operations section
 
-5. **Save the fully-populated structured prompt to file**
+6. **Save the fully-populated structured prompt to file**
+
+   **CRITICAL — norms gate before write**: Do NOT call Write (or create `spdd/prompt/<file-name>.md`) unless Step 2 is complete — `spdd/norms/README.md` was read, applicable norm files were derived from its registry index, and each required derived file was read with the Read tool in this session. Writing the canvas without reading norms is forbidden.
 
    a. **Derive file name**: `{JIRA}-{TIMESTAMP}-[{ACTION}]-{scope}-{description}.md`
    - **JIRA**: Extract from business context if mentioned, otherwise use `GGQPA-XXX`
@@ -425,6 +444,8 @@ Input can be provided in two ways:
    ```
    ✅ REASONS-Canvas prompt generated and saved to `spdd/prompt/<file-name>.md`
 
+   📚 Norms read (Step 2): registry (`spdd/norms/README.md`) + [list applicable norm files derived from registry index]
+
    📋 Generated sections:
    - Requirements: [1-line summary]
    - Entities: [entity count] entities with relationships
@@ -435,7 +456,7 @@ Input can be provided in two ways:
    - Safeguards: [constraint count] constraints defined
    ```
 
-6. **Ask for confirmation to proceed**
+7. **Ask for confirmation to proceed**
 
    > "The REASONS-Canvas structured prompt is ready. Would you like me to proceed with the implementation?"
 
@@ -445,6 +466,7 @@ A fully-populated, implementation-ready REASONS-Canvas structured prompt saved t
 
 **Guardrails**
 
+- **CRITICAL — norms before canvas write**: MUST read `spdd/norms/README.md` (norms registry), derive applicable norm files from its **Norm index** table (never hardcode filenames), and read each required derived file with the Read tool in this session BEFORE populating **N — Norms** or writing `spdd/prompt/*.md`. Never write the canvas file from memory or without completing Step 2.
 - **CRITICAL**: Do NOT just output section headers - you MUST analyze business context and generate fully-populated content for all 7 REASONS stages
 - Do NOT proceed without business context input
 - Do NOT include framework metadata (Objective, Construction Guidance, Quality Standards) in the final prompt

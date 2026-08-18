@@ -9,9 +9,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 interface InstantiateBlueprintVersionTemplatingOutboundPort {
 
-    void renderAndCopy(
+    void monorepoNoCompositionRenderAndCopy(
             BlueprintVersion blueprintVersion,
             Map<String, JsonNode> parameters,
-            Map<SourceRepositoryDto, Path> sourceRepositories,
-            Map<TargetRepositoryDto, Path> targetRepositories);
+            Path sourceRoot,
+            Path targetRoot
+    );
+
+    void enrichDescriptorWithBlueprintMetadata(
+            Path rootTarget,
+            BlueprintVersion version,
+            Map<String, JsonNode> parameters);
 }

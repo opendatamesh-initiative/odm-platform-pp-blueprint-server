@@ -8,7 +8,6 @@ import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
@@ -52,16 +51,10 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl implements
     }
 
     private void checkForUnsupportedOperations(Manifest manifest) {
-        //This will go away when implementing those
-        if (manifest.getComposition() != null && !manifest.getComposition().isEmpty()) {
-            throw new BadRequestException("Blueprint composition is not supported in this phase");
-        }
+        // Layout support (monorepo/polyrepo ± composition) is decided in the use case.
+        // Here we only enforce that a strategy is present so parameter validation can proceed.
         if (manifest.getInstantiation() == null || manifest.getInstantiation().getStrategy() == null) {
             throw new BadRequestException("Manifest instantiation.strategy is required");
-        }
-
-        if (manifest.getInstantiation().getStrategy() != ManifestInstantiation.InstantiationStrategy.MONOREPO) {
-            throw new BadRequestException("Only monorepo instantiation strategy is supported in this phase");
         }
     }
 
