@@ -1,5 +1,7 @@
 # SPDD Analysis: Data Product repository update on new Blueprint version (Tag-Based 3-Way Merge)
 
+> **Contract note (BDMD-4820):** Wire targets use **`targetId`** (not `type` / root enum). Scenario detection uses repository keys + composition, not `instantiation.strategy`. Phase-1: exactly one target whose `targetId` matches the sole repository key.
+
 ## Original Business Requirement
 
 BDMD-5127
@@ -69,7 +71,7 @@ Body content:
 - Blueprint identifier (name, aligned with instantiate)
 - Next Blueprint version
 - Current Blueprint version
-- **`targetRepositories`** (list, same forward-compatible shape as instantiate): each entry has logical `type` (e.g. `root`), optional integration `branch`, `repository` reference, and optional **`pullRequestTargetBranch`** (PR base for that repo when global PR open is on; falls back to that repository’s `defaultBranch` when unset)
+- **`targetRepositories`** (list, same forward-compatible shape as instantiate): each entry has `targetId` (manifest repository key), optional integration `branch`, `repository` reference, and optional **`pullRequestTargetBranch`** (PR base for that repo when global PR open is on; falls back to that repository’s `defaultBranch` when unset)
 - Git author metadata (to mark git operations with the correct user)
 - **`createPullRequest`** (optional boolean, default false): **global** switch — when true, open a PR for **every** processed target repository; when false, open none
 
@@ -81,7 +83,7 @@ Response content:
 **API extensibility (multi-repo / composition):**
 
 - Do **not** use a singular `targetRepository` or singular result object — that would force a breaking change when enabling monorepo+composition (N→1), polyrepo (1→N), or polyrepo+composition (N→N).
-- Align with instantiate: keep a **list** on the wire even while phase-1 validation enforces **exactly one `root`** target (same limits as instantiate today: monorepo, no composition).
+- Align with instantiate: keep a **list** on the wire even while phase-1 validation enforces **exactly one target** whose `targetId` matches the sole repository key (same limits as instantiate today: monorepo, no composition).
 - Shared fields (blueprint name, current/next versions, parameters, author, **global** `createPullRequest`) stay top-level; per-repo Git outcomes stay in `results[]`; **`pullRequestTargetBranch`** stays on each `targetRepositories[]` entry; side-operation issues (e.g. PR open failure) stay in top-level **`warnings[]`** without failing the request.
 - Future multi-repo behavior can widen validation and loop the same per-target tag-based update orchestration without renaming the endpoint or reshaping the request/response schema.
 
@@ -145,7 +147,7 @@ Result: Merge Conflict. Git flags a conflict on Line 10 in the Pull Request. The
 - **Blueprint**: Persisted aggregate (`blueprints` / `Blueprint`) holding identity and linked blueprint Git repository metadata (`blueprints_repositories` / `BlueprintRepo`). Owns versions and supplies Git provider identity (provider type, base URL) used to initialize `GitProvider` for source and target operations.
 - **BlueprintVersion**: Persisted version entity (`blueprints_versions`) with `versionNumber`, `content` (manifest JSON), and a `tag` field that points at the **blueprint source repository** release tag (used today by instantiate to clone the blueprint at a frozen pointer). Related to Blueprint by parent UUID; selected by name + version in instantiate.
 - **Blueprint Manifest & Parameters**: Manifest content on the version drives instantiation strategy (currently monorepo, no composition), parameter validation, Velocity templating, and lineage under `.odm/blueprint/`. Update must re-apply the **next** version’s manifest/parameters the same way instantiate does.
-- **Data Product Target Repository**: Domain `Repository` (from git-utils), already accepted in instantiate via **`targetRepositories`** (list of typed entries: `type`, optional `branch`, `RepositoryRes`). Expected to already exist; instantiate commits onto a branch (default or override). Update must reuse this **list-based** contract so phase-1 monorepo (exactly one `root`) and future polyrepo/composition layouts share one API shape.
+- **Data Product Target Repository**: Domain `Repository` (from git-utils), already accepted in instantiate via **`targetRepositories`** (list of keyed entries: `targetId`, optional `branch`, `RepositoryRes`). Expected to already exist; instantiate commits onto a branch (default or override). Update must reuse this **list-based** contract so phase-1 monorepo (exactly one `targetId`) and future polyrepo/composition layouts share one API shape.
 - **Instantiate Blueprint Version (use case)**: Public use case `POST .../blueprints-versions/instantiate` (on `BlueprintVersionsController`). **Aligned in this feature**: auth headers off the domain command (factory→git port only); descriptor enrichment via templating outbound port; resolves **`InstantiationScenario`** and implements only **`MONOREPO_NO_COMPOSITION`** (1→1 singular ROOT source/target); Initial Generation inlined in `instantiateMonorepoNoComposition` via a **granular** instantiate git outbound port (orphan → render → commit → tag → merge → push). Unsupported layouts throw `UnsupportedOperationException`.
 - **Git Provider & Local Git Operations (git-utils — available)**: `GitProviderFactory` + `GitProvider` / `GitOperation` provide the primitives. **Blueprint-server use cases must not call these primitives directly** — only git outbound port **impls** may. Required primitives for Initial Generation (Scenario 1) and Blueprint Update:
   - `readRepository` at branch/tag/commit
@@ -184,7 +186,7 @@ Result: Merge Conflict. Git flags a conflict on Line 10 in the Pull Request. The
 - **Initial generation must leave a pure checkpoint**: Without a v1 pure checkpoint tag, Step 2 cannot establish a correct common ancestor. Instantiate now performs orphan → tag → merge → push (verified by `TagBasedThreeWayMergeIT`). For multi-target layouts, each target that receives rendered content needs its own pure checkpoint.
 - **Parameters for the next version**: Request carries the full parameter map for the **new** version; validation follows that version’s manifest.
 - **Git identity**: Commits/tags attributed with provided author metadata; **blank author → defaults applied in the git outbound port**.
-- **List-based targets/results from day one**: Request uses `targetRepositories[]` and response uses `results[]` (instantiate pattern). Phase 1 validates exactly one `root` / monorepo-no-composition; widening to N→1 / 1→N / N→N must not break the public contract.
+- **List-based targets/results from day one**: Request uses `targetRepositories[]` and response uses `results[]` (instantiate pattern). Phase 1 validates exactly one `targetId` / monorepo-no-composition; widening to N→1 / 1→N / N→N must not break the public contract.
 - **Tag-based merge is per target repository**: Checkpoint tags and update branches are scoped to each data-product Git repository in the list; the PR **on/off** decision is global across that list, while each entry may specify its own PR target branch.
 - **Separation of concerns**: Use cases own orchestration + naming via `BlueprintGitNamingConventions` + `InstantiationScenario`; git ports own Git I/O + auth headers + author defaults; templating ports own render + descriptor enrichment. Neither use case sees auth headers or `CreatePullRequest`; both call granular git port methods so workflow steps remain visible.
 
@@ -199,7 +201,7 @@ Result: Merge Conflict. Git flags a conflict on Line 10 in the Pull Request. The
   - Initial generation (companion on instantiate): inlined in `instantiateMonorepoNoComposition` + granular git port (orphan → render → commit → tag with use-case-supplied name → merge into integration → pushBranch + pushTag). Do **not** tag main’s mixed tip or push the temporary orphan branch.
 - Consume git-utils **1.1.0** (blueprint-server dependency).
 - Checkpoint / update-branch / orphan naming via shared **`BlueprintGitNamingConventions`** (`blueprint-v{version}` / `update/blueprint-v{version}` / `odm-init/{uuid}`) so version → ref needs no extra DB state; git ports consume the strings.
-- Shape the REST contract like instantiate: **`targetRepositories[]` in + `results[]` out**; phase-1 validation = exactly one `root` / monorepo no composition; optional PR open is a **global** body flag; each target entry may set **`pullRequestTargetBranch`**. Note: update ignores per-target `branch` for the Git workflow (always starts from the current checkpoint tag); `branch` remains on the DTO for API alignment with instantiate.
+- Shape the REST contract like instantiate: **`targetRepositories[]` in + `results[]` out**; phase-1 validation = exactly one `targetId` / monorepo no composition; optional PR open is a **global** body flag; each target entry may set **`pullRequestTargetBranch`**. Note: update ignores per-target `branch` for the Git workflow (always starts from the current checkpoint tag); `branch` remains on the DTO for API alignment with instantiate.
 - Auth headers: factory → git port ctor only (update and **aligned instantiate**); never on the domain command.
 - When multi-repo/composition becomes supported, update reuses the same list contract and fills the corresponding `InstantiationScenario` method without a breaking API change.
 
@@ -282,7 +284,7 @@ Result: Merge Conflict. Git flags a conflict on Line 10 in the Pull Request. The
 
 | AC# | Description                                                                                                                              | Addressable? | Gaps/Notes                                                                                              |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
-| 1   | Expose `POST .../update-data-product` with blueprint id, current/next versions, parameters, **`targetRepositories[]`**, author metadata  | Yes          | Align with instantiate list shape; phase-1: exactly one `root`                                          |
+| 1   | Expose `POST .../update-data-product` with blueprint id, current/next versions, parameters, **`targetRepositories[]`**, author metadata  | Yes          | Align with instantiate list shape; phase-1: exactly one `targetId`                                          |
 | 2   | Create temporary update branch from **current** checkpoint tag (not default branch)                                                      | Yes          | Inlined in `updateMonorepoNoComposition` → `createAndCheckoutBranch`; names from `BlueprintGitNamingConventions` |
 | 3   | Clean working tree, instantiate **next** version, commit with author metadata                                                            | Yes          | Clean+commit in git port (NIO clean); render/enrich via templating port; author defaults in git port       |
 | 4   | Create and push **next** checkpoint tag; push update branch                                                                              | Yes          | Inlined in `updateMonorepoNoComposition` (`createCheckpointTag` + `pushTag` / `pushBranch`)                      |

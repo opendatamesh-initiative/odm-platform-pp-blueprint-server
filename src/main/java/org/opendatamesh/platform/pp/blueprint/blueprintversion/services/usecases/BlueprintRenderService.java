@@ -1,9 +1,22 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.VelocityEngine;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
@@ -13,16 +26,11 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 
-import java.io.IOException;
-import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
-
-import static org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation.InstantiationStrategy.MONOREPO;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 
 /**
  * Shared monorepo-no-composition Velocity render-and-copy utility used by
@@ -244,11 +252,6 @@ public class BlueprintRenderService {
             return "";
         }
         return path.replace('\\', '/').replaceFirst("^/+", "");
-    }
-
-    private boolean isMonorepoNoComposition(Manifest manifest) {
-        return MONOREPO.equals(manifest.getInstantiation().getStrategy())
-                && CollectionUtils.isEmpty(manifest.getComposition());
     }
 
     private Manifest parseManifest(BlueprintVersion blueprintVersion) {

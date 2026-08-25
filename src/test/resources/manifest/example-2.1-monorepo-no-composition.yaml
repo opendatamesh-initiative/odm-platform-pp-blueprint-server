@@ -11,7 +11,7 @@ parameters:
     type: string
     required: true
     validation:
-      allowedValues: [ dev, staging, prod ]
+      allowedValues: [dev, staging, prod]
     ui:
       group: General Configuration
       label: Environment
@@ -34,4 +34,11 @@ protectedResources:
   - path: README.md
 
 instantiation:
-  strategy: monorepo
+  repositories:
+    - key: main
+      description: Target repository for all data product assets
+  root:
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: ./

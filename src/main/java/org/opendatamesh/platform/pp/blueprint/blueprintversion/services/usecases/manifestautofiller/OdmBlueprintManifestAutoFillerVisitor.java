@@ -1,24 +1,31 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller;
 
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestComposition;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRepository;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRoot;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.protectedresource.ManifestProtectedResourceIntegrity;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationCompositionLayout;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationTarget;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestCompositionVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationRootVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
 import java.util.List;
 
 class OdmBlueprintManifestAutoFillerVisitor implements ManifestVisitor, ManifestParameterVisitor,
-ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
+        ManifestProtectedResourceVisitor, ManifestInstantiationVisitor, ManifestInstantiationRootVisitor,
+        ManifestCompositionVisitor {
 
     private final String blueprintName;
 
@@ -43,17 +50,17 @@ ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
 
         List<ManifestParameter> parameters = manifest.getParameters();
         if (parameters != null) {
-            for (int i = 0; i < parameters.size(); i++) {
-                ManifestParameter parameter = parameters.get(i);
+            for (ManifestParameter parameter : parameters) {
                 if (parameter != null) {
                     parameter.accept(this);
                 }
             }
         }
 
-        if (manifest.getInstantiation().getStrategy() == null) {
-            manifest.getInstantiation().accept(this);
+        if (manifest.getInstantiation() == null) {
+            manifest.setInstantiation(new ManifestInstantiation());
         }
+        manifest.getInstantiation().accept(this);
     }
 
     @Override
@@ -72,11 +79,36 @@ ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
 
     @Override
     public void visit(ManifestInstantiation manifestInstantiation) {
-        if (manifestInstantiation.getStrategy() == null) {
-            manifestInstantiation.setStrategy(ManifestInstantiation.InstantiationStrategy.MONOREPO);
+        if (CollectionUtils.isEmpty(manifestInstantiation.getRepositories())) {
+            ManifestInstantiationRepository repository = new ManifestInstantiationRepository();
+            repository.setKey(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
+            repository.setDescription("Target repository for all data product assets");
+            List<ManifestInstantiationRepository> repositories = new ArrayList<>();
+            repositories.add(repository);
+            manifestInstantiation.setRepositories(repositories);
+        }
+
+        String repositoryKey = manifestInstantiation.getRepositories().getFirst().getKey();
+        if (!StringUtils.hasText(repositoryKey)) {
+            repositoryKey = OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY;
+            manifestInstantiation.getRepositories().getFirst().setKey(repositoryKey);
+        }
+
+        if (manifestInstantiation.getRoot() == null) {
+            manifestInstantiation.setRoot(new ManifestInstantiationRoot());
+        }
+        if (manifestInstantiation.getRoot().getTargets() == null) {
+            manifestInstantiation.getRoot().setTargets(new ArrayList<>());
+        }
+        if (manifestInstantiation.getRoot().getTargets().isEmpty()) {
+            ManifestTarget target = new ManifestTarget();
+            target.setSourcePath("./");
+            target.setRepository(repositoryKey.trim());
+            target.setPath("./");
+            manifestInstantiation.getRoot().getTargets().add(target);
         }
     }
-    
+
     @Override
     public void visit(ManifestParameterValidation validation) {
         // No auto fill for parameter validation
@@ -91,15 +123,20 @@ ManifestProtectedResourceVisitor, ManifestInstantiationVisitor{
     public void visit(ManifestProtectedResourceIntegrity integrity) {
         // No auto fill for protected resource integrity
     }
-    
+
     @Override
-    public void visit(ManifestInstantiationCompositionLayout compositionLayout) {
-        // No auto fill for instantiation composition layout
+    public void visit(ManifestInstantiationRepository repository) {
+        // No auto fill for repository entries beyond instantiation-level defaults
     }
 
     @Override
-    public void visit(ManifestInstantiationTarget target) {
-        // No auto fill for instantiation target
+    public void visit(ManifestInstantiationRoot root) {
+        // Handled in visit(ManifestInstantiation)
+    }
+
+    @Override
+    public void visit(ManifestTarget target) {
+        // No auto fill for targets beyond instantiation-level defaults
     }
 
     @Override

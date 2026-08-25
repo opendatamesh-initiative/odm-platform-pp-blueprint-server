@@ -32,7 +32,6 @@ import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
 import org.opendatamesh.platform.git.model.RepositoryPointerTag;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
@@ -76,14 +75,19 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
+import static org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY;
 
 /**
  * API-level integration tests for tag-based 3-way merge semantics (BDMD-5127).
  * <p>
- * GitProvider is mocked, but {@link GitOperation} delegates to a real {@link GitOperationImpl}
- * on durable local repositories. {@code readRepository} is stubbed to hand those directories
- * (instead of cloning), and push is stubbed as a no-op. After instantiate + update through the
- * service API, tests inspect a local merge preview of the update branch into {@code main}.
+ * GitProvider is mocked, but {@link GitOperation} delegates to a real
+ * {@link GitOperationImpl}
+ * on durable local repositories. {@code readRepository} is stubbed to hand
+ * those directories
+ * (instead of cloning), and push is stubbed as a no-op. After instantiate +
+ * update through the
+ * service API, tests inspect a local merge preview of the update branch into
+ * {@code main}.
  */
 public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
 
@@ -100,8 +104,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
             "instantiate/source-repo/infrastructure/core/network.tf",
             "instantiate/source-repo/infrastructure/core/iam.tf",
             "instantiate/source-repo/docs/architecture.md",
-            "instantiate/source-repo/scripts/bootstrap.sh"
-    );
+            "instantiate/source-repo/scripts/bootstrap.sh");
 
     private static final String MAIN = "main";
     private static final String USER_FILE = "user/custom.md";
@@ -117,7 +120,8 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Scenario 1 — pre-existing user files survive update merge preview because the checkpoint
+     * Scenario 1 — pre-existing user files survive update merge preview because the
+     * checkpoint
      * baseline is a pure orphan commit produced by Instantiation.
      */
     @Test
@@ -160,7 +164,8 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Scenario 2A — non-overlapping line edits on the same file auto-combine in the PR merge preview.
+     * Scenario 2A — non-overlapping line edits on the same file auto-combine in the
+     * PR merge preview.
      */
     @Test
     void scenario2a_nonOverlappingLineEditsMergeCleanly(@TempDir Path sourceDir, @TempDir Path targetDir)
@@ -318,7 +323,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
         request.setBlueprintVersionNumber(version);
 
         InstantiateBlueprintVersionTargetRepositoryRes target = new InstantiateBlueprintVersionTargetRepositoryRes();
-        target.setType(BlueprintRepositoryLogicalType.ROOT);
+        target.setTargetId(DEFAULT_REPOSITORY_KEY);
         target.setRepository(buildTargetRepository());
         request.setTargetRepositories(List.of(target));
 
@@ -331,8 +336,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                InstantiateBlueprintVersionResponseRes.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
@@ -344,7 +348,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
         request.setCreatePullRequest(false);
 
         UpdateDataProductTargetRepositoryRes target = new UpdateDataProductTargetRepositoryRes();
-        target.setType(BlueprintRepositoryLogicalType.ROOT);
+        target.setTargetId(DEFAULT_REPOSITORY_KEY);
         target.setRepository(buildTargetRepository());
         request.setTargetRepositories(List.of(target));
 
@@ -357,8 +361,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                UpdateDataProductResultRes.class
-        );
+                UpdateDataProductResultRes.class);
     }
 
     private void commitOnMain(Path repoDir, Map<String, String> files, String message) throws Exception {
@@ -411,7 +414,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
 
     private String resolveMergeBase(Path repoDir, String refA, String refB) throws Exception {
         try (Git git = Git.open(repoDir.toFile());
-             RevWalk walk = new RevWalk(git.getRepository())) {
+                RevWalk walk = new RevWalk(git.getRepository())) {
             RevCommit a = walk.parseCommit(git.getRepository().resolve(refA));
             RevCommit b = walk.parseCommit(git.getRepository().resolve(refB));
             walk.setRevFilter(RevFilter.MERGE_BASE);
@@ -436,8 +439,8 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
     private Set<String> listTreePaths(Path repoDir, String ref) throws Exception {
         Set<String> paths = new LinkedHashSet<>();
         try (Git git = Git.open(repoDir.toFile());
-             RevWalk walk = new RevWalk(git.getRepository());
-             TreeWalk treeWalk = new TreeWalk(git.getRepository())) {
+                RevWalk walk = new RevWalk(git.getRepository());
+                TreeWalk treeWalk = new TreeWalk(git.getRepository())) {
             RevCommit commit = walk.parseCommit(git.getRepository().resolve(ref));
             treeWalk.addTree(commit.getTree());
             treeWalk.setRecursive(true);
@@ -476,7 +479,8 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
             if (destination.getParent() != null) {
                 Files.createDirectories(destination.getParent());
             }
-            try (InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourcePath)) {
+            try (InputStream inputStream = Thread.currentThread().getContextClassLoader()
+                    .getResourceAsStream(resourcePath)) {
                 Files.copy(inputStream, destination, StandardCopyOption.REPLACE_EXISTING);
             }
         }
@@ -497,8 +501,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
-                BlueprintRes.class
-        );
+                BlueprintRes.class);
         assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(createdBlueprint.getBody()).isNotNull();
 
@@ -526,8 +529,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
         ResponseEntity<BlueprintVersionRes> createdVersion = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS),
                 new HttpEntity<>(versionRes),
-                BlueprintVersionRes.class
-        );
+                BlueprintVersionRes.class);
         assertThat(createdVersion.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }
 
@@ -589,8 +591,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
     private record MergePreview(
             MergeResult.MergeStatus status,
             Map<String, int[][]> conflicts,
-            Map<String, String> fileContents
-    ) {
+            Map<String, String> fileContents) {
         String fileContent(String path) {
             return fileContents.get(path);
         }

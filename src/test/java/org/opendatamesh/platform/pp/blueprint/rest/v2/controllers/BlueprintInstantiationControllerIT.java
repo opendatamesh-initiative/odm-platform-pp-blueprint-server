@@ -18,7 +18,7 @@ import org.opendatamesh.platform.git.exceptions.GitOperationException;
 import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.*;
 import org.opendatamesh.platform.git.provider.GitProvider;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
@@ -66,8 +66,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             "instantiate/source-repo/infrastructure/core/network.tf",
             "instantiate/source-repo/infrastructure/core/iam.tf",
             "instantiate/source-repo/docs/architecture.md",
-            "instantiate/source-repo/scripts/bootstrap.sh"
-    );
+            "instantiate/source-repo/scripts/bootstrap.sh");
 
     @Autowired
     private GitProviderFactoryMock gitProviderFactoryMock;
@@ -84,21 +83,22 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateMonorepoThenReturn200(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
         GitOperation mockGitOperation = stubGitHappyPath(sourceDir, targetDir);
 
         ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365), jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365),
+                        jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
 
         // Git: first read clones the blueprint repo at the released version tag;
-        //      second read clones the target repo at the branch we populate.
+        // second read clones the target repo at the branch we populate.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
@@ -106,7 +106,8 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
         assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
         assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
-        // Git: populate flow stages changes, commits with the expected message, then pushes (no force-push).
+        // Git: populate flow stages changes, commits with the expected message, then
+        // pushes (no force-push).
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
@@ -132,12 +133,15 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Spec — Scenario: Commit author can be customized with default fallback (provided identity).
+     * Spec — Scenario: Commit author can be customized with default fallback
+     * (provided identity).
      */
     @Test
-    void whenCommitAuthorIsProvidedThenCommitUsesProvidedIdentity(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenCommitAuthorIsProvidedThenCommitUsesProvidedIdentity(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
@@ -162,22 +166,21 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         doNothing().when(mockGitOperation).pushBranch(any(), anyString());
         doNothing().when(mockGitOperation).pushTag(any(), anyString());
 
-        InstantiateBlueprintVersionCommandRes request =
-                buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365, "Jane Doe", "jane.doe@example.org", null);
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, "prod", 365, "Jane Doe", "jane.doe@example.org", null);
 
         ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                InstantiateBlueprintVersionResponseRes.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(commitRef.get()).isNotNull();
         assertThat(commitRef.get().getAuthor()).isEqualTo("Jane Doe");
         assertThat(commitRef.get().getAuthorEmail()).isEqualTo("jane.doe@example.org");
         // Git: same clone pointers as default flow;
-        //      commit message still identifies blueprint version.
+        // commit message still identifies blueprint version.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
@@ -200,12 +203,15 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Spec — Scenario: Commit author can be customized with default fallback (defaults when omitted).
+     * Spec — Scenario: Commit author can be customized with default fallback
+     * (defaults when omitted).
      */
     @Test
-    void whenCommitAuthorOmittedThenCommitUsesServerDefaults(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenCommitAuthorOmittedThenCommitUsesServerDefaults(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
@@ -230,22 +236,21 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         doNothing().when(mockGitOperation).pushBranch(any(), anyString());
         doNothing().when(mockGitOperation).pushTag(any(), anyString());
 
-        InstantiateBlueprintVersionCommandRes request =
-                buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365, null, null, null);
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, "prod", 365, null, null, null);
 
         ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                InstantiateBlueprintVersionResponseRes.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(commitRef.get()).isNotNull();
         assertThat(commitRef.get().getAuthor()).isEqualTo("odm-blueprint-server");
         assertThat(commitRef.get().getAuthorEmail()).isEqualTo("odm-blueprint-server@local");
         // Git: clone pointers unchanged;
-        //      only the commit identity differs from the explicit-author test.
+        // only the commit identity differs from the explicit-author test.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
@@ -271,20 +276,23 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      * Spec — Scenario: Instantiation strategy is derived from manifest metadata.
      */
     @Test
-    void whenInstantiateWithoutMethodFieldThenNotRejectedForMissingMethod(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenInstantiateWithoutMethodFieldThenNotRejectedForMissingMethod(@TempDir Path sourceDir,
+            @TempDir Path targetDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
         GitOperation mockGitOperation = stubGitHappyPath(sourceDir, targetDir);
 
         ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365), jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365),
+                        jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        // Git: omitting manifest `method` does not block instantiation; clone and push behavior matches the happy path.
+        // Git: omitting manifest `method` does not block instantiation; clone and push
+        // behavior matches the happy path.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
@@ -310,9 +318,11 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      * Spec — Scenario: Target branch defaults to repository default.
      */
     @Test
-    void whenTargetBranchOmittedThenGitUsesRepositoryDefaultBranch(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenTargetBranchOmittedThenGitUsesRepositoryDefaultBranch(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
@@ -336,11 +346,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365, null, null, null), jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365,
+                        null, null, null), jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
 
-        // Git: no explicit target branch in request → second read uses repository default branch (main).
+        // Git: no explicit target branch in request → second read uses repository
+        // default branch (main).
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
@@ -369,7 +380,8 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenTargetBranchSetThenGitUsesThatBranch(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
@@ -390,15 +402,14 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         doNothing().when(mockGitOperation).pushBranch(any(), anyString());
         doNothing().when(mockGitOperation).pushTag(any(), anyString());
 
-        InstantiateBlueprintVersionCommandRes request =
-                buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365, null, null, "feature/custom");
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, "prod", 365, null, null, "feature/custom");
 
         rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                InstantiateBlueprintVersionResponseRes.class);
 
         // Git: second read uses the requested branch instead of the repository default.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
@@ -424,41 +435,47 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Spec — Scenario: Exactly one root target is required in this phase (empty list).
+     * Spec — Scenario: Exactly one root target is required in this phase (empty
+     * list).
      */
     @Test
     void whenNoTargetRepositoriesThenReturn400() throws Exception {
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
-        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365);
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, "prod", 365);
         request.setTargetRepositories(List.of());
 
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                String.class
-        );
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         deleteCreatedBlueprint(context);
     }
 
     /**
-     * Spec — Scenario: Exactly one root target is required in this phase (more than one).
+     * Spec — Scenario: Exactly one root target is required in this phase (more than
+     * one).
      */
     @Test
-    void whenMoreThanOneTargetRepositoryThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenMoreThanOneTargetRepositoryThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
         stubGitHappyPath(sourceDir, targetDir);
 
-        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365);
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, "prod", 365);
         InstantiateBlueprintVersionTargetRepositoryRes t1 = new InstantiateBlueprintVersionTargetRepositoryRes();
-        t1.setType(BlueprintRepositoryLogicalType.ROOT);
+        t1.setTargetId(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
         t1.setRepository(buildTargetRepository());
         InstantiateBlueprintVersionTargetRepositoryRes t2 = new InstantiateBlueprintVersionTargetRepositoryRes();
-        t2.setType(BlueprintRepositoryLogicalType.ROOT);
+        t2.setTargetId(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
         t2.setRepository(buildTargetRepository());
         request.setTargetRepositories(List.of(t1, t2));
 
@@ -466,32 +483,32 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                String.class
-        );
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         deleteCreatedBlueprint(context);
     }
 
     /**
-     * Spec — Scenario: Exactly one root target is required in this phase (wrong type).
+     * Spec — Scenario: targetId must match the sole instantiation.repositories[].key.
      */
     @Test
-    void whenTargetTypeNotRootThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenTargetIdDoesNotMatchRepositoryKeyThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
         stubGitHappyPath(sourceDir, targetDir);
 
-        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365);
-        ObjectNode requestBody = OBJECT_MAPPER.valueToTree(request);
-        ((ObjectNode) requestBody.get("targetRepositories").get(0)).put("type", "apps");
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, "prod", 365);
+        request.getTargetRepositories().getFirst().setTargetId("not-the-manifest-repo-key");
 
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(requestBody.toString(), jsonHeaders()),
-                String.class
-        );
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         deleteCreatedBlueprint(context);
@@ -502,16 +519,17 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      */
     @Test
     void whenRequiredParameterMissingThenReturn400() throws Exception {
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
-        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName, context.versionNumber, null, 365);
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, null, 365);
         request.getParameters().remove("environment");
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                String.class
-        );
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         deleteCreatedBlueprint(context);
@@ -522,15 +540,16 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      */
     @Test
     void whenParameterTypeOrConstraintInvalidThenReturn400() throws Exception {
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
-        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName, context.versionNumber, "invalid-env", -1);
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(context.blueprintName,
+                context.versionNumber, "invalid-env", -1);
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
                 new HttpEntity<>(request, jsonHeaders()),
-                String.class
-        );
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         deleteCreatedBlueprint(context);
@@ -541,14 +560,15 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      */
     @Test
     void whenManifestContainsCompositionThenReturn400() throws Exception {
-        BlueprintContext context = createBlueprintAndVersion("full-stack-dp", "2.1.0", manifestMonorepoWithComposition());
+        BlueprintContext context = createBlueprintAndVersion("full-stack-dp", "2.1.0",
+                manifestMonorepoWithComposition());
 
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365), jsonHeaders()),
-                String.class
-        );
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365),
+                        jsonHeaders()),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         deleteCreatedBlueprint(context);
@@ -559,26 +579,31 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      */
     @Test
     void whenManifestIsPolyrepoThenReturn400() throws Exception {
-        BlueprintContext context = createBlueprintAndVersion("split-stack-template", "0.5.0", manifestPolyrepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("split-stack-template", "0.5.0",
+                manifestPolyrepoNoComposition());
 
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "eu-west-1", 365), jsonHeaders()),
-                String.class
-        );
+                new HttpEntity<>(
+                        buildInstantiateRequest(context.blueprintName, context.versionNumber, "eu-west-1", 365),
+                        jsonHeaders()),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         deleteCreatedBlueprint(context);
     }
 
     /**
-     * Spec — Scenario: Git operation failures are surfaced as client or server errors per global handling.
+     * Spec — Scenario: Git operation failures are surfaced as client or server
+     * errors per global handling.
      */
     @Test
-    void whenGitPushFailsThenResponseReflectsGlobalExceptionHandling(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenGitPushFailsThenResponseReflectsGlobalExceptionHandling(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
 
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
@@ -601,12 +626,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ResponseEntity<String> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365), jsonHeaders()),
-                String.class
-        );
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365),
+                        jsonHeaders()),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        // Git: clone source and target, stage and commit succeed; pushBranch fails and surfaces as client error.
+        // Git: clone source and target, stage and commit succeed; pushBranch fails and
+        // surfaces as client error.
         verify(mockGitOperation, times(2)).readRepository(any(), any(), any());
         verify(mockGitOperation).addAll(any());
         verify(mockGitOperation).commit(any(), any());
@@ -615,27 +641,31 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Spec — Scenario: Blueprint README declared in repository metadata is not left at repository root.
+     * Spec — Scenario: Blueprint README declared in repository metadata is not left
+     * at repository root.
      */
     @Test
-    void whenPopulateThenReadmeIsRelocatedUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenPopulateThenReadmeIsRelocatedUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
         GitOperation mockGitOperation = stubGitHappyPath(sourceDir, targetDir);
 
         ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365), jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365),
+                        jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Files.exists(targetDir.resolve("README.md"))).isFalse();
         assertThat(Files.exists(targetDir.resolve(".odm/blueprint/README.md"))).isTrue();
         assertThat(Files.exists(targetDir.resolve("manifest.yaml"))).isFalse();
         assertThat(Files.exists(targetDir.resolve(".odm/blueprint/blueprint-manifest.yaml"))).isTrue();
         // Git: standard tag/branch reads and populate push;
-        //      file layout above asserts README and manifest.yaml were relocated under .odm/blueprint.
+        // file layout above asserts README and manifest.yaml were relocated under
+        // .odm/blueprint.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
@@ -659,26 +689,30 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Spec — Scenario: Manifest lineage snapshot is persisted under `.odm/blueprint/`.
+     * Spec — Scenario: Manifest lineage snapshot is persisted under
+     * `.odm/blueprint/`.
      */
     @Test
-    void whenPopulateThenManifestSnapshotIsWrittenUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenPopulateThenManifestSnapshotIsWrittenUnderDotOdmBlueprint(@TempDir Path sourceDir, @TempDir Path targetDir)
+            throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0", manifestMonorepoNoComposition());
+        BlueprintContext context = createBlueprintAndVersion("analytics-lakehouse", "1.2.0",
+                manifestMonorepoNoComposition());
         GitOperation mockGitOperation = stubGitHappyPath(sourceDir, targetDir);
 
         ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
                 HttpMethod.POST,
-                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365), jsonHeaders()),
-                InstantiateBlueprintVersionResponseRes.class
-        );
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365),
+                        jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Files.exists(targetDir.resolve("manifest.yaml"))).isFalse();
         Path lineagePath = targetDir.resolve(".odm/blueprint/blueprint-manifest.yaml");
         assertThat(Files.exists(lineagePath)).isTrue();
         // Git: same clone/push shape as other populate tests;
-        //      source manifest.yaml is removed from root; snapshot is written as blueprint-manifest.yaml under .odm/blueprint/.
+        // source manifest.yaml is removed from root; snapshot is written as
+        // blueprint-manifest.yaml under .odm/blueprint/.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
@@ -700,7 +734,6 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
 
         deleteCreatedBlueprint(context);
     }
-
 
     private GitOperation stubGitHappyPath(Path sourceDir, Path targetDir) {
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
@@ -737,7 +770,8 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         }
     }
 
-    private BlueprintContext createBlueprintAndVersion(String blueprintName, String version, JsonNode manifestContent) throws Exception {
+    private BlueprintContext createBlueprintAndVersion(String blueprintName, String version, JsonNode manifestContent)
+            throws Exception {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String uniqueBlueprintName = blueprintName + "-" + suffix;
         ObjectNode content = (ObjectNode) manifestContent.deepCopy();
@@ -753,8 +787,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
-                BlueprintRes.class
-        );
+                BlueprintRes.class);
         assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(createdBlueprint.getBody()).isNotNull();
 
@@ -772,16 +805,14 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ResponseEntity<BlueprintVersionRes> createdVersion = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINT_VERSIONS),
                 new HttpEntity<>(versionRes),
-                BlueprintVersionRes.class
-        );
+                BlueprintVersionRes.class);
         assertThat(createdVersion.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(createdVersion.getBody()).isNotNull();
         return new BlueprintContext(
                 createdBlueprint.getBody().getUuid(),
                 uniqueBlueprintName,
                 version,
-                createdVersion.getBody().getUuid()
-        );
+                createdVersion.getBody().getUuid());
     }
 
     private BlueprintRes.BlueprintRepoRes buildBlueprintRepo() {
@@ -806,8 +837,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             String blueprintName,
             String blueprintVersion,
             String environment,
-            Integer retentionDays
-    ) {
+            Integer retentionDays) {
         return buildInstantiateRequest(blueprintName, blueprintVersion, environment, retentionDays, null, null, null);
     }
 
@@ -818,14 +848,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             Integer retentionDays,
             String commitAuthorName,
             String commitAuthorEmail,
-            String targetBranch
-    ) {
+            String targetBranch) {
         InstantiateBlueprintVersionCommandRes request = new InstantiateBlueprintVersionCommandRes();
         request.setBlueprintName(blueprintName);
         request.setBlueprintVersionNumber(blueprintVersion);
 
         InstantiateBlueprintVersionTargetRepositoryRes target = new InstantiateBlueprintVersionTargetRepositoryRes();
-        target.setType(BlueprintRepositoryLogicalType.ROOT);
+        target.setTargetId(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
         if (targetBranch != null) {
             target.setBranch(targetBranch);
         }
@@ -869,7 +898,6 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         return readYamlManifestResource("manifest/example-2.3-polyrepo-no-composition.yaml");
     }
 
-
     private JsonNode readYamlManifestResource(String resourcePath) throws IOException {
         try (InputStream inputStream = getResourceAsStream(resourcePath)) {
             return YAML_OBJECT_MAPPER.readTree(inputStream);
@@ -911,7 +939,8 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         private final String versionNumber;
         private final String blueprintVersionUuid;
 
-        private BlueprintContext(String blueprintUuid, String blueprintName, String versionNumber, String blueprintVersionUuid) {
+        private BlueprintContext(String blueprintUuid, String blueprintName, String versionNumber,
+                String blueprintVersionUuid) {
             this.blueprintUuid = blueprintUuid;
             this.blueprintName = blueprintName;
             this.versionNumber = versionNumber;

@@ -16,7 +16,7 @@ import org.opendatamesh.platform.git.exceptions.GitProviderAuthenticationExcepti
 import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.*;
 import org.opendatamesh.platform.git.provider.GitProvider;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
@@ -188,7 +188,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
 
     @Test
     void whenPullRequestFailsAfterSuccessfulUpdateThenReturn200WithWarnings(@TempDir Path sourceDir,
-                                                                            @TempDir Path targetDir) throws Exception {
+            @TempDir Path targetDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
         BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0");
         stubUpdateHappyPath(sourceDir, targetDir);
@@ -273,7 +273,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0");
         UpdateDataProductCommandRes request = buildUpdateRequest(context.blueprintName, false, null);
         UpdateDataProductTargetRepositoryRes second = new UpdateDataProductTargetRepositoryRes();
-        second.setType(BlueprintRepositoryLogicalType.ROOT);
+        second.setTargetId(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
         second.setRepository(buildTargetRepository());
         request.setTargetRepositories(List.of(request.getTargetRepositories().getFirst(), second));
 
@@ -286,7 +286,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().getMessage())
                 .isEqualTo(
-                        "Exactly one target repository of type 'root' is required, only monorepo is supported in this phase");
+                        "Exactly one target repository is required, only monorepo is supported in this phase");
         deleteCreatedBlueprint(context.blueprintUuid);
     }
 
@@ -420,7 +420,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         request.setCreatePullRequest(createPullRequest);
 
         UpdateDataProductTargetRepositoryRes target = new UpdateDataProductTargetRepositoryRes();
-        target.setType(BlueprintRepositoryLogicalType.ROOT);
+        target.setTargetId(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
         target.setRepository(buildTargetRepository());
         target.setPullRequestTargetBranch(pullRequestTargetBranch);
         request.setTargetRepositories(List.of(target));

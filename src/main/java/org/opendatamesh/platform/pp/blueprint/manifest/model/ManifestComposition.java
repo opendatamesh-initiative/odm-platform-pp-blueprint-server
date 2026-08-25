@@ -2,9 +2,12 @@ package org.opendatamesh.platform.pp.blueprint.manifest.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.core.ManifestComponentBase;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class ManifestComposition extends ManifestComponentBase {
@@ -13,6 +16,7 @@ public class ManifestComposition extends ManifestComponentBase {
     private String blueprintName;
     private String blueprintVersion;
     private Map<String, JsonNode> parameterMapping = new LinkedHashMap<>();
+    private List<ManifestTarget> targets = new ArrayList<>();
 
     public String getModule() {
         return module;
@@ -44,6 +48,14 @@ public class ManifestComposition extends ManifestComponentBase {
 
     public void setParameterMapping(Map<String, JsonNode> parameterMapping) {
         this.parameterMapping = parameterMapping;
+    }
+
+    public List<ManifestTarget> getTargets() {
+        return targets;
+    }
+
+    public void setTargets(List<ManifestTarget> targets) {
+        this.targets = targets;
     }
 
     public void accept(ManifestVisitor visitor) {

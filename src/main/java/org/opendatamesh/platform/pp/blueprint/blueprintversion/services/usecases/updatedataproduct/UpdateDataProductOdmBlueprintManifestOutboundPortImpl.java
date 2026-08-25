@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Email;
 import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenarioResolver;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
@@ -27,7 +27,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     /**
-     * Matches manifest schema versions used in the platform (e.g. {@code v1}, {@code 1.0.0}).
+     * Matches manifest schema versions used in the platform (e.g. {@code v1},
+     * {@code 1.0.0}).
      */
     private static final String VERSION = "(v1|1\\.\\d+\\.\\d+.*)";
     private static final LocalValidatorFactoryBean SPRING_VALIDATOR = buildValidator();
@@ -39,7 +40,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
     }
 
     @Override
-    public void validateManifestAndParameters(String spec, String specVersion, JsonNode content, Map<String, JsonNode> parameters) {
+    public void validateManifestAndParameters(String spec, String specVersion, JsonNode content,
+            Map<String, JsonNode> parameters) {
         if (!(Manifest.SPEC_NAME.equalsIgnoreCase(spec) && specVersion.matches(VERSION))) {
             throw new UnsupportedOperationException();
         }
@@ -54,21 +56,32 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
     }
 
     private void checkForUnsupportedOperations(Manifest manifest) {
-        // Layout support (monorepo/polyrepo ± composition) is decided in the use case.
-        if (manifest.getInstantiation() == null || manifest.getInstantiation().getStrategy() == null) {
-            throw new BadRequestException("Manifest instantiation.strategy is required");
-        }
+        InstantiationScenarioResolver.resolve(manifest);
     }
 
     @Override
-    public void validateTargetRepositories(BlueprintVersion blueprintVersion, List<UpdateDataProductTargetRepositoryDto> targetRepositories) {
-        // Must have exactly one target repository of type 'root'; only monorepo is supported for now
+    public void validateTargetRepositories(BlueprintVersion blueprintVersion,
+            List<UpdateDataProductTargetRepositoryDto> targetRepositories) {
+        Manifest manifest;
+        try {
+            manifest = ManifestParserFactory.getParser().deserialize(blueprintVersion.getContent());
+        } catch (IOException e) {
+            throw new BadRequestException("Unable to parse blueprint manifest content", e);
+        }
+        String expectedKey = InstantiationScenarioResolver.soleRepositoryKey(manifest);
+
         if (targetRepositories == null || targetRepositories.size() != 1) {
-            throw new BadRequestException("Exactly one target repository of type 'root' is required, only monorepo is supported in this phase");
+            throw new BadRequestException(
+                    "Exactly one target repository is required, only monorepo is supported in this phase");
         }
         UpdateDataProductTargetRepositoryDto target = targetRepositories.getFirst();
-        if (target.type() != BlueprintRepositoryLogicalType.ROOT) {
-            throw new BadRequestException("Target repository type must be 'root', only monorepo is supported in this phase");
+        if (!StringUtils.hasText(target.targetId())) {
+            throw new BadRequestException("Target repository targetId is required");
+        }
+        if (!expectedKey.equals(target.targetId().trim())) {
+            throw new BadRequestException(
+                    "Target repository targetId '%s' must match the sole instantiation.repositories[].key '%s'"
+                            .formatted(target.targetId(), expectedKey));
         }
     }
 
@@ -132,7 +145,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         validateMinMax(parameter.getKey(), validation.getMin(), validation.getMax(), value, errors);
     }
 
-    private void validateFormat(ManifestParameter parameter, Object value, List<String> errors, ManifestParameterValidation validation) {
+    private void validateFormat(ManifestParameter parameter, Object value, List<String> errors,
+            ManifestParameterValidation validation) {
         if (!StringUtils.hasText(validation.getFormat()) || !(value instanceof String textValue)) {
             return;
         }
@@ -166,7 +180,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         }
     }
 
-    private void validatePattern(ManifestParameter parameter, Object value, List<String> errors, ManifestParameterValidation validation) {
+    private void validatePattern(ManifestParameter parameter, Object value, List<String> errors,
+            ManifestParameterValidation validation) {
         if (StringUtils.hasText(validation.getPattern()) && value instanceof String textValue) {
             try {
                 if (!Pattern.compile(validation.getPattern()).matcher(textValue).matches()) {
@@ -178,7 +193,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         }
     }
 
-    private void validateAllowedValues(ManifestParameter parameter, Object value, List<String> errors, ManifestParameterValidation validation) {
+    private void validateAllowedValues(ManifestParameter parameter, Object value, List<String> errors,
+            ManifestParameterValidation validation) {
         if (validation.getAllowedValues() != null && !validation.getAllowedValues().isEmpty()) {
             JsonNode valueNode = OBJECT_MAPPER.valueToTree(value);
             boolean match = validation.getAllowedValues().stream().filter(Objects::nonNull).anyMatch(valueNode::equals);

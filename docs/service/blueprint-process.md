@@ -4,7 +4,7 @@ How the Blueprint Server applies a blueprint to a data-product repository the fi
 
 Related:
 
-- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, strategy, composition
+- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, repositories/root routing, composition
 - [Git providers](git-providers.md) — auth and provider APIs
 - API: `POST /api/v2/pp/blueprint/blueprints-versions/instantiate`  
   and `POST /api/v2/pp/blueprint/blueprints-versions/update-data-product`
@@ -23,7 +23,7 @@ Related:
 
 Checkpoint tags and update-branch names are domain policy (`BlueprintGitNamingConventions`). They are **not** the same as the blueprint source release tag.
 
-Phase 1 supports **monorepo, no composition** (exactly one `root` target). Request/response shapes stay **list-based** (`targetRepositories` / `results`) so polyrepo and composition can be enabled later without breaking the API.
+Phase 1 supports **monorepo, no composition** (exactly one `targetRepositories` entry whose `targetId` matches the sole `instantiation.repositories[].key`). Request/response shapes stay **list-based** (`targetRepositories` / `results`) so polyrepo and composition can be enabled later without breaking the API.
 
 ---
 

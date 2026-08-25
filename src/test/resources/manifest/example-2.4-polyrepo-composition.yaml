@@ -13,26 +13,36 @@ parameters:
       label: Data domain
       formType: text
 
+instantiation:
+  repositories:
+    - key: pipeline-repo
+      description: Target repository for data pipeline components
+    - key: api-repo
+      description: Target repository for API serving components
+
+  root:
+    targets:
+      - sourcePath: ./core
+        repository: pipeline-repo
+        path: ./
+
 composition:
   - module: ingest
     blueprintName: odm-blueprint-ingest-batch
     blueprintVersion: 2.0.0
     parameterMapping:
       domain: dataDomain
+    targets:
+      - sourcePath: ./
+        repository: pipeline-repo
+        path: pipelines/batch
 
   - module: consume
     blueprintName: odm-blueprint-consumer-api
     blueprintVersion: 1.1.0
     parameterMapping:
       domain: dataDomain
-
-instantiation:
-  strategy: polyrepo
-  targets:
-    - repositoryNamePostfix: "-pipeline"
-      createPolicy: must_exist
-      module: ingest
-
-    - repositoryNamePostfix: "-api"
-      createPolicy: create_if_missing
-      module: consume
+    targets:
+      - sourcePath: ./
+        repository: api-repo
+        path: services/consumer

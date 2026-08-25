@@ -6,15 +6,13 @@ import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenario;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenarioResolver;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.exceptions.InternalException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -86,19 +84,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
     }
 
     private InstantiationScenario resolveScenario(Manifest manifest) {
-        if (manifest.getInstantiation() == null || manifest.getInstantiation().getStrategy() == null) {
-            throw new BadRequestException("Manifest instantiation.strategy is required");
-        }
-        boolean hasComposition = !CollectionUtils.isEmpty(manifest.getComposition());
-        ManifestInstantiation.InstantiationStrategy strategy = manifest.getInstantiation().getStrategy();
-        return switch (strategy) {
-            case MONOREPO -> hasComposition
-                    ? InstantiationScenario.MONOREPO_WITH_COMPOSITION
-                    : InstantiationScenario.MONOREPO_NO_COMPOSITION;
-            case POLYREPO -> hasComposition
-                    ? InstantiationScenario.POLYREPO_WITH_COMPOSITION
-                    : InstantiationScenario.POLYREPO_NO_COMPOSITION;
-        };
+        return InstantiationScenarioResolver.resolve(manifest);
     }
 
     /**
@@ -163,7 +149,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
         }
 
         return List.of(new UpdateDataProductTargetResult(
-                rootTargetRepository.type(),
+                rootTargetRepository.targetId(),
                 rootTargetRepository.repository(),
                 updateGitResult.updateBranchName(),
                 updateGitResult.checkpointTag(),
@@ -196,11 +182,10 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
     }
 
     private UpdateDataProductTargetRepositoryDto resolveRootTarget(List<UpdateDataProductTargetRepositoryDto> targets) {
-        return targets.stream()
-                .filter(target -> target.type() == BlueprintRepositoryLogicalType.ROOT)
-                .findFirst()
-                .orElseThrow(() -> new InternalException(
-                        "Blueprint update requires a target repository with type 'root'; none found"));
+        if (targets == null || targets.isEmpty()) {
+            throw new InternalException("Blueprint update requires a target repository; none found");
+        }
+        return targets.getFirst();
     }
 
     private String buildPullRequestWarning(Repository repository, UpdateTargetGitResult gitResult, RuntimeException e) {
@@ -239,8 +224,8 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             if (target == null) {
                 throw new BadRequestException("Target repository at index %s is required".formatted(i));
             }
-            if (target.type() == null) {
-                throw new BadRequestException("Target repository type is required at index %s".formatted(i));
+            if (!StringUtils.hasText(target.targetId())) {
+                throw new BadRequestException("Target repository targetId is required at index %s".formatted(i));
             }
             if (target.repository() == null) {
                 throw new BadRequestException("Target repository reference is required at index %s".formatted(i));

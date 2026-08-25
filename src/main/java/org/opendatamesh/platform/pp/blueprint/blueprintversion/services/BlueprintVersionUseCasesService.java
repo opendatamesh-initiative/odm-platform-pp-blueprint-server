@@ -129,7 +129,7 @@ public class BlueprintVersionUseCasesService {
                 command.getBlueprintName(),
                 command.getBlueprintVersionNumber(),
                 command.getTargetRepositories().stream()
-                        .map(res -> new TargetRepositoryDto(null, res.getType(), res.getBranch(),
+                        .map(res -> new TargetRepositoryDto(res.getTargetId(), res.getBranch(),
                                 repositoryMapper.toEntity(res.getRepository())))
                         .toList(),
                 command.getParameters() == null ? Map.of() : new LinkedHashMap<>(command.getParameters()),
@@ -145,7 +145,7 @@ public class BlueprintVersionUseCasesService {
                 ? List.of()
                 : command.getTargetRepositories().stream()
                 .map(res -> new UpdateDataProductTargetRepositoryDto(
-                        res.getType(),
+                        res.getTargetId(),
                         res.getBranch(),
                         repositoryMapper.toEntity(res.getRepository()),
                         res.getPullRequestTargetBranch()))
@@ -171,7 +171,7 @@ public class BlueprintVersionUseCasesService {
         if (result.results() != null) {
             for (UpdateDataProductTargetResult targetResult : result.results()) {
                 UpdateDataProductTargetResultRes res = new UpdateDataProductTargetResultRes();
-                res.setType(targetResult.type());
+                res.setTargetId(targetResult.targetId());
                 res.setRepository(repositoryMapper.toRes(targetResult.repository()));
                 res.setUpdateBranchName(targetResult.updateBranchName());
                 res.setCheckpointTag(targetResult.checkpointTag());

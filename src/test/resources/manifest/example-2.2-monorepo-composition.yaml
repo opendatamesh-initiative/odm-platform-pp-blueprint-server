@@ -22,7 +22,17 @@ parameters:
     ui:
       group: Security
       label: Enable PII masking
-      formType: toggle
+
+instantiation:
+  repositories:
+    - key: main
+      description: Single repository containing application and infrastructure
+
+  root:
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: ./
 
 composition:
   - module: storage
@@ -31,17 +41,17 @@ composition:
     parameterMapping:
       bucketPrefix: projectSlug
       encryptAtRest: enablePiiMasking
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: data-plane/storage
 
   - module: serving
     blueprintName: odm-blueprint-api-skeleton
     blueprintVersion: 1.4.0
     parameterMapping:
       serviceName: projectSlug
-
-instantiation:
-  strategy: monorepo
-  compositionLayout:
-    - module: storage
-      targetPath: data-plane/storage
-    - module: serving
-      targetPath: app/serving
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: app/serving

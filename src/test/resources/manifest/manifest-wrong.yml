@@ -35,4 +35,10 @@ protectedResources:
   - path: README.md
 
 instantiation:
-  strategy: monorepo
+  repositories:
+    - key: main
+  root:
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: ./

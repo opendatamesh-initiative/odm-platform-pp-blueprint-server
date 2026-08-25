@@ -1,8 +1,7 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestvalidator;
 
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
-
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -10,8 +9,8 @@ import java.util.Set;
  */
 class OdmBlueprintManifestValidatorState {
     boolean hasComposition;
-    ManifestInstantiation.InstantiationStrategy currentInstantiationStrategy;
     final Set<String> compositionModules = new HashSet<>();
+    final Set<String> repositoryKeys = new LinkedHashSet<>();
 
     String currentParameterFieldPath;
     String currentParameterKey;
@@ -25,6 +24,5 @@ class OdmBlueprintManifestValidatorState {
     String currentCompositionFieldPath;
 
     String currentInstantiationFieldPath;
-    String currentCompositionLayoutFieldPath;
     String currentTargetFieldPath;
 }

@@ -1,3 +1,17 @@
+# SPDD Analysis: Align Code to Updated Blueprint Manifest Specification
+
+## Original Business Requirement
+
+BDMD-4820 I have updated the manifest specification, now I want to align the existing code to that specification.
+Projects involved: blueprint service, blindata ui
+
+In scope: update code to support the new specificaiton.
+Out of scope: add new features not yet implemented.
+
+---
+
+The authoritative updated specification (from `odm-platform-pp-blueprint-server/src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md`) follows verbatim:
+
 # Software Requirements Specification: Blueprint Manifest
 
 <!-- TOC -->
@@ -568,3 +582,102 @@ that are **not** covered by a registered converter remain in `additionalProperti
 You can register multiple converters; the first converter whose `supports` method matches wins. Extension handling walks
 the full manifest tree (root, parameters, composition, instantiation, nested objects), so you can target extension
 fields on child nodes by returning the appropriate `parentClass` from `supports`.
+
+---
+
+## Domain Concept Identification
+
+### Existing Concepts (from codebase)
+
+- **Blueprint Manifest**: Authoritative YAML/JSON contract (`spec: odm-blueprint-manifest`) parsed by Jackson in the blueprint service (`manifest` package) and mirrored by the Blindata UI Manifest SDK (`manifestSdk`). Relationship: root document governing parameters, protection, composition, and instantiation routing for a blueprint version’s `content`.
+- **Manifest Parser / SDK**: Tree-in/tree-out binding with `additionalProperties` / extension converters (Java) and `fromRaw` / serialization visitors (JS). Relationship: shared contract surface that must stay synchronized with the README schema.
+- **Manifest Parameter (+ validation + ui)**: Declared inputs with `key`, `type`, `required`, `default`, `validation`, and `ui` (`group`, `label`, `description`, `formType`). Relationship: already largely aligned with the updated specification; drives parameter collection UIs and instantiate-time validation.
+- **Protected Resource (+ integrity)**: Immutable path/glob markers; integrity digest populated on the lineage copy in the data-product repo. Relationship: model exists in both stacks; behavior largely unchanged by this specification revision.
+- **Composition module**: Child blueprint reference (`module`, `blueprintName`, `blueprintVersion`, `parameterMapping`). Relationship: today routing for children lives separately under `instantiation.compositionLayout` / polyrepo `targets[].module`; the new spec co-locates routing as `composition[].targets[]`.
+- **Instantiation (old shape still in code)**: `instantiation.strategy` (`monorepo` | `polyrepo`), optional `compositionLayout[]` (`module` + `targetPath`), and `targets[]` with `repositoryNamePostfix`, `createPolicy`, `module`, `sourcePath`, `targetPath`. Relationship: this is the primary gap versus the updated specification.
+- **Instantiation scenario (runtime)**: Derived from repository-key cardinality + composition presence into `MONOREPO_NO_COMPOSITION` (implemented), vs composition/polyrepo scenarios (explicitly unsupported). Relationship: scenario detection and monorepo render path are based on the new topology model without enabling unsupported scenarios.
+- **Target repository (API / UI)**: Instantiate/update commands pass `targetRepositories` with `targetId` (manifest `repositories[].key`) and Git repository metadata; UI monorepo step configures a single mapped repository. Relationship: reconcile request `targetId` with the sole repository key; root vs module role lives in the manifest (`instantiation.root` vs `composition[]`), not on the request entry. Phase-1 runtime still supports a single repository key only.
+- **Manifest validator / autofiller**: Visitors that currently require `strategy`, validate `compositionLayout` and postfix-based polyrepo targets, and default missing strategy to `monorepo`. Relationship: must be rewritten against repositories/root/composition targets and new uniqueness/path constraints.
+- **Registration / scaffold templates (UI)**: Default manifest YAML emitted at blueprint registration still uses `instantiation.strategy: monorepo`. Relationship: scaffolds must emit the new `repositories` + `root.targets` shape so newly registered blueprints are valid under the updated contract.
+- **Instantiate & update use cases**: Clone, render, checkpoint-tag, and merge flows gated on old strategy detection (also in `UpdateDataProductFromBlueprintVersion` and `BlueprintRenderService`). Relationship: supported monorepo-no-composition path must keep working after schema alignment; unsupported scenarios remain unsupported.
+
+### New Concepts Required
+
+- **Logical repository key (`instantiation.repositories[]`)**: Abstract destination alias (`key`, optional `description`) that the client resolves to a concrete Git repository at instantiation time. Relationship: replaces `strategy` + `repositoryNamePostfix` as the topology vocabulary; referenced by all route `repository` fields.
+- **Root routing (`instantiation.root.targets[]`)**: Uniform route entries (`sourcePath` → `repository` + `path`) for parent blueprint content; may be an empty array for pure orchestration parents. Relationship: replaces flat `instantiation.targets` for parent output and removes create-policy from the manifest.
+- **Composition-local targets (`composition[].targets[]`)**: Same route shape as root targets, scoped to the child blueprint repository. Relationship: replaces `instantiation.compositionLayout` and module-bearing polyrepo targets; co-locates module identity, parameter mapping, and routing.
+- **Topology inferred from repositories (not strategy enum)**: Monorepo vs polyrepo becomes a derived property (one vs many repository keys) rather than a first-class manifest field. Relationship: scenario resolution, UI repository-step branching, and docs must stop reading `instantiation.strategy`.
+- **Orchestrator-owned creation policy**: `create_if_missing` / `must_exist` and physical URLs live outside the manifest (client/orchestrator). Relationship: remove from manifest model; keep only in client/API behavior where already implemented for monorepo create/select.
+
+### Key Business Rules
+
+- Manifest remains focused on provisioning/orchestration; DP descriptor path stays in the platform Blueprint model, not the manifest.
+- Client resolves each `instantiation.repositories[].key` and supplies mapped repositories to the instantiate endpoint; creation policies are not part of the manifest.
+- Lineage manifest copy is written only to the root target repository designated at instantiation time.
+- Validation must enforce: unique repository keys; unique composition module aliases; every route `repository` references a declared key; multi-entry `targets` require explicit `sourcePath`; relative paths only (no absolute / `..`).
+- Parameter `type` defaults to `string` when omitted; `required` defaults to false; `schemaRef` remains explicitly unsupported.
+- **Scope guardrail:** Align models, parsers, validators, autofillers, fixtures, SDK, and currently implemented flows to the new schema. Do **not** implement previously unsupported runtime features (composition instantiation, multi-repo instantiate/update, polyrepo UI) as part of this work.
+
+## Strategic Approach
+
+### Solution Direction
+
+Treat the updated README as a **breaking schema alignment** across the blueprint service and Blindata UI. Replace the old instantiation vocabulary (`strategy`, `compositionLayout`, postfix/`createPolicy` targets) with `repositories`, `root.targets`, and `composition[].targets`. Re-ground scenario detection on repository-key cardinality + composition presence so the already-supported **single-repository, no-composition** path continues to work. Keep unsupported scenarios throwing the same class of “not supported yet” outcomes. Parameters, protected resources, and UI metadata remain as-is aside from any incidental coupling to the old instantiation model. Update test YAML examples, registration scaffolds, and process docs references so authors and clients only see the new contract.
+
+High-level data flow (unchanged at product level): publish/register blueprint version with manifest content → UI deserializes manifest → collect parameters and resolve repository key(s) → instantiate/update endpoints validate and (for supported scenario) render into the mapped root repository.
+
+### Key Design Decisions
+
+- **Hard cut to the new schema vs dual-read compatibility for old manifests**: Dual-read reduces migration pain for already-stored version content but prolongs two models and ambiguous validation. → **Hard cut only.** Treat previously stored old-shape manifests as non-existent (service not in real use); no migration, dual-read, or special rejection path for legacy `strategy`/postfix content.
+- **How to detect monorepo vs polyrepo without `strategy`**: Options include counting `repositories[]`, inspecting distinct `repository` references in routes, or retaining a deprecated field. → **Derive topology from `instantiation.repositories` cardinality** (and/or distinct referenced keys), with composition presence still selecting the composition-related unsupported scenarios. Single key + empty/non-empty composition maps to today’s monorepo scenarios; multiple keys map to polyrepo scenarios.
+- **Instantiate/update request contract (`targetId` only)**: Spec expects targets mapped by repository key; old API/UI used `type: root` without a key. → **Replace `type` with `targetId`**: `targetId` reconciles with `instantiation.repositories[].key`. Root vs module is expressed by manifest structure (`instantiation.root` / `composition[]`), not by a request enum. Remove `BlueprintRepositoryLogicalType` from request/result DTOs. Minimal key-mapping on the existing list-based target payload is **in scope**; do not build multi-repo selection UX.
+- **Root target repository for lineage (multi-key designation)**: Spec says lineage copy goes only to the root target designated at instantiation time; schema has no primary-key flag. → **Do not handle for now** (defer designation rules until multi-repo lineage is in scope). Phase-1 keeps writing lineage to the single supported root target as today.
+- **Empty `root.targets` (orchestration parents)**: Spec allows `[]`; current monorepo render assumes parent content is copied. → **Model and validate as allowed**; runtime for empty-root/composition-only remains **out of scope** (unsupported scenario), consistent with “no new features.”
+- **Where to keep cross-repo analysis**: Spec source of truth is blueprint-server; UI SDK mirrors it. → **Single analysis artifact under blueprint-server `spdd/analysis/`**, covering both codebases for REASONS Canvas inputs.
+
+### Alternatives Considered
+
+- **Keep `strategy` as a redundant hint alongside repositories**: Rejected — contradicts the updated specification and recreates dual sources of truth for topology.
+- **Implement full polyrepo + composition instantiation now because the schema supports it**: Rejected — explicitly out of scope; code already marks those scenarios unsupported; schema alignment must not expand runtime capability.
+- **UI-only adapter that rewrites new manifests into the old in-memory model**: Rejected — leaves the server unable to parse/validate the published contract and drifts the two stacks further apart.
+
+## Risk & Gap Analysis
+
+### Requirement Ambiguities
+
+- *(Resolved)* **Stored blueprint versions with old manifests**: Do not handle. Treat as non-existent (service not in real use). No migration or dual-read.
+- *(Resolved)* **Instantiate/update request contract**: Use `targetId` only — reconciles with manifest `repositories[].key`. Drop request `type` / `BlueprintRepositoryLogicalType`; root vs module stays in the manifest (`root` / `composition`).
+- *(Resolved)* **“Root target repository” for lineage**: Do not handle for now (defer multi-key root designation).
+- *(Resolved)* **“New features not yet implemented”**: Minimal key-mapping (`targetId` on existing target list) is in scope; composition/polyrepo runtime and polyrepo multi-picker UX remain out of scope.
+
+### Edge Cases
+
+- **Manifest with one repository key but multiple root target path splits**: Still monorepo topology; phase-1 render today copies whole tree—path-splitting behavior for a single repo may be partially new relative to current “copy all” monorepo path and needs a conscious in-scope vs defer decision.
+- **`root.targets: []` with composition present**: Valid per spec; must validate structurally but reject at runtime as unsupported (composition not implemented).
+- **Multiple `targets` without explicit `sourcePath`**: Must fail validation (default `./` not allowed when length > 1).
+- **Composition parameterMapping literals vs parent key references**: Existing model stores `JsonNode`/object values; orchestration resolution rules stay as today for unsupported composition runtime, but parsing must not break on the new co-located `targets`.
+- **Registration scaffolds and docs still showing `strategy: monorepo`**: Will produce invalid manifests the moment validators switch—must be updated in the same alignment effort.
+
+### Technical Risks
+
+- **Wide blast radius on visitors/tests**: Instantiation model change touches Java model, visitors, extension visitor, validator, autofiller, instantiate/update ports, render service, parser tests, example YAMLs, and the entire UI Manifest SDK + repository step + registration templates. Mitigation: treat schema/model/parser/validator/fixtures as one vertical slice; then wire scenario detection; then UI SDK + consumers.
+- **Duplicate UI repository-step modules**: Historically both `commons/instantiation_modal/BlueprintInstantiationModalRepositoriesStep.jsx` and `.../repositories_step/...` existed. Mitigation applied: keep only `repositories_step/`; delete the root re-export/duplicate; branch on repository-key topology helpers (`isSingleRepositoryTopology` / `soleRepositoryKey`).
+- **Scenario enum still named MONOREPO/POLYREPO**: Fine as internal runtime taxonomy if derived from repositories; risk if left coupled to removed JSON field. Mitigation: resolve scenario only from new fields.
+- **Docs (`blueprint-process.md`) still describe strategy**: Drift risk for operators; update references as part of alignment (documentation adjacent to code contract).
+- **No DB migration for manifest JSON**: Manifests live as version `content` documents, not normalized tables. Mitigation: **none required** — legacy old-shape content is treated as non-existent per product decision.
+
+### Acceptance Criteria Coverage
+
+| AC# | Description | Addressable? | Gaps/Notes |
+|-----|-------------|--------------|------------|
+| AC1 | Blueprint-service manifest model and parser bind the new schema (`repositories`, `root.targets`, `composition[].targets`; remove/stop requiring `strategy`, `compositionLayout`, postfix/`createPolicy` target fields) | Yes | Core alignment |
+| AC2 | Manifest validator enforces new uniqueness, repository-reference, multi-target `sourcePath`, and relative-path rules from the specification | Yes | Replace strategy/compositionLayout/postfix rules |
+| AC3 | Autofiller and example/test fixtures produce/consume the new example shapes (incl. monorepo single-key default) | Yes | Includes `src/test/resources/manifest/*` and instantiate fixtures |
+| AC4 | Supported runtime path (single repository key, no composition) still instantiates and updates successfully when manifests use the new shape | Yes | Scenario detection rewrite; no composition/polyrepo enablement |
+| AC5 | Unsupported scenarios (composition and/or multiple repository keys) remain explicitly unsupported (clear error), not partially implemented | Yes | Matches out-of-scope guardrail |
+| AC6 | Blindata UI Manifest SDK model/parser/serializer/traverse mirrors the new schema | Yes | Drop InstantiationStrategy-centric constants or relegate to derived helpers if still useful |
+| AC7 | UI instantiation repository step and validation use repository-key topology for the currently supported single-repo case (not `strategy`) | Yes | Polyrepo multi-picker UI remains out of scope; show unsupported for multi-key manifests |
+| AC8 | Registration/init scaffold manifests emit the new instantiation block | Yes | `blueprintRepositoryInitTemplates` and similar |
+| AC9 | Instantiate/update target entries carry `targetId` and reconcile with the sole manifest `repositories[].key` (no request `type`) | Yes | Root/module role is manifest-side; no multi-repo UX |
+| AC10 | No delivery of previously unimplemented product features (composition instantiate, polyrepo instantiate/update UX, multi-key lineage designation, `schemaRef`, etc.) under this ticket | Yes | Explicit out-of-scope check during REASONS/generate; legacy old manifests ignored |
+
