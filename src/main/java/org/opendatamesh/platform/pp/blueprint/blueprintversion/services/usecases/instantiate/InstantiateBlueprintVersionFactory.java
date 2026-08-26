@@ -54,4 +54,34 @@ public class InstantiateBlueprintVersionFactory {
                 gitPort
         );
     }
+
+    /**
+     * Same persistency / manifest / templating wiring as production instantiate, but a local
+     * Git port that no-ops pushes and uses a throwaway target instead of cloning the live
+     * product integration branch.
+     */
+    public UseCase buildInstantiateBlueprintVersionForLocalValidation(
+            InstantiateBlueprintVersionCommand command,
+            InstantiateBlueprintVersionPresenter presenter,
+            HttpHeaders serviceHeaders,
+            RenderedTreeSnapshot snapshot
+    ) {
+        InstantiateBlueprintVersionGitOutboundPort gitPort =
+                new InstantiateBlueprintVersionLocalGitOutboundPort(serviceHeaders, gitProviderFactory, snapshot);
+        InstantiateBlueprintVersionPersistencyOutboundPort persistencyPort =
+                new InstantiateBlueprintVersionPersistencyOutboundPortImpl(blueprintService, blueprintVersionCrudService);
+        InstantiateBlueprintVersionManifestOutboundPort manifestPort =
+                new InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl();
+        InstantiateBlueprintVersionTemplatingOutboundPort templatingPort =
+                new InstantiateBlueprintVersionTemplatingOutboundPortImpl(
+                        blueprintRenderService, blueprintDataProductDescriptorService);
+        return new InstantiateBlueprintVersion(
+                command,
+                presenter,
+                persistencyPort,
+                manifestPort,
+                templatingPort,
+                gitPort
+        );
+    }
 }

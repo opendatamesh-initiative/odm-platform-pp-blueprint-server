@@ -46,6 +46,7 @@ How instantiate / update work under the hood: [Blueprint process](docs/service/b
 | **Evolve with new versions** | Roll a new blueprint version onto products that already exist (details in the process guide) |
 | **Git providers** | GitHub, GitLab, Bitbucket, Azure DevOps via shared `git-utils` |
 | **Manifest & Velocity** | Parameterized templates driven by the blueprint manifest |
+| **Protected resources** | Declare immutable paths in the manifest; on publication, compare the product repo with a local re-instantiation |
 | **Notifications** | Optional client to the ODM Notification Server |
 
 ---
@@ -108,6 +109,7 @@ All guides live under [`docs/`](docs/README.md).
 | Guide | Description |
 |:------|:------------|
 | [Blueprint process](docs/service/blueprint-process.md) | How blueprints are applied and evolved on data-product repositories |
+| [Protected resources](docs/service/protected-resources.md) | Manifest protected paths and publication-time integrity check |
 | [Git providers](docs/service/git-providers.md) | Multi-provider Git operations and client-supplied auth |
 | [Blueprint manifest](src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) | Manifest schema, parameters, composition, Instantiation strategy |
 
@@ -122,7 +124,7 @@ All guides live under [`docs/`](docs/README.md).
 |:------|:------------|
 | [Development](docs/setup/development.md) | Build, run, profiles, testing |
 | [Deployment](docs/setup/deployment.md) | Containers and external dependencies |
-| [Configuration](docs/setup/configuration.md) | DB, notification, observer identity |
+| [Configuration](docs/setup/configuration.md) | DB, notification, observer identity, validator |
 
 </details>
 

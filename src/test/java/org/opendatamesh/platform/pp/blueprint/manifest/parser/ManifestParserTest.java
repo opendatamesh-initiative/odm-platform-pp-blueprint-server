@@ -49,7 +49,7 @@ class ManifestParserTest {
 
         assertEquals(2, manifest.getProtectedResources().size());
         assertEquals("infrastructure/core/**", manifest.getProtectedResources().get(0).getPath());
-        assertEquals("README.md", manifest.getProtectedResources().get(1).getPath());
+        assertEquals("docs/architecture.md", manifest.getProtectedResources().get(1).getPath());
 
         assertNotNull(manifest.getInstantiation());
         assertEquals(ManifestInstantiation.InstantiationStrategy.MONOREPO, manifest.getInstantiation().getStrategy());

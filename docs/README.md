@@ -15,6 +15,7 @@ Index of guides for the **ODM Platform Blueprint Server**.
 | Guide | Description |
 |:------|:------------|
 | [Blueprint process](service/blueprint-process.md) | Instantiate, update, tag-based 3-way merge, conflict cases, hunk overlap & authoring best practices |
+| [Protected resources](service/protected-resources.md) | Manifest paths, `.odm/blueprint/` relocation, publication-time integrity check |
 | [Git providers](service/git-providers.md) | How the service uses Git hosts and client-supplied auth |
 | [Blueprint manifest](../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) | Manifest schema and Instantiation strategy |
 
@@ -24,7 +25,7 @@ Index of guides for the **ODM Platform Blueprint Server**.
 |:------|:------------|
 | [Development](setup/development.md) | Local build, run, profiles, and testing |
 | [Deployment](setup/deployment.md) | Docker / container deployment |
-| [Configuration](setup/configuration.md) | Properties to manage (DB, Notification) |
+| [Configuration](setup/configuration.md) | Properties to manage (DB, Notification, validator) |
 
 ---
 

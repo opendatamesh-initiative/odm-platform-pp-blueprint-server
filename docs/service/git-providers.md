@@ -2,7 +2,7 @@
 
 How the Blueprint Server talks to Git hosts when registering blueprints, instantiating, and updating data-product repositories.
 
-Related: [Blueprint process](blueprint-process.md) · [Configuration](../setup/configuration.md)
+Related: [Blueprint process](blueprint-process.md) · [Protected resources](protected-resources.md) · [Configuration](../setup/configuration.md)
 
 ## Supported providers
 
@@ -21,6 +21,7 @@ Callers identify the provider (type and optional base URL) and pass **authentica
 |:-----|:-----------|
 | **Git provider utils** | List organizations and repositories, create repositories, list branches, provider-specific custom resources |
 | **Blueprint / version workflows** | Clone at branch or tag, orphan branches, commit, checkpoint tags, merge, selective push, optional create Pull Request |
+| **Protected-resources check** | Clone product (publication tag) and blueprint source; local re-instantiate with **no push** |
 | **Repository context** | Commits, branches, tags (where exposed by utils APIs) |
 
 Low-level Git and provider HTTP live behind outbound ports / `git-utils`. Use cases orchestrate workflows (instantiate / update) without embedding raw JGit or provider clients.

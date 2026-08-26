@@ -4,7 +4,8 @@ How the Blueprint Server applies a blueprint to a data-product repository the fi
 
 Related:
 
-- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, strategy, composition
+- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, strategy, composition, protected resources
+- [Protected resources](protected-resources.md) — publication-time integrity check
 - [Git providers](git-providers.md) — auth and provider APIs
 - API: `POST /api/v2/pp/blueprint/blueprints-versions/instantiate`  
   and `POST /api/v2/pp/blueprint/blueprints-versions/update-data-product`
@@ -38,7 +39,9 @@ Instantiate creates the **first pure checkpoint** and integrates it into the tar
 1. Resolve the blueprint version and validate parameters against the manifest.
 2. Clone the blueprint **source** at the version’s release tag and the **target** at the integration branch.
 3. Create an **orphan** branch (empty tree — no user files).
-4. Render Velocity templates and copy files into that orphan working tree (plus lineage under `.odm/blueprint/`).
+4. Render Velocity templates and copy files into that orphan working tree (plus lineage under `.odm/blueprint/`:
+   the blueprint README is moved there; the source manifest is replaced by `.odm/blueprint/blueprint-manifest.yaml`).
+   Protected-resource paths must match this **post-instantiation** layout — see [Protected resources](protected-resources.md).
 5. Commit the pure render and tag it as **`blueprint-v{version}`**.
 6. **Merge** the orphan branch into the integration branch (e.g. `main`).
 7. Push the integration branch and the checkpoint tag.
@@ -246,7 +249,7 @@ Author blueprints so updates stay **merge-friendly** for product teams.
    One huge `config.yaml.vm` that mixes infra, app, and team knobs forces every update into one conflict surface. Split by concern so non-overlapping files merge cleanly.
 
 6. **Document protected / do-not-edit paths**  
-   Use the manifest’s protected-resources idea and README guidance so users know which files are owned by the blueprint vs safe to customize.
+   Use the manifest’s `protectedResources` and the [protected resources](protected-resources.md) guide so users know which files are owned by the blueprint vs safe to customize. List **post-instantiation** paths only.
 
 7. **Semantic versioning of breaking template moves**  
    Renaming or splitting heavily customized files is a breaking change for merge history — call it out in the changelog so teams expect PR conflicts and plan remapping.
