@@ -1,6 +1,8 @@
 package org.opendatamesh.platform.pp.blueprint.rest.v2.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.junit.jupiter.api.Test;
 import org.opendatamesh.platform.pp.blueprint.manifest.ManifestYamlTestSupport;
@@ -28,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String MONOREPO_MANIFEST_RESOURCE = "/manifest/example-2.1-monorepo-no-composition.yaml";
     private static final String WRONG_MANIFEST_RESOURCE = "/manifest/manifest-wrong.yml";
 
@@ -179,7 +182,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
      */
     @Test
     public void whenPublishDuplicateNameAndVersionNumberThenReturn409() throws IOException {
-        String prefix = "pubBp003";
+        String prefix = "pubBp003-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         BlueprintRes blueprint = new BlueprintRes();
         blueprint.setName(prefix + "-bp");
         blueprint.setDisplayName(prefix + "-display");
@@ -239,7 +242,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
      */
     @Test
     public void whenPublishDuplicateNameAndTagThenReturn409() throws IOException {
-        String prefix = "pubBp004";
+        String prefix = "pubBp004-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         BlueprintRes blueprint = new BlueprintRes();
         blueprint.setName(prefix + "-bp");
         blueprint.setDisplayName(prefix + "-display");
@@ -533,6 +536,17 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
                 "non-empty");
     }
 
+    /*
+     * Feature: Structural validation at publish and instantiate
+     *   As an author
+     *   I want the same structural rules before publish and before instantiate
+     *   So that invalid routing never reaches Git and every problem is listed with a hint
+     * Scenario: Missing instantiation.root.repository is rejected at both gates
+     *   Given instantiation.root.repository is absent or blank
+     *   When publish or instantiate validates
+     *   Then 400 names instantiation.root.repository and hints to set it to a declared repositories[].key
+     *   And no Git mutation runs
+     */
     @Test
     public void whenPublishMissingRootRepositoryThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
@@ -541,6 +555,13 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
                 "required");
     }
 
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: instantiation.root.repository that is not a declared key is rejected at both gates
+     *   Given instantiation.root.repository is "unknown-repo"
+     *   When publish or instantiate validates
+     *   Then 400 names the field and hints to use a declared instantiation.repositories[].key
+     */
     @Test
     public void whenPublishUnknownRootRepositoryThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
@@ -595,11 +616,29 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     }
 
     /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Exact overlapping destinations on the same key are rejected at both gates
+     *   Given two routes with the same repository key and the same normalized path
+     *   When publish or instantiate validates
+     *   Then 400 lists the duplicate (repository, path) and a hint to make destinations unique
+     */
+    @Test
+    public void whenPublishExactOverlapThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/exact-overlap.yaml",
+                "Duplicate destination",
+                "unique");
+    }
+
+    /*
      * Feature: Composition modules must be monorepo without composition
+     *   As a platform
+     *   I want to forbid polyrepo or nested-composition children
+     *   So that routing stays a single vocabulary
      * Scenario: Publishing a parent that references a missing module version fails
      *   Given composition.blueprintName and blueprintVersion do not exist
      *   When the parent is published
-     *   Then 404 Not Found exception is thrown
+     *   Then 400 or 404 with a hint to publish the module version first
      */
     @Test
     public void whenPublishParentWithMissingModuleThenReturn404() throws IOException {
@@ -640,10 +679,75 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     }
 
     /*
+     * Feature: Composition modules must be monorepo without composition
+     * Scenario: Publishing a parent that references a polyrepo module fails
+     *   Given module "ingest" is published with two repository keys
+     *   When the parent listing that module is published
+     *   Then 400 names the module and hints that composition modules must be 1→1
+     */
+    @Test
+    public void whenPublishParentWithPolyrepoModuleThenReturn400() throws IOException {
+        StoredModule polyModule = createStoredModule(
+                "poly-module",
+                "1.0.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath("/manifest/example-2.3-polyrepo-no-composition.yaml"));
+        StoredModule servingModule = createStoredModule(
+                "valid-serving-module",
+                "1.4.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE));
+
+        ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                "/manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRef(parentManifest, "storage", polyModule);
+        rewriteCompositionRef(parentManifest, "serving", servingModule);
+
+        assertPublishParentWithModuleReturns400(parentManifest, polyModule, "monorepo with no composition");
+        deleteStoredModule(polyModule);
+        deleteStoredModule(servingModule);
+    }
+
+    /*
+     * Feature: Composition modules must be monorepo without composition
+     * Scenario: Publishing a parent that references a composed module fails
+     *   Given module "ingest" itself has composition
+     *   When the parent is published
+     *   Then 400 with a 1→1 hint
+     */
+    @Test
+    public void whenPublishParentWithComposedModuleThenReturn400() throws IOException {
+        StoredModule composedModule = createStoredModule(
+                "composed-module",
+                "1.0.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath("/manifest/example-2.2-monorepo-composition.yaml"));
+
+        ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                MONOREPO_MANIFEST_RESOURCE);
+        ObjectNode root = (ObjectNode) parentManifest.at("/instantiation/root");
+        root.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                .put("sourcePath", "./")
+                .put("repository", "main")
+                .put("path", "core/")));
+        ObjectNode compositionEntry = OBJECT_MAPPER.createObjectNode()
+                .put("module", "storage")
+                .put("blueprintName", composedModule.blueprintName())
+                .put("blueprintVersion", composedModule.versionNumber());
+        compositionEntry.set("parameterMapping", OBJECT_MAPPER.createObjectNode()
+                .set("bucketPrefix", OBJECT_MAPPER.createObjectNode().put("$param", "environment")));
+        compositionEntry.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                .put("sourcePath", "./")
+                .put("repository", "main")
+                .put("path", "data-plane/storage")));
+        parentManifest.set("composition", OBJECT_MAPPER.createArrayNode().add(compositionEntry));
+
+        assertPublishParentWithModuleReturns400(parentManifest, composedModule, "monorepo with no composition");
+        deleteStoredModule(composedModule);
+    }
+
+    /*
      * Feature: Structural validation at publish and instantiate
      * Scenario: Multiple structural problems are all reported
      *   Given a manifest with unused key AND nested destinations AND an invalid parameterMapping entry
-     *   When publish validates
+     *   When publish or instantiate validates
      *   Then the 400 message contains every problem
      *   And each problem includes a how-to-fix hint
      *   And validation does not stop at the first error
@@ -752,5 +856,100 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         bv.setCreatedBy("it-created-by");
         cmd.setBlueprintVersion(bv);
         return cmd;
+    }
+
+    private void assertPublishParentWithModuleReturns400(
+            ObjectNode parentManifest,
+            StoredModule offendingModule,
+            String expectedMessageFragment) throws IOException {
+        String prefix = "parentWithBadModule";
+        BlueprintRes parentBlueprint = new BlueprintRes();
+        parentBlueprint.setName(prefix + "-bp");
+        parentBlueprint.setDisplayName(prefix + "-display");
+        parentBlueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(parentBlueprint),
+                BlueprintRes.class);
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    parentManifest);
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains(expectedMessageFragment);
+            assertThat(response.getBody()).contains(offendingModule.blueprintName());
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    private StoredModule createStoredModule(String blueprintName, String version, JsonNode manifestContent)
+            throws IOException {
+        String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
+        String uniqueName = blueprintName + "-" + suffix;
+        ObjectNode content = (ObjectNode) manifestContent.deepCopy();
+        content.put("name", uniqueName);
+        content.put("version", version);
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(uniqueName);
+        blueprint.setDisplayName(uniqueName + "-display");
+        blueprint.setDescription(uniqueName + "-description");
+
+        ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class);
+        assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        BlueprintVersionRes versionRes = new BlueprintVersionRes();
+        versionRes.setName(uniqueName + "-" + version);
+        versionRes.setDescription("module version");
+        versionRes.setReadme("README.md");
+        versionRes.setTag("v" + version);
+        versionRes.setVersionNumber(version);
+        versionRes.setSpec("odm-blueprint-manifest");
+        versionRes.setSpecVersion("1.0.0");
+        versionRes.setBlueprint(createdBlueprint.getBody());
+        versionRes.setContent(content);
+
+        ResponseEntity<BlueprintVersionRes> createdVersion = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS),
+                new HttpEntity<>(versionRes),
+                BlueprintVersionRes.class);
+        assertThat(createdVersion.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        return new StoredModule(createdBlueprint.getBody().getUuid(), uniqueName, version);
+    }
+
+    private void rewriteCompositionRef(ObjectNode parentManifest, String moduleAlias, StoredModule module) {
+        for (JsonNode node : parentManifest.get("composition")) {
+            ObjectNode composition = (ObjectNode) node;
+            if (moduleAlias.equals(composition.get("module").asText())) {
+                composition.put("blueprintName", module.blueprintName());
+                composition.put("blueprintVersion", module.versionNumber());
+            }
+        }
+    }
+
+    private void deleteStoredModule(StoredModule module) {
+        if (module != null && module.blueprintUuid() != null) {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + module.blueprintUuid()));
+        }
+    }
+
+    private record StoredModule(String blueprintUuid, String blueprintName, String versionNumber) {
     }
 }

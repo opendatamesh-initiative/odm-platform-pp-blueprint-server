@@ -19,6 +19,8 @@ import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.*;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
+import org.opendatamesh.platform.git.provider.GitProvider;
+import org.opendatamesh.platform.pp.blueprint.manifest.ManifestYamlTestSupport;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
@@ -581,11 +583,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             @TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
         writeSafeDescriptor(sourceDir);
+        writeModuleParameterTemplate(sourceDir);
 
-        BlueprintContext storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1");
-        BlueprintContext serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
+        ModuleBlueprint storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1");
+        ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
         ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
-        rewriteCompositionRefs(parentManifest, storage, serving);
+        rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
         BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
 
         GitOperation mockGitOperation = stubGitHappyPath(sourceDir, targetDir);
@@ -614,12 +617,28 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(Files.isRegularFile(targetDir.resolve("core/templates/descriptor.json"))).isTrue();
         assertThat(Files.isDirectory(targetDir.resolve("data-plane/storage"))).isTrue();
         assertThat(Files.isDirectory(targetDir.resolve("app/serving"))).isTrue();
+        assertThat(Files.readString(targetDir.resolve("data-plane/storage/module-parameters.txt")))
+                .isEqualTo("""
+                        bucketPrefix=acme-lake
+                        encryptAtRest=true
+                        region=eu-west-1
+                        serviceName=
+                        projectSlug=
+                        """);
+        assertThat(Files.readString(targetDir.resolve("app/serving/module-parameters.txt")))
+                .isEqualTo("""
+                        bucketPrefix=
+                        encryptAtRest=
+                        region=
+                        serviceName=acme-lake
+                        projectSlug=
+                        """);
         // N→1: target + parent source + 2 module sources
         verify(mockGitOperation, times(4)).readRepository(any(), any(), any());
 
         deleteCreatedBlueprint(parent);
-        deleteCreatedBlueprint(storage);
-        deleteCreatedBlueprint(serving);
+        deleteCreatedBlueprint(storage.toContext());
+        deleteCreatedBlueprint(serving.toContext());
     }
 
     /*
@@ -970,6 +989,659 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         deleteCreatedBlueprint(context);
     }
 
+    /*
+     * Feature: Instantiate N→N polyrepo with composition
+     *   As an author
+     *   I want parent and modules independently routed across several keys
+     *   So that a multi-repo product can be instantiated in one request
+     * Scenario: Mixed parent and module routes across two targets
+     *   Given a published parent with keys "pipeline-repo" and "api-repo"
+     *   And instantiation.root.repository is "pipeline-repo"
+     *   And 1→1 modules "ingest" and "consume"
+     *   And parent routes "./core" to "pipeline-repo"
+     *   And ingest routes to "pipeline-repo" at "./pipelines/batch"
+     *   And consume routes to "api-repo" at "./services/consumer"
+     *   When instantiate maps both keys
+     *   Then pipeline-repo contains parent core and ingest files plus parent lineage
+     *   And api-repo contains consume files and no parent lineage sidecar
+     *   And each target has its own checkpoint tag and push
+     */
+    @Test
+    void whenInstantiatePolyrepoWithCompositionThenRouteAcrossTargets(
+            @TempDir Path sourceDir,
+            @TempDir Path pipelineTarget,
+            @TempDir Path apiTarget) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        writePolyrepoSourceFiles(sourceDir);
+        writeSafeDescriptor(sourceDir);
+        Files.writeString(sourceDir.resolve("module-ingest-marker.txt"), "ingest");
+        Files.writeString(sourceDir.resolve("module-consume-marker.txt"), "consume");
+
+        ModuleBlueprint ingest = createPublishedModule("odm-blueprint-ingest-batch", "2.0.0");
+        ModuleBlueprint consume = createPublishedModule("odm-blueprint-consumer-api", "1.1.0");
+        ObjectNode parentManifest = (ObjectNode) manifestPolyrepoWithComposition();
+        rewritePolyrepoCompositionRefs(parentManifest, ingest, consume);
+        BlueprintContext parent = createBlueprintAndVersion(
+                "mesh-polyrepo-parent", "1.3.0", parentManifest, "core/templates/descriptor.json.vm");
+
+        GitOperation mockGitOperation = stubGitHappyPath(sourceDir, pipelineTarget, apiTarget);
+
+        InstantiateBlueprintVersionCommandRes request = new InstantiateBlueprintVersionCommandRes();
+        request.setBlueprintName(parent.blueprintName);
+        request.setBlueprintVersionNumber(parent.versionNumber);
+        InstantiateBlueprintVersionTargetRepositoryRes pipeline = new InstantiateBlueprintVersionTargetRepositoryRes();
+        pipeline.setTargetId("pipeline-repo");
+        pipeline.setRepository(buildTargetRepository("pipeline-repository-id", "pipeline-repo"));
+        InstantiateBlueprintVersionTargetRepositoryRes api = new InstantiateBlueprintVersionTargetRepositoryRes();
+        api.setTargetId("api-repo");
+        api.setRepository(buildTargetRepository("api-repository-id", "api-repo"));
+        request.setTargetRepositories(List.of(pipeline, api));
+        request.setParameters(Map.of("dataDomain", OBJECT_MAPPER.valueToTree("customer360")));
+
+        ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(Files.exists(pipelineTarget.resolve("core"))).isTrue();
+        assertThat(Files.exists(pipelineTarget.resolve("pipelines/batch/module-ingest-marker.txt"))).isTrue();
+        assertThat(Files.exists(pipelineTarget.resolve(".odm/blueprint/blueprint-manifest.yaml"))).isTrue();
+        assertThat(Files.exists(apiTarget.resolve("services/consumer/module-consume-marker.txt"))).isTrue();
+        assertThat(Files.exists(apiTarget.resolve(".odm/blueprint"))).isFalse();
+        verify(mockGitOperation, times(2)).pushBranch(any(), anyString());
+        verify(mockGitOperation, times(5)).readRepository(any(), any(), any());
+
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(ingest.toContext());
+        deleteCreatedBlueprint(consume.toContext());
+    }
+
+    /*
+     * Feature: Instantiate 1→N polyrepo without composition
+     *   As an orchestrator
+     *   I want one parent split across several existing Git remotes
+     *   So that each repository key receives only its routes and a checkpoint
+     * Scenario: First root.targets entry is not used as root when root.repository names another key
+     *   Given a published parent with keys "infra-repo" and "app-repo"
+     *   And the first root.targets entry maps to "infra-repo"
+     *   And instantiation.root.repository is "app-repo"
+     *   When instantiate succeeds
+     *   Then lineage is written only on app-repo
+     *   And infra-repo is treated as an additional repo
+     */
+    @Test
+    void whenRootRepositoryDiffersFromFirstTargetThenLineageUsesDeclaredRoot(
+            @TempDir Path sourceDir, @TempDir Path infraTarget, @TempDir Path appTarget) throws Exception {
+        writePolyrepoSourceFiles(sourceDir);
+        BlueprintContext context = createBlueprintAndVersion(
+                "split-stack-template", "0.5.0", manifestPolyrepoNoComposition());
+
+        stubGitHappyPath(sourceDir, infraTarget, appTarget);
+
+        InstantiateBlueprintVersionCommandRes request = new InstantiateBlueprintVersionCommandRes();
+        request.setBlueprintName(context.blueprintName);
+        request.setBlueprintVersionNumber(context.versionNumber);
+        InstantiateBlueprintVersionTargetRepositoryRes infra = new InstantiateBlueprintVersionTargetRepositoryRes();
+        infra.setTargetId("infra-repo");
+        infra.setRepository(buildTargetRepository("infra-repository-id", "infra-repo"));
+        InstantiateBlueprintVersionTargetRepositoryRes app = new InstantiateBlueprintVersionTargetRepositoryRes();
+        app.setTargetId("app-repo");
+        app.setRepository(buildTargetRepository("app-repository-id", "app-repo"));
+        request.setTargetRepositories(List.of(infra, app));
+        request.setParameters(Map.of("awsRegion", OBJECT_MAPPER.valueToTree("eu-west-1")));
+
+        ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(Files.exists(infraTarget.resolve(".odm/blueprint"))).isFalse();
+        assertThat(Files.exists(appTarget.resolve(".odm/blueprint/blueprint-manifest.yaml"))).isTrue();
+        assertThat(Files.exists(appTarget.resolve("templates/descriptor.json"))).isTrue();
+        deleteCreatedBlueprint(context);
+    }
+
+    /*
+     * Feature: Instantiate N→1 monorepo with composition
+     *   As an author of a composed parent
+     *   I want parent and 1→1 modules copied into one target at sibling paths
+     *   So that a single Git repo holds the assembled product without nested overwrites
+     * Scenario: Child instantiation block does not place files
+     *   Given a module whose own instantiation.root.targets would copy to "./"
+     *   And the parent composition.targets place that module at "data-plane/storage"
+     *   When instantiate runs
+     *   Then module files appear under data-plane/storage not at the target root from the child manifest
+     */
+    @Test
+    void whenModuleHasOwnRootTargetsThenParentCompositionTargetsWin(
+            @TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        writeSafeDescriptor(sourceDir);
+        Files.writeString(sourceDir.resolve("module-only-marker.txt"), "module");
+
+        ObjectNode moduleManifest = (ObjectNode) manifestMonorepoNoComposition();
+        ObjectNode moduleRoot = (ObjectNode) moduleManifest.at("/instantiation/root");
+        moduleRoot.set("targets", OBJECT_MAPPER.createArrayNode()
+                .add(OBJECT_MAPPER.createObjectNode()
+                        .put("sourcePath", "./")
+                        .put("repository", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+                        .put("path", "./")));
+
+        ModuleBlueprint storage = createPublishedModule(
+                "odm-blueprint-s3-lake", "3.0.1", moduleManifest, buildBlueprintRepo());
+        ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
+        ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+
+        stubGitHappyPath(sourceDir, targetDir);
+
+        InstantiateBlueprintVersionCommandRes request = new InstantiateBlueprintVersionCommandRes();
+        request.setBlueprintName(parent.blueprintName);
+        request.setBlueprintVersionNumber(parent.versionNumber);
+        InstantiateBlueprintVersionTargetRepositoryRes target = new InstantiateBlueprintVersionTargetRepositoryRes();
+        target.setTargetId(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
+        target.setRepository(buildTargetRepository());
+        request.setTargetRepositories(List.of(target));
+        request.setParameters(Map.of(
+                "projectSlug", OBJECT_MAPPER.valueToTree("acme-lake"),
+                "enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(Files.exists(targetDir.resolve("data-plane/storage/module-only-marker.txt"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve("module-only-marker.txt"))).isFalse();
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage.toContext());
+        deleteCreatedBlueprint(serving.toContext());
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     *   As an author
+     *   I want the same structural rules before publish and before instantiate
+     *   So that invalid routing never reaches Git and every problem is listed with a hint
+     * Scenario: Empty root.targets is rejected at both gates
+     *   Given instantiation.root.targets is []
+     *   When a previously stored invalid content is instantiated
+     *   Then instantiate returns 400 with the same rule and a hint
+     *   And no Git mutation runs
+     */
+    @Test
+    void whenInstantiateEmptyRootTargetsThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/empty-root-targets.yaml", "root.targets", "non-empty");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Missing instantiation.root.repository is rejected at both gates
+     *   Given instantiation.root.repository is absent or blank
+     *   When instantiate validates
+     *   Then 400 names instantiation.root.repository and hints to set it to a declared repositories[].key
+     *   And no Git mutation runs
+     */
+    @Test
+    void whenInstantiateMissingRootRepositoryThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/missing-root-repository.yaml", "root.repository", "required");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: instantiation.root.repository that is not a declared key is rejected at both gates
+     *   Given instantiation.root.repository is "unknown-repo"
+     *   When instantiate validates
+     *   Then 400 names the field and hints to use a declared instantiation.repositories[].key
+     */
+    @Test
+    void whenInstantiateUnknownRootRepositoryThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/unknown-root-repository.yaml", "root.repository", "match");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Unused repository key is rejected at both gates
+     *   Given a key "orphan" with no root or composition target referencing it
+     *   When instantiate validates
+     *   Then 400 lists the unused key and a hint to add a route or remove the key
+     */
+    @Test
+    void whenInstantiateUnusedRepositoryKeyThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/unused-key.yaml", "orphan", "hint");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Nested path-prefix on the same key is rejected at both gates
+     *   Given a route with path "./" and another with path "data-plane/storage" on the same key
+     *   When instantiate validates
+     *   Then 400 explains nested path coverage is forbidden and hints to use sibling destinations
+     */
+    @Test
+    void whenInstantiateNestedDestinationsThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/nested-destinations.yaml", "nest", "hint");
+    }
+
+    /*
+     * Feature: Module parameterMapping contract
+     * Scenario: Bare scalar mapping entry is rejected at both gates
+     *   Given parameterMapping region: eu-west-1
+     *   When instantiate validates
+     *   Then 400 states the entry must be an object and hints to use { value: eu-west-1 } or { $param: ... }
+     */
+    @Test
+    void whenInstantiateBareParameterMappingThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/bare-parameter-mapping.yaml", "parameterMapping", "$param");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Exact overlapping destinations on the same key are rejected at both gates
+     *   Given two routes with the same repository key and the same normalized path
+     *   When instantiate validates
+     *   Then 400 lists the duplicate (repository, path) and a hint to make destinations unique
+     */
+    @Test
+    void whenInstantiateExactOverlapThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/exact-overlap.yaml", "Duplicate destination", "unique");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Multiple structural problems are all reported
+     *   Given a manifest with unused key AND nested destinations AND an invalid parameterMapping entry
+     *   When instantiate validates
+     *   Then the 400 message contains every problem
+     *   And each problem includes a how-to-fix hint
+     *   And validation does not stop at the first error
+     */
+    @Test
+    void whenInstantiateMultipleStructuralErrorsThenAllListedWithHints() throws Exception {
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        BlueprintContext context = createBlueprintAndVersion(
+                "multi-error-parent",
+                "1.0.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath("/manifest/invalid/multiple-structural-errors.yaml"));
+
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(
+                context.blueprintName, context.versionNumber, "prod", 365);
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).containsIgnoringCase("hint");
+        assertThat(response.getBody()).contains("orphan");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+        deleteCreatedBlueprint(context);
+    }
+
+    /*
+     * Feature: Composition modules must be monorepo without composition
+     *   As a platform
+     *   I want to forbid polyrepo or nested-composition children
+     *   So that routing stays a single vocabulary
+     * Scenario: Instantiating a parent whose module is not 1→1 fails before Git
+     *   Given the parent was somehow stored with a bad module reference
+     *   When instantiate runs
+     *   Then 400 lists the module topology problem with a hint and does not clone targets
+     */
+    @Test
+    void whenInstantiateModuleNotMonorepoNoCompositionThenReturn400() throws Exception {
+        ModuleBlueprint storage = createPublishedModule(
+                "odm-blueprint-s3-lake", "3.0.1", manifestPolyrepoNoComposition(), buildBlueprintRepo());
+        ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
+        ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(
+                parent.blueprintName, parent.versionNumber, "acme-lake", null);
+        request.setParameters(Map.of(
+                "projectSlug", OBJECT_MAPPER.valueToTree("acme-lake"),
+                "enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("not a monorepo with no composition");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage.toContext());
+        deleteCreatedBlueprint(serving.toContext());
+    }
+
+    /*
+     * Feature: Composition modules must be monorepo without composition
+     * Scenario: Instantiating when a module version is missing fails before Git
+     *   Given composition points at an unpublished name/version
+     *   When instantiate runs
+     *   Then not-found or 400 with a hint; no Git mutation
+     */
+    @Test
+    void whenInstantiateMissingModuleThenReturn404Or400() throws Exception {
+        BlueprintContext parent = createBlueprintAndVersion(
+                "full-stack-dp", "2.1.0", manifestMonorepoWithComposition());
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(
+                parent.blueprintName, parent.versionNumber, "acme-lake", null);
+        request.setParameters(Map.of(
+                "projectSlug", OBJECT_MAPPER.valueToTree("acme-lake"),
+                "enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isIn(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).containsIgnoringCase("Publish the module version first");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+        deleteCreatedBlueprint(parent);
+    }
+
+    /*
+     * Feature: Target mapping and Git constraints
+     *   As an orchestrator
+     *   I want a complete unique key-to-repo map and a single Git host
+     *   So that every declared key gets a checkpoint on a supported provider
+     * Scenario: Child Git provider type or base URL differs from parent
+     *   Given a 1→1 module whose BlueprintRepo provider does not match the parent
+     *   When instantiate validates modules
+     *   Then 400 names the child and hints that mixed Git hosts are not supported
+     *   And no Git mutation runs
+     */
+    @Test
+    void whenModuleGitProviderDiffersThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        BlueprintRes.BlueprintRepoRes gitlabRepo = buildBlueprintRepo();
+        gitlabRepo.setProviderType(BlueprintRepoProviderTypeRes.GITLAB);
+        gitlabRepo.setProviderBaseUrl("https://gitlab.com");
+        gitlabRepo.setRemoteUrlHttp("https://gitlab.com/org/module-repo.git");
+        gitlabRepo.setRemoteUrlSsh("git@gitlab.com:org/module-repo.git");
+
+        ModuleBlueprint storage = createPublishedModule(
+                "odm-blueprint-s3-lake", "3.0.1", manifestMonorepoNoComposition(), gitlabRepo);
+        ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
+        ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(
+                parent.blueprintName, parent.versionNumber, "acme-lake", null);
+        request.setParameters(Map.of(
+                "projectSlug", OBJECT_MAPPER.valueToTree("acme-lake"),
+                "enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Git provider type or base URL does not match");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage.toContext());
+        deleteCreatedBlueprint(serving.toContext());
+    }
+
+    /*
+     * Feature: Target mapping and Git constraints
+     * Scenario: First Git failure stops later targets
+     *   Given a valid 1→N request
+     *   And push of the first target fails
+     *   When instantiate runs
+     *   Then the error is a Git/API error
+     *   And later targets are not pushed (fail-fast)
+     */
+    @Test
+    void whenFirstTargetPushFailsThenLaterTargetsNotPushed(
+            @TempDir Path sourceDir, @TempDir Path infraTarget, @TempDir Path appTarget) throws Exception {
+        writePolyrepoSourceFiles(sourceDir);
+        BlueprintContext context = createBlueprintAndVersion(
+                "split-stack-template", "0.5.0", manifestPolyrepoNoComposition());
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+        when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(Optional.of(new Repository()));
+
+        AtomicInteger targetReads = new AtomicInteger(0);
+        doAnswer(invocation -> {
+            Consumer<File> consumer = invocation.getArgument(2);
+            RepositoryPointer pointer = invocation.getArgument(1);
+            if (pointer instanceof RepositoryPointerBranch) {
+                if (targetReads.getAndIncrement() == 0) {
+                    consumer.accept(infraTarget.toFile());
+                } else {
+                    consumer.accept(appTarget.toFile());
+                }
+            } else {
+                consumer.accept(sourceDir.toFile());
+            }
+            return null;
+        }).when(mockGitOperation).readRepository(any(), any(), any());
+        doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
+        doNothing().when(mockGitOperation).addAll(any());
+        doNothing().when(mockGitOperation).commit(any(), any());
+        when(mockGitOperation.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(mockGitOperation).addTag(any(), any(Tag.class));
+        when(mockGitOperation.mergeBranch(any(), anyString(), anyString())).thenReturn("deadbeefcafebabe");
+        doThrow(new GitOperationException("push failed")).when(mockGitOperation).pushBranch(eq(infraTarget.toFile()), anyString());
+
+        InstantiateBlueprintVersionCommandRes request = new InstantiateBlueprintVersionCommandRes();
+        request.setBlueprintName(context.blueprintName);
+        request.setBlueprintVersionNumber(context.versionNumber);
+        InstantiateBlueprintVersionTargetRepositoryRes infra = new InstantiateBlueprintVersionTargetRepositoryRes();
+        infra.setTargetId("infra-repo");
+        infra.setRepository(buildTargetRepository("infra-repository-id", "infra-repo"));
+        InstantiateBlueprintVersionTargetRepositoryRes app = new InstantiateBlueprintVersionTargetRepositoryRes();
+        app.setTargetId("app-repo");
+        app.setRepository(buildTargetRepository("app-repository-id", "app-repo"));
+        request.setTargetRepositories(List.of(infra, app));
+        request.setParameters(Map.of("awsRegion", OBJECT_MAPPER.valueToTree("eu-west-1")));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(mockGitOperation).pushBranch(eq(infraTarget.toFile()), anyString());
+        verify(mockGitOperation, never()).pushBranch(eq(appTarget.toFile()), anyString());
+        deleteCreatedBlueprint(context);
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Implicit descriptor on root without a covering root.targets route succeeds at instantiate
+     *   Given a 1→N parent with descriptorTemplatePath set
+     *   And no root.targets route covers the root repository key
+     *   When instantiate succeeds
+     *   Then the root repository still receives the rendered descriptor
+     */
+    @Test
+    void whenDescriptorTemplatePathSetThenRootReceivesDescriptorWithoutCoveringRoute(
+            @TempDir Path sourceDir, @TempDir Path infraTarget, @TempDir Path appTarget) throws Exception {
+        writePolyrepoSourceFiles(sourceDir);
+        BlueprintContext context = createBlueprintAndVersion(
+                "split-stack-template",
+                "0.5.0",
+                manifestPolyrepoNoComposition(),
+                "templates/descriptor.json.vm");
+
+        stubGitHappyPath(sourceDir, infraTarget, appTarget);
+
+        InstantiateBlueprintVersionCommandRes request = new InstantiateBlueprintVersionCommandRes();
+        request.setBlueprintName(context.blueprintName);
+        request.setBlueprintVersionNumber(context.versionNumber);
+        InstantiateBlueprintVersionTargetRepositoryRes infra = new InstantiateBlueprintVersionTargetRepositoryRes();
+        infra.setTargetId("infra-repo");
+        infra.setRepository(buildTargetRepository("infra-repository-id", "infra-repo"));
+        InstantiateBlueprintVersionTargetRepositoryRes app = new InstantiateBlueprintVersionTargetRepositoryRes();
+        app.setTargetId("app-repo");
+        app.setRepository(buildTargetRepository("app-repository-id", "app-repo"));
+        request.setTargetRepositories(List.of(infra, app));
+        request.setParameters(Map.of("awsRegion", OBJECT_MAPPER.valueToTree("eu-west-1")));
+
+        ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(Files.exists(appTarget.resolve("templates/descriptor.json"))).isTrue();
+        assertThat(Files.exists(infraTarget.resolve("templates/descriptor.json"))).isFalse();
+        deleteCreatedBlueprint(context);
+    }
+
+    /*
+     * Feature: Module parameterMapping contract
+     *   As an author
+     *   I want every mapping entry to be { $param: key } or { value: actualValue }
+     *   So that parent references are dynamic and literals stay fixed in the manifest
+     * Scenario: $param fails when parent key is not declared
+     *   Given { $param: unknownKey }
+     *   When publish or instantiate validates
+     *   Then 400 states the parent key is not declared and hints to fix the mapping or declare the parameter
+     */
+    @Test
+    void whenInstantiateParameterMappingUnknownParentKeyThenReturn400() throws Exception {
+        ModuleBlueprint storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1");
+        ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(parentManifest, storage.toContext(), storage.toContext());
+        ObjectNode storageComposition = (ObjectNode) parentManifest.get("composition").get(0);
+        ObjectNode mapping = (ObjectNode) storageComposition.get("parameterMapping");
+        mapping.set("bucketPrefix", OBJECT_MAPPER.createObjectNode().put("$param", "unknownKey"));
+        parentManifest.set("composition", OBJECT_MAPPER.createArrayNode().add(storageComposition));
+
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(
+                parent.blueprintName, parent.versionNumber, "acme-lake", null);
+        request.setParameters(Map.of(
+                "projectSlug", OBJECT_MAPPER.valueToTree("acme-lake"),
+                "enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("unknownKey");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage.toContext());
+    }
+
+    /*
+     * Feature: Module parameterMapping contract
+     * Scenario: $param fails when no request value and no default
+     *   Given a declared parent key with no default omitted on the request
+     *   And a module maps { $param: thatKey }
+     *   When instantiate validates
+     *   Then 400 with a hint to supply the parameter or a default
+     */
+    @Test
+    void whenInstantiateParameterMappingMissingParentValueThenReturn400() throws Exception {
+        ModuleBlueprint storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1");
+        ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(parentManifest, storage.toContext(), storage.toContext());
+        parentManifest.set("composition", OBJECT_MAPPER.createArrayNode()
+                .add(parentManifest.get("composition").get(0)));
+
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(
+                parent.blueprintName, parent.versionNumber, null, null);
+        request.setParameters(Map.of("enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("projectSlug");
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage.toContext());
+    }
+
+    private void assertInstantiateInvalidManifestReturns400WithHint(
+            String classpathManifest,
+            String expectedProblemFragment,
+            String expectedHintFragment) throws Exception {
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        BlueprintContext context = createBlueprintAndVersion(
+                "invalid-manifest-parent",
+                "1.0.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath(classpathManifest));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(buildInstantiateRequest(context.blueprintName, context.versionNumber, "prod", 365),
+                        jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).containsIgnoringCase(expectedProblemFragment);
+        assertThat(response.getBody()).containsIgnoringCase(expectedHintFragment);
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+        deleteCreatedBlueprint(context);
+    }
+
     private GitOperation stubGitHappyPath(Path sourceDir, Path... targetDirs) {
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
@@ -1024,6 +1696,16 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
                 """);
     }
 
+    private void writeModuleParameterTemplate(Path sourceDir) throws IOException {
+        Files.writeString(sourceDir.resolve("module-parameters.txt.vm"), """
+                bucketPrefix=$!bucketPrefix
+                encryptAtRest=$!encryptAtRest
+                region=$!region
+                serviceName=$!serviceName
+                projectSlug=$!projectSlug
+                """);
+    }
+
     private void writePolyrepoSourceFiles(Path sourceDir) throws IOException {
         Files.createDirectories(sourceDir.resolve("terraform"));
         Files.writeString(sourceDir.resolve("terraform/main.tf"), "resource \"null\" \"x\" {}");
@@ -1032,6 +1714,15 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         Files.createDirectories(sourceDir.resolve("application/templates"));
         Files.writeString(sourceDir.resolve("application/README.md"), "# app");
         Files.writeString(sourceDir.resolve("application/manifest.yaml"), "spec: odm-blueprint-manifest\n");
+        Files.createDirectories(sourceDir.resolve("core/templates"));
+        Files.writeString(sourceDir.resolve("core/templates/descriptor.json.vm"), """
+                {
+                  "dataProductDescriptor": "1.0.0",
+                  "info": {
+                    "name": "polyrepo-composition"
+                  }
+                }
+                """);
         Files.createDirectories(sourceDir.resolve("templates"));
         Files.writeString(sourceDir.resolve("templates/descriptor.json.vm"), """
                 {
@@ -1060,8 +1751,55 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         Files.writeString(sourceDir.resolve("docs-src/from-docs.txt"), "docs");
     }
 
-    private BlueprintContext createPublishedModule(String blueprintName, String version) throws Exception {
-        return createBlueprintAndVersion(blueprintName, version, manifestMonorepoNoComposition());
+    private ModuleBlueprint createPublishedModule(String blueprintName, String version) throws Exception {
+        return createPublishedModule(blueprintName, version, manifestMonorepoNoComposition(), buildBlueprintRepo());
+    }
+
+    private ModuleBlueprint createPublishedModule(
+            String blueprintName,
+            String version,
+            JsonNode manifestContent,
+            BlueprintRes.BlueprintRepoRes blueprintRepo) throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String uniqueBlueprintName = blueprintName + "-" + suffix;
+        ObjectNode content = (ObjectNode) manifestContent.deepCopy();
+        content.put("name", uniqueBlueprintName);
+        content.put("version", version);
+        String prefix = "instantiate-" + version.replace(".", "-") + "-" + suffix;
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(uniqueBlueprintName);
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintRepo(blueprintRepo);
+
+        ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class);
+        assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createdBlueprint.getBody()).isNotNull();
+
+        BlueprintVersionRes versionRes = new BlueprintVersionRes();
+        versionRes.setName(prefix + "-version");
+        versionRes.setDescription(prefix + "-description");
+        versionRes.setReadme("README.md");
+        versionRes.setTag("v" + version);
+        versionRes.setVersionNumber(version);
+        versionRes.setSpec("odm-blueprint-manifest");
+        versionRes.setSpecVersion("1.0.0");
+        versionRes.setBlueprint(createdBlueprint.getBody());
+        versionRes.setContent(content);
+
+        ResponseEntity<BlueprintVersionRes> createdVersion = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS),
+                new HttpEntity<>(versionRes),
+                BlueprintVersionRes.class);
+        assertThat(createdVersion.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createdVersion.getBody()).isNotNull();
+        return new ModuleBlueprint(
+                createdBlueprint.getBody().getUuid(),
+                uniqueBlueprintName,
+                version);
     }
 
     private void rewriteCompositionRefs(ObjectNode parentManifest, BlueprintContext storage, BlueprintContext serving) {
@@ -1073,6 +1811,22 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             } else if ("serving".equals(composition.get("module").asText())) {
                 composition.put("blueprintName", serving.blueprintName);
                 composition.put("blueprintVersion", serving.versionNumber);
+            }
+        }
+    }
+
+    private void rewritePolyrepoCompositionRefs(
+            ObjectNode parentManifest,
+            ModuleBlueprint ingest,
+            ModuleBlueprint consume) {
+        for (JsonNode node : parentManifest.get("composition")) {
+            ObjectNode composition = (ObjectNode) node;
+            if ("ingest".equals(composition.get("module").asText())) {
+                composition.put("blueprintName", ingest.blueprintName());
+                composition.put("blueprintVersion", ingest.versionNumber());
+            } else if ("consume".equals(composition.get("module").asText())) {
+                composition.put("blueprintName", consume.blueprintName());
+                composition.put("blueprintVersion", consume.versionNumber());
             }
         }
     }
@@ -1222,6 +1976,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         return readYamlManifestResource("manifest/example-2.3-polyrepo-no-composition.yaml");
     }
 
+    private JsonNode manifestPolyrepoWithComposition() throws Exception {
+        return readYamlManifestResource("manifest/example-2.4-polyrepo-composition.yaml");
+    }
+
     private JsonNode readYamlManifestResource(String resourcePath) throws IOException {
         try (InputStream inputStream = getResourceAsStream(resourcePath)) {
             return YAML_OBJECT_MAPPER.readTree(inputStream);
@@ -1269,6 +2027,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             this.blueprintName = blueprintName;
             this.versionNumber = versionNumber;
             this.blueprintVersionUuid = blueprintVersionUuid;
+        }
+    }
+
+    private record ModuleBlueprint(String blueprintUuid, String blueprintName, String versionNumber) {
+        BlueprintContext toContext() {
+            return new BlueprintContext(blueprintUuid, blueprintName, versionNumber, null);
         }
     }
 }

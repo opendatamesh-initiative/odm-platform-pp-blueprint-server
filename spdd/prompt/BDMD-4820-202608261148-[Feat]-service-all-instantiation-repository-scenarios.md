@@ -80,8 +80,7 @@ classDiagram
   }
 
   class InstantiationRoute {
-    +String sourceBlueprintName
-    +String sourceVersion
+    +String sourceId
     +String sourcePath
     +String repositoryKey
     +String destinationPath
@@ -162,11 +161,11 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
    - Hexagonal instantiate use case: command + presenter; outbound ports for persistency, validation, source/target workspaces, route rendering, parent lineage. REST stays on `BlueprintVersionsUseCasesService` / instantiate `*CommandRes`.
    - Evolve Git port away from `init` as a use-case step and away from a single-source `withClonedSourceAndTarget`. Provider selection happens when materializing the first workspace (adapter). Expose intent-revealing policy steps already present (`createAndCheckoutOrphanBranch`, `commitAll`, `createCheckpointTag`, `mergeBranch`, `pushBranch`, `pushTag`) plus a lifecycle that can hold **several sources** (parent + modules that route into the current target) and **one target** at a time. Fail-fast after the first Git failure; earlier targets may already be pushed.
    - Bind required `instantiation.root.repository` on existing `ManifestInstantiationRoot` (parser + visitor). Do not add a `primary` field on `ManifestTarget`.
-   - Replace `monorepoNoCompositionRenderAndCopy` as the use-case render verb with **apply this route into this target workspace**. Keep `BlueprintRenderService` as the shared Velocity/tree-copy engine; extend it to copy a **source subtree** into a **destination path** with per-source parameter context. Update templating port still uses whole-tree 1→1 render; do not implement update for N→1 / 1→N / N→N (leave existing `UnsupportedOperationException`).
+   - Replace `monorepoNoCompositionRenderAndCopy` as the use-case render verb with **apply this route into this target workspace**. Keep `BlueprintRenderService` as the shared Velocity/tree-copy engine; extend it to copy a **source subtree** into a **destination path** with per-source parameter context. Blueprint **update** for all four topologies is implemented in the companion update prompt (`BDMD-4820-202608271455`).
    - Child sources: persistency locates published versions by `composition[].blueprintName` + `blueprintVersion`. Child `BlueprintRepo` provider type and base URL **must match the parent**. When used as a module, **ignore** the child’s `instantiation` for file placement; use parent `composition[].targets` with paths relative to the child repo. Child standalone topology must still be 1→1.
    - The stored blueprint **Manifest** is a specification model (parser + `Manifest*` types). The instantiate use case **must not** deserialize it, import `Manifest*` / `ManifestParserFactory`, or walk `root.targets` / `composition[]` itself. That is a low-level spec leak. All read/derive operations on parent or child content go through `InstantiateBlueprintVersionManifestOutboundPort` (intent-revealing methods that return domain records such as `InstantiationRoute`).
    - The same separation applies to **publish**: checking that every declared composition module resolves to a published 1→1 blueprint version is **business logic and belongs on `PublishBlueprintVersion`**, not on the manifest adapter. Remove `validateCompositionModules` from `PublishBlueprintVersionManifestOutboundPort` (and the version lookup it performs inside the adapter). The publish manifest port instead exposes spec-derived facts — list composition identities from the parent content, and report whether a given child content is monorepo with no composition — while the module version lookup moves to the publish **persistence** port. The publish use case orchestrates list → look up → check topology → collect issues → throw one `BadRequestException`, exactly as `InstantiateBlueprintVersion` does. `PublishBlueprintVersion` must not import `Manifest*` / `ManifestParserFactory` / `InstantiationScenarioResolver`.
-   - Module parameters: resolve `parameterMapping` **inside the instantiate manifest outbound port** (private methods on that adapter). Every entry **must** be an object: `{ $param: <parentKey> }` is a parent reference (unknown key fails; extra properties besides `$param` ignored; request value else parent default else fail); `{ value: <actualValue> }` is a **fixed** literal copied from the manifest (`actualValue` may be string, number, boolean, object, or array; extra properties besides `value` ignored; not looked up on the parent). Bare scalars, or objects with both/neither discriminants, fail. Parent lineage parameters remain the **parent** resolved set only.
+   - Module parameters: validate `parameterMapping` shape in `collectValidationIssues`, then use the instantiate manifest outbound port to collect unresolved `$param` references against the parent resolved set and build one module-local context per alias. `{ $param: parentKey }` maps the child key to the resolved parent value; `{ value: actualValue }` copies the literal. Empty mapping produces an empty child context. Do **not** pass the complete parent parameter map to modules.
    - **No new helper / utility classes**: do not introduce `*Helper`, `*Util`, `*Resolver` (beyond the existing `InstantiationScenarioResolver`, used **inside** the manifest adapter, not from the use case), or other extracted “small domain” types for routing, `$param`/`value` resolution, root designation, or validation. Keep that logic as private methods on the outbound port impl that already owns the specification. Prefer extending existing classes (`BlueprintRenderService`, port impls, publish visitor) over adding new ones.
    - Exceptions: `BadRequestException` for validation (message concatenates **all** issues, each with problem + hint); `NotFoundException` for missing parent/module versions; Git failures through existing `ResponseExceptionHandler`. Do not introduce a new `GlobalExceptionHandler`; extend `ResponseExceptionHandler` only if a new exception type is strictly required.
    - Registry (odm-platform-pp-registry-server): keep `dataProductRepo` 1:1. Add `DataProductAdditionalRepo` table (cascade from `DataProduct`; FK to the product only—**no** DB unique constraint on `(data_product_uuid, manifest_key)`). Expose on `DataProductRes` as an optional list. Uniqueness of `manifestKey` within a product’s additional repos is enforced in the **DataProduct core service** (root aggregate `validate` / create-overwrite hooks), not by a fixed schema constraint. Instantiate does **not** call registry. CRUD/mapping follows registry generic CRUD patterns.
@@ -223,17 +222,15 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
      - Logic:
        - Validate command required fields (name, version, non-empty `targetRepositories`, non-null parameters, each `targetId` + repository).
        - Locate published parent via persistency (`findByBlueprintNameAndVersion`); missing → `NotFoundException`.
-       - Collect **all** instantiate validation issues (structural + parameters + complete unique `targetId` map). If any, throw `BadRequestException` whose message lists every `fieldPath: problem. Hint: hint`.
-       - Ask the **manifest outbound port** (not a local parser) for: `InstantiationScenario` (logging), flattened `InstantiationRoute` list, designated root key (`instantiation.root.repository`), parent resolved parameter map, and composition identities (module alias, blueprint name, blueprint version, field path). Do **not** parse `BlueprintVersion.content` into `Manifest` on this class.
-       - For each composition identity: persistency locates the published module; collect **all** module topology / provider-mismatch / missing-version issues (second collect-all pass is allowed). Ask the manifest port whether the child’s stored content is monorepo with no composition, and ask it to resolve that module’s `parameterMapping` against the parent resolved set (issues appended to the collect-all list).
-       - For each target key that receives routes (fail-fast only on Git after validation succeeded):
-         - Materialize required sources at release tags (adapter clones).
-         - Open target at integration branch (command branch or repository default).
-         - Start pure checkpoint workspace (orphan branch via existing naming conventions).
-         - Apply every route for that key (parent and modules are items on the same list).
-         - If designated root and parent `descriptorTemplatePath` is set: render the descriptor template from the parent source into the root target at the path derived from `descriptorTemplatePath` (same relative path, `.vm` stripped), using parent resolved parameters. Run this **after** route application so an overlapping route may be overwritten by the implicit step.
-         - If designated root: record parent lineage (descriptor enrichment + `.odm/blueprint/` + README/manifest relocate). Lineage uses fixed `./` → `./` mapping for descriptor path resolution (do **not** search `root.targets` for a descriptor-covering route).
-         - `commitAll` → `createCheckpointTag` → `mergeBranch` → `pushBranch` → `pushTag`.
+       - `manifestPort.collectValidationIssues(spec, specVersion, content, parameters, targetRepositories)` — **stop** if any; throw `BadRequestException` listing every `InstantiationValidationIssue.format()` line (prefix: `Blueprint instantiation validation failed:`).
+       - Enrich parent parameters via manifest port (`enrichRequestParametersWithDefaultsIfNeeded`).
+       - Locate composition modules via persistency (`findModuleBlueprintVersion`); collect not-found and non-1→1 module issues; stop if any.
+       - `manifestPort.collectModuleParameterResolutionIssues(content, parentResolvedParameters)` — stop if any `$param` cannot be resolved after request values and defaults.
+       - `manifestPort.resolveModuleParameters(content, parentResolvedParameters)` — build a child-local map per alias from `{ $param }` / `{ value }`; do not leak unmapped parent keys.
+       - Derive routes grouped by target key; designated root key from `instantiation.root.repository`.
+       - Filter `retrieveAllSourceRepositories` to sources referenced by routes (parent id `__parent__`, module alias ids).
+       - `gitPort.openSources(parentBlueprint, sources, sourcePaths -> { for each target key with routes: instantiateTargetRepository(...) })`.
+       - Inside each target: `gitPort.openTarget` at integration branch → orphan branch → `applyRoute` for each route → if root and `descriptorTemplatePath` set, `renderDescriptorToRoot` then `recordParentLineage` → commit / checkpoint tag / merge / push branch + tag.
        - `presenter.presentResults(new InstantiateBlueprintVersionResult())`.
        - Do **not** call `gitPort.init` as a business step; do **not** switch on scenario for four Git implementations; do **not** write the registry.
 3. Constraints: Package-private class; ports only; existing `BlueprintGitNamingConventions` for orphan branch and checkpoint tag. Do **not** call `ManifestParserFactory` or operate on `Manifest` / `ManifestComposition` / `ManifestTarget` from this class. Route flattening, root-key designation, parent parameter merge, composition listing, child 1→1 check, and `parameterMapping` resolution live as **private methods on the instantiate manifest outbound port impl** — do not extract them into new helper/utility types.
@@ -252,8 +249,9 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
      - Merge parent parameter values for lineage and `$param` resolution (request then default).
      - List composition identities: module alias, blueprint name, blueprint version, field path (so the use case can look up versions without walking `composition[]`).
      - Given a child version’s content, report whether it is monorepo with no composition (issues/hints stay on the caller’s collect-all list).
-     - Resolve one module’s `parameterMapping` against the parent resolved set; append mapping issues with hints; extra properties besides `$param` or `value` ignored.
-   - Keep `retrieveAllSourceRepositories` able to return **parent plus modules** (id = module alias or parent; tag from the version; repository from that version’s `BlueprintRepo`). Validate child provider type + base URL match parent; mismatch is a validation issue with a hint naming the child.
+     - `collectModuleParameterResolutionIssues(content, parentResolvedParameters)` reports every well-formed `$param` whose parent value is still absent after request/default enrichment.
+     - `resolveModuleParameters(content, parentResolvedParameters)` returns `Map<alias, Map<childKey, JsonNode>>`; `$param` copies the resolved parent value, `value` copies the literal, and empty mapping yields an empty child map. Extra properties besides `$param` or `value` are ignored.
+   - Keep `retrieveAllSourceRepositories` returning **parent plus modules** (id = `__parent__` or module alias; tag from the version; repository from that version’s `BlueprintRepo`). Child provider type + base URL mismatch throws `BadRequestException` from this method (fail-fast, not collect-all) with a hint naming the child.
    - Replace `validateTargetRepositories` “exactly one matching sole key” with the complete-map rule inside `collectValidationIssues`.
 3. Error format: each issue has `fieldPath`, `problem`, `hint` (example hint: “Declare a route in instantiation.root.targets or composition[].targets that uses this key, or remove the unused key.”).
 4. Constraints: `InstantiationScenarioResolver` may be called **only** from this adapter (and from update, unchanged). Do not add a new helper type for flattening or `$param`/`value` resolution.
@@ -270,9 +268,9 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
 1. Responsibility: Git I/O and workspace lifetime; use case still **orders** checkpoint policy.
 2. Methods (intent-revealing; adapters hide clone/provider):
    - Remove use-case-visible `init`.
-   - `whileSourcesAndTargetAreAvailable(sources, target, integrationBranch, operation)` — clone each unique source at its tag and the target at the branch; invoke callback with a map of source id → path plus target path; always clean temp dirs.
+   - `openSources(Blueprint parentBlueprint, List<SourceRepositoryDto> sources, Consumer<Map<String, Path>> operation)` — clone each unique source at its release tag once; invoke callback with source id → path map; always clean temp dirs. Binds Git provider from parent `BlueprintRepo` on first use.
+   - `openTarget(TargetRepositoryDto target, String integrationBranch, Consumer<Path> operation)` — clone target at integration branch for one target loop iteration; always clean temp dir.
    - Keep granular: `createAndCheckoutOrphanBranch`, `commitAll`, `createCheckpointTag`, `mergeBranch`, `pushBranch`, `pushTag`.
-3. Constraints: Plain class; headers + `GitProviderFactory` from factory; bind provider from **parent** `BlueprintRepo` when first materializing.
 
 ### Update Outbound Port - InstantiateBlueprintVersionTemplatingOutboundPort
 
@@ -281,16 +279,16 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
    - `applyRoute(sourceRoot, sourcePath, targetRoot, destinationPath, parameters): void` — Velocity-render the source subtree and copy into the destination path; skip `.git`; do not copy lineage sidecar here.
    - `renderDescriptorToRoot(parentSourceRoot, descriptorTemplatePath, rootTarget, parameters): void` — when `descriptorTemplatePath` is non-blank, Velocity-render that template from the parent source into `rootTarget` at the rendered relative path (strip `.vm`, normalize slashes). Fail with `InternalException` if the rendered file is missing. Skip when path is blank.
    - `recordParentLineage(rootTarget, parentVersion, parentResolvedParameters): void` — descriptor enrichment + parent manifest snapshot / README relocate on the root tree. Descriptor path resolution uses fixed `./` → `./` mapping (same as `BlueprintDataProductDescriptorService` defaults); do **not** require a covering `root.targets` route.
-3. Remove use-case calls to `monorepoNoCompositionRenderAndCopy`. `BlueprintRenderService` may retain its existing 1→1 whole-tree method for **update** until update is in scope; instantiate must use path-aware copy on that same service (extend it with descriptor single-file or narrow-subtree render; do not add a new render utility class).
+3. Remove use-case calls to `monorepoNoCompositionRenderAndCopy`. `BlueprintRenderService.renderAndCopySubtree` / `renderDescriptorTemplate` are used by the templating port impl.
 
 ### Update Shared Service - BlueprintRenderService
 
-1. Responsibility: Path-aware Velocity render and tree copy used by instantiate (and still by update’s 1→1 path).
+1. Responsibility: Path-aware Velocity render and tree copy used by instantiate and update templating port impls.
 2. Methods:
-   - Add `renderAndCopySubtree(sourceRoot, sourcePath, targetRoot, destinationPath, parameters)`.
-   - Add `renderDescriptorTemplate(sourceRoot, descriptorTemplatePath, targetRoot, parameters)` (or equivalent narrow render) used by the templating port’s implicit root descriptor step.
-   - Relocate parent README/manifest only when those files exist under the rendered parent tree **and** the caller is recording lineage on the root target (instantiate lineage port), not on every subtree copy.
-3. Constraints: Stay a Spring `@Service` under `…services.usecases`; use cases never inject it.
+   - `renderAndCopySubtree(sourceRoot, sourcePath, targetRoot, destinationPath, parameters)`.
+   - `renderDescriptorTemplate(sourceRoot, descriptorTemplatePath, targetRoot, parameters)` for implicit root descriptor placement.
+   - Relocate parent README/manifest only when recording lineage on the root target, not on every subtree copy.
+3. Constraints: Stay a Spring `@Service` under `…services.usecases`; use cases never inject it directly.
 
 ### Update Use Case validation - PublishBlueprintVersion
 
@@ -335,9 +333,9 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
 
 1. Responsibility: Align README, parser, and example YAML (2.1–2.4) with required `instantiation.root.repository` (declared key; parent `root` only), `{ $param: key }` vs `{ value: actualValue }`; document that empty `root.targets` is invalid, that root is never inferred from first target or a reserved key, that bare mapping scalars are invalid, and that when `descriptorTemplatePath` is configured the platform always places the rendered descriptor on the designated root target (authors need not route it in `root.targets`). Example polyrepo YAML must set `root.repository` to the data-product root key; `root.targets` may route only non-descriptor parent subtrees (e.g. `application/` → `app-repo`) without a separate route for the descriptor template path.
 
-### Update Use Case - UpdateDataProductFromBlueprintVersion
+### Blueprint update (companion prompt)
 
-1. Responsibility: Leave N→1 / 1→N / N→N throwing “not supported yet”. Do not implement update in this ticket.
+Multi-repository **update** is **not** in this instantiate prompt. It is specified in `BDMD-4820-202608271455-[Feat]-service-all-update-repository-scenarios.md` and implemented in `UpdateDataProductFromBlueprintVersion`.
 
 ### Create Entity / API - DataProductAdditionalRepo (registry-server)
 
@@ -708,51 +706,39 @@ Feature: Registry stores additional keyed repositories
 
 ```gherkin
 Feature: Out of scope remains out of scope
-  Scenario: Blueprint update of N→1, 1→N, or N→N still fails
-    When the client calls update-data-product for a non-1→1 manifest
-    Then the response is 400 NotSupported / unsupported operation as today
-
   Scenario: UI is not changed
     Then no UI repository work is delivered in this ticket
 ```
 
 ### Translate Gherkin to IT tests
 
-Implement each scenario as an IT method (JUnit 5, extend `BlueprintApplicationIT` / registry `*IT`). Prefer one method per Scenario. Reuse `GitProviderFactoryMock` and temp dirs. Convert former negative ITs that expected “composition/polyrepo not supported” into the corresponding happy-path fixtures.
+Implement each scenario as an IT method (JUnit 5, extend `BlueprintApplicationIT` / registry `*IT`). Prefer one method per Scenario. Reuse `GitProviderFactoryMock` and temp dirs. **Synced mapping** (method names as implemented on branch `16-feature-multi-repository-support`):
 
-| Gherkin Feature / Scenario | IT class | Suggested method |
+| Gherkin Feature / Scenario | IT class | Method |
 | --- | --- | --- |
-| 1→1 whole-tree | `BlueprintInstantiationControllerIT` | keep/adapt `whenInstantiateMonorepoThenReturn200` |
+| 1→1 whole-tree | `BlueprintInstantiationControllerIT` | `whenInstantiateMonorepoThenReturn200` |
 | 1→1 path-split | `BlueprintInstantiationControllerIT` | `whenInstantiateMonorepoPathSplitThenFilesLandOnSiblingPaths` |
-| 1→1 compatibility | `BlueprintInstantiationControllerIT` | existing fixture `example-2.1` |
 | N→1 distinct paths + lineage | `BlueprintInstantiationControllerIT` | `whenInstantiateMonorepoWithCompositionThenReturn200AndParentLineageOnly` |
 | N→1 ignore child instantiation | `BlueprintInstantiationControllerIT` | `whenModuleHasOwnRootTargetsThenParentCompositionTargetsWin` |
 | 1→N two targets lineage on root | `BlueprintInstantiationControllerIT` | `whenInstantiatePolyrepoNoCompositionThenCheckpointEachTargetAndLineageOnRoot` |
-| 1→N explicit root not first targets entry | `BlueprintInstantiationControllerIT` | `whenRootRepositoryDiffersFromFirstTargetThenLineageUsesDeclaredRoot` |
+| 1→N explicit root ≠ first targets entry | `BlueprintInstantiationControllerIT` | `whenRootRepositoryDiffersFromFirstTargetThenLineageUsesDeclaredRoot` |
 | 1→N incomplete map | `BlueprintInstantiationControllerIT` | `whenPolyrepoInstantiateOmitsAKeyThenReturn400AndNoGit` |
 | N→N mixed routes | `BlueprintInstantiationControllerIT` | `whenInstantiatePolyrepoWithCompositionThenRouteAcrossTargets` |
-| Lineage only on root | same ITs as N→1/1→N/N→N | assertions on `.odm/blueprint/` absence on secondary dirs |
-| Empty `root.targets` | `BlueprintVersionsUseCaseControllerIT` **and** `BlueprintInstantiationControllerIT` | `whenPublishEmptyRootTargetsThenReturn400`; `whenInstantiateEmptyRootTargetsThenReturn400` |
-| Missing / unknown `root.repository` | both publish + instantiate ITs | pair methods sharing fixtures |
-| Implicit descriptor on root (no covering route) | `BlueprintInstantiationControllerIT` | `whenDescriptorTemplatePathSetThenRootReceivesDescriptorWithoutCoveringRoute` |
-| Unused key | both publish + instantiate ITs | pair methods sharing one YAML fixture |
-| Exact overlap | both | pair methods |
-| Nested path-prefix | both | pair methods (parent `./` + module subdir) |
-| Unknown repository on route | both | pair methods |
-| All problems reported | both | `whenManifestHasMultipleStructuralErrorsThenResponseListsAllWithHints` |
-| Relative path `..` / absolute | both | pair methods |
-| Publish polyrepo module | `BlueprintVersionsUseCaseControllerIT` | `whenPublishParentWithPolyrepoModuleThenReturn400` |
-| Publish composed module | `BlueprintVersionsUseCaseControllerIT` | `whenPublishParentWithComposedModuleThenReturn400` |
-| Publish missing module | `BlueprintVersionsUseCaseControllerIT` | `whenPublishParentWithMissingModuleThenReturn404` |
-| Instantiate bad module topology | `BlueprintInstantiationControllerIT` | `whenInstantiateModuleNotMonorepoNoCompositionThenReturn400` |
-| Instantiate missing module | `BlueprintInstantiationControllerIT` | `whenInstantiateMissingModuleThenReturn404Or400` |
-| `$param` request / default / unknown / missing / extra keys; `{ value }` string/object/number/boolean / extra keys; bare scalar; both discriminants; neither | instantiate IT (publish for malformed mapping shape) | one method per Scenario above |
+| Implicit descriptor on root | `BlueprintInstantiationControllerIT` | `whenDescriptorTemplatePathSetThenRootReceivesDescriptorWithoutCoveringRoute` |
+| Structural validation (instantiate) | `BlueprintInstantiationControllerIT` | `whenInstantiateEmptyRootTargetsThenReturn400WithHint`; `whenInstantiateMissingRootRepositoryThenReturn400WithHint`; `whenInstantiateUnknownRootRepositoryThenReturn400WithHint`; `whenInstantiateUnusedRepositoryKeyThenReturn400WithHint`; `whenInstantiateNestedDestinationsThenReturn400WithHint`; `whenInstantiateBareParameterMappingThenReturn400WithHint`; `whenInstantiateExactOverlapThenReturn400WithHint`; `whenInstantiateMultipleStructuralErrorsThenAllListedWithHints` |
+| Structural validation (publish) | `BlueprintVersionsUseCaseControllerIT` | `whenPublishEmptyRootTargetsThenReturn400WithHint`; `whenPublishMissingRootRepositoryThenReturn400WithHint`; `whenPublishUnknownRootRepositoryThenReturn400WithHint`; `whenPublishUnusedRepositoryKeyThenReturn400WithHint`; `whenPublishNestedDestinationsThenReturn400WithHint`; `whenPublishBareParameterMappingThenReturn400WithHint`; `whenPublishExactOverlapThenReturn400WithHint`; `whenPublishMultipleStructuralErrorsThenAllListedWithHints` |
+| Module topology (publish + instantiate) | `BlueprintVersionsUseCaseControllerIT` / `BlueprintInstantiationControllerIT` | `whenPublishParentWithPolyrepoModuleThenReturn400`; `whenPublishParentWithComposedModuleThenReturn400`; `whenPublishParentWithMissingModuleThenReturn404`; `whenInstantiateModuleNotMonorepoNoCompositionThenReturn400`; `whenInstantiateMissingModuleThenReturn404Or400` |
+| `$param` resolution (instantiate) | `BlueprintInstantiationControllerIT` | `whenInstantiateParameterMappingUnknownParentKeyThenReturn400`; `whenInstantiateParameterMappingMissingParentValueThenReturn400` |
 | Duplicate / unknown `targetId` | `BlueprintInstantiationControllerIT` | `whenDuplicateTargetIdThenReturn400`; `whenUnknownTargetIdThenReturn400` |
 | Mixed Git provider | `BlueprintInstantiationControllerIT` | `whenModuleGitProviderDiffersThenReturn400` |
-| Git fail-fast | `BlueprintInstantiationControllerIT` | `whenFirstTargetPushFailsThenLaterTargetsNotPushed` |
-| Registry root only / extras / duplicate key | `DataProductControllerIT` (registry-server) | extend create/update tests |
-| Instantiate does not write registry | `BlueprintInstantiationControllerIT` | assert no registry client interaction (no new client; document absence) |
-| Update still unsupported | `BlueprintUpdateDataProductControllerIT` | keep existing not-supported cases for composition/polyrepo |
+| Git fail-fast (polyrepo) | `BlueprintInstantiationControllerIT` | `whenFirstTargetPushFailsThenLaterTargetsNotPushed` |
+| Git fail-fast (1→1) | `BlueprintInstantiationControllerIT` | `whenGitPushFailsThenResponseReflectsGlobalExceptionHandling` |
+| Lineage sidecar / README relocate | `BlueprintInstantiationControllerIT` | `whenPopulateThenManifestSnapshotIsWrittenUnderDotOdmBlueprint`; `whenPopulateThenReadmeIsRelocatedUnderDotOdmBlueprint` |
+| Registry additional repos | `DataProductControllerIT` (registry-server) | `whenCreateDataProductWithAdditionalRepositoriesThenReturnCreatedWithExtras`; `whenCreateDataProductWithDuplicateManifestKeyThenReturnBadRequest` |
+
+Unit coverage in `InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest` verifies module-local contexts for `$param` and `{ value }`, and hinted issues for unresolved parent values.
+
+Remaining optional IT depth (not required for topology coverage): `{ value }` object/number/boolean render assertions, extra-property ignore matrix, and every Gherkin `$param` default/request permutation as separate methods.
 
 Moving the composition-module check from the publish manifest adapter to `PublishBlueprintVersion` is **behavior-preserving**: the publish ITs for polyrepo / composed / missing modules keep their current status codes and message shape, so they must pass unchanged after the refactor.
 
@@ -770,14 +756,14 @@ Fixtures: add module source repos under `src/test/resources/instantiate/`; rewri
 4. Data Validation: Publish visitor and instantiate validation port implement the **same structural rules** independently (`spdd/norms/USE_CASE_IMPLEMENTATION.md`: use cases do not share a validator class across packages). Rules that need a persistence lookup (composition module exists and is 1→1) are not visitor/adapter rules at all: each use case runs them itself over its own ports, collecting all problems before throwing. Instantiate additionally validates parameters and `targetRepositories`. Commands stay domain records (`TargetRepositoryDto`, `SourceRepositoryDto`), never `*Res`.
 5. Logging: Info for expected 4xx via existing handler; error for 5xx. Scenario may be logged at info for supportability.
 6. Documentation Standards: Update manifest README examples for required `instantiation.root.repository` (parent `root` only; declared key), `{ $param: key }`, and `{ value: actualValue }`. Javadoc on new port methods states intent (business language). REST resources keep `@Schema` where lists/keys are easy to misuse.
-7. Architecture (`spdd/norms/USE_CASE_IMPLEMENTATION.md`): HTTP → `*UseCaseController` → `*UseCasesService` → `*Factory` → package-private `UseCase` → outbound ports → plain `*OutboundPortImpl`. Presenters use domain types. REST `*CommandRes` / `*ResponseRes` stay outside `…services.usecases.*`. Port method names remain intent-revealing (`whileSourcesAndTargetAreAvailable`, `applyRoute`, `recordParentLineage`, `collectValidationIssues`, plus derive-route / designate-root / resolve-mapping verbs) rather than `clone` / `evaluate Velocity` / `deserialize Manifest`.
+7. Architecture (`spdd/norms/USE_CASE_IMPLEMENTATION.md`): HTTP → `*UseCaseController` → `*UseCasesService` → `*Factory` → package-private `UseCase` → outbound ports → plain `*OutboundPortImpl`. Presenters use domain types. REST `*CommandRes` / `*ResponseRes` stay outside `…services.usecases.*`. Port method names remain intent-revealing (`openSources`, `openTarget`, `applyRoute`, `recordParentLineage`, `collectValidationIssues`, plus derive-route / designate-root verbs) rather than `clone` / `evaluate Velocity` / `deserialize Manifest`.
 8. Keep logic local: place **orchestration and business rules that combine specification facts with persistence lookups** (including “every declared composition module resolves to a published 1→1 version”) on the use case — instantiate **and** publish alike; place **all Manifest specification operations** (parse, structural checks, route flattening, root designation, `parameterMapping` resolution, composition listing, child topology from content) on that use case’s manifest outbound port; put version lookups on that use case’s persistence port; Git/render on their existing adapters/services. **Do not** add new `*Helper`, `*Util`, `*Resolver`, or standalone “domain helper” classes for this feature. Small private methods on the use case / port impl and package-local records (e.g. `InstantiationRoute`, `InstantiationCompositionIdentity`, `PublishCompositionIdentity`) are fine; extracted utility types are not. Neither use case may import the spec model, and the publish and instantiate packages do not import each other.
 9. CRUD (`spdd/norms/GENERIC-CRUD-GUIDELINES.md`): Additional repositories cascade on `DataProduct` (same style as nested `dataProductRepo`). Enforce unique `manifestKey` per product in the DataProduct core service `validate` / `beforeCreation` / `beforeOverwrite` — **not** with a Flyway unique index or JPA unique constraint. Blueprint-server instantiate does **not** use Generic CRUD for Git work.
 10. Testing (`spdd/norms/USE_CASE_IMPLEMENTATION.md` §10): Every Gherkin scenario above becomes an IT. Publish and instantiate ITs must share invalid fixtures. Do not implement until this prompt is confirmed.
 
 ## Safeguards
 
-1. Functional Constraints: All four topologies instantiate when the request maps every declared key. Modules used in composition must be published 1→1. Update and UI are out of scope. Instantiate does not write registry. `instantiation.root.repository` is required and must be a declared key. Empty `root.targets` is invalid. Unused keys, overlapping paths, and nested path-prefix on the same key are 400 at publish and instantiate.
+1. Functional Constraints: All four topologies instantiate when the request maps every declared key. Modules used in composition must be published 1→1. UI is out of scope; instantiate does not write registry. Blueprint update for all topologies is a companion feature. `instantiation.root.repository` is required and must be a declared key. Empty `root.targets` is invalid. Unused keys, overlapping paths, and nested path-prefix on the same key are 400 at publish and instantiate.
 2. Performance Constraints: Do not hold all remotes open unbounded; clone per target the sources that target needs (or clone unique sources once per target loop and always delete temp dirs). No requirement for distributed transactions across pushes.
 3. Security Constraints: Git credentials remain HTTP headers into the git adapter only. Error messages must not dump tokens, private keys, or full server filesystem paths. Extra properties on `{ $param }` / `{ value }` objects are ignored, not executed.
 4. Integration Constraints: Child `BlueprintRepo` provider type and base URL must match the parent. Mixed GitLab/GitHub in one run is out of scope. Targets must already exist; the service does not provision repositories. Registry JSON keeps `dataProductRepo` semantics so existing clients keep working; additional list may be empty.

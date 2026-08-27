@@ -1,5 +1,7 @@
 # SPDD Analysis: Align Code to Updated Blueprint Manifest Specification
 
+> **Supersession note (2026-08-27):** Schema alignment decisions here remain valid. Runtime limitations called out as “out of scope” or “unsupported scenario” were lifted by follow-up work on branch `16-feature-multi-repository-support` — see `BDMD-4820-202608251703` / `-202608271040` analyses and companion prompts.
+
 ## Original Business Requirement
 
 BDMD-4820 I have updated the manifest specification, now I want to align the existing code to that specification.

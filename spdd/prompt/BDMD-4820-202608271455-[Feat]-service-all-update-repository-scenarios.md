@@ -97,6 +97,7 @@ classDiagram
   }
 
   class BlueprintLayoutFingerprint {
+    <<internal to manifest port>>
     +Set~String~ repositoryKeys
     +String rootRepositoryKey
     +InstantiationScenario topology
@@ -227,15 +228,15 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
        - `manifestPort.collectValidationIssues(current, next, parameters, targetRepositories)` — **stop** if any; throw `BadRequestException` listing **all** `UpdateValidationIssue.format()` lines (prefix analogous to instantiate: `Blueprint update validation failed:`).
        - Enrich next parent parameters via manifest port (request + defaults).
        - Locate next composition modules; collect not-found and non-1→1 module issues; stop if any.
-       - Resolve module parameter maps from **next** `parameterMapping` against next parent resolved parameters; mapping failures are validation issues with hints.
+       - `manifestPort.collectProviderMismatchIssues(next, modulesByAlias)` — stop if any.
+       - `manifestPort.collectModuleParameterResolutionIssues(next.content, nextParentParameters)` — stop if any.
+       - `manifestPort.resolveModuleParameters(next.content, nextParentParameters)` for render contexts.
        - Derive next routes grouped by target key; designated root key from next `instantiation.root.repository`.
-       - For each target key with at least one route (fail-fast after first Git/runtime error):
-         - Resolve `UpdateDataProductTargetRepositoryDto` by `targetId`.
-         - Materialize required next sources (parent ± modules whose `sourceId` appears in this target's routes).
-         - `gitPort.openSourcesAndTargetAtCheckpoint(parentBlueprint, sources, target, currentCheckpointTag, callback)`.
-         - Inside callback: create `update/blueprint-v{next}`; clean working tree; `applyRoute` for each next route (parent params vs module params); if this key is root and `descriptorTemplatePath` is set, `renderDescriptorToRoot` then `recordParentLineage` (next parent + next parent params only); `commitAll`; `createCheckpointTag`; `pushBranch`; `pushTag`.
-         - If `createPullRequest`: `tryOpenPullRequest` — catch provider failure, append warning, continue.
-         - Append `UpdateDataProductTargetResult`.
+       - Filter `retrieveAllSourceRepositories` to sources referenced by routes (parent id `__parent__`, module alias ids).
+       - `gitPort.openSources(nextVersion.blueprint, sources, sourcePaths -> { for each target key with routes: updateTargetRepository(...) })`.
+       - Inside each target: `gitPort.openTargetAtCheckpoint(target, blueprint-v{current}, targetPath -> { create update branch; clean; applyRoute for each route; if root + descriptorTemplatePath, renderDescriptorToRoot + recordParentLineage; commit; tag; push branch + tag })`.
+       - If `createPullRequest`: `tryOpenPullRequest` — catch provider failure, append warning, continue other targets.
+       - Append `UpdateDataProductTargetResult` per processed key.
        - `presenter.presentResult(new UpdateDataProductResult(results, warnings))`.
    - Do **not** parse `Manifest` in the use case.
    - Do **not** keep `updateMonorepoNoComposition` as a special Git path; 1→1 is the loop with one key.
@@ -276,17 +277,18 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
    - `enrichRequestParametersWithDefaultsIfNeeded(JsonNode nextContent, Map<String, JsonNode> requestParameters): Map<String, JsonNode>`
    - `listCompositionIdentities(JsonNode nextContent): List<UpdateCompositionIdentity>`
    - `isMonorepoNoComposition(JsonNode moduleContent): boolean`
-   - `retrieveAllSourceRepositories(BlueprintVersion nextParent, JsonNode nextContent, Map<String, BlueprintVersion> modulesByAlias): List<SourceRepositoryDto>` — parent at next release tag + modules; provider type/base URL mismatch is a **validation issue** (collect-all at use-case module gate, or return issues — use case must still stop before Git). Prefer collecting issues rather than throwing mid-list so all mismatched children are reported.
-   - `resolveModuleParameters(JsonNode nextContent, Map<String, JsonNode> nextParentResolvedParameters): Map<String, Map<String, JsonNode>>` — for each composition alias, build child param map from **next** `parameterMapping` (`$param` → parent value; `value` → literal). Empty mapping → empty child map (do not dump parent keys into the module). Malformed entries already caught in collectValidationIssues; resolution of missing parent **value** after defaults still yields a hinted issue if `$param` cannot be resolved at runtime.
+   - `collectProviderMismatchIssues(BlueprintVersion nextParent, Map<String, BlueprintVersion> modulesByAlias): List<UpdateValidationIssue>` — child Git provider type/base URL must match parent; collect-all.
+   - `collectModuleParameterResolutionIssues(JsonNode nextContent, Map<String, JsonNode> nextParentResolvedParameters): List<UpdateValidationIssue>` — resolve next `parameterMapping` shape against next parent parameters; collect-all before Git.
+   - `resolveModuleParameters(JsonNode nextContent, Map<String, JsonNode> nextParentResolvedParameters): Map<String, Map<String, JsonNode>>` — for each composition alias, build child param map from **next** `parameterMapping` (`$param` → parent value; `value` → literal). Empty mapping → empty child map (do not dump parent keys into the module).
+   - `retrieveAllSourceRepositories(BlueprintVersion nextParent, JsonNode nextContent, Map<String, BlueprintVersion> modulesByAlias): List<SourceRepositoryDto>` — parent at next release tag + modules; used after validation (provider mismatch already collected).
 3. Constraints: path normalization for fingerprint **must** match publish/instantiate path rules to avoid false mismatch/pass.
 
 ### Update Git port — `UpdateDataProductGitOutboundPort` / `Impl`
 
-1. Remove `init` and `withClonedSourceAndTargetAtCheckpoint` from the use-case-visible contract.
-2. Add `openSourcesAndTargetAtCheckpoint(Blueprint parentBlueprint, List<SourceRepositoryDto> sources, UpdateDataProductTargetRepositoryDto target, String currentCheckpointTag, BiConsumer<Map<String, Path>, Path> operation)`:
-   - Bind provider from parent `BlueprintRepo` on first use.
-   - Clone **target** at `currentCheckpointTag` (not default branch). Missing tag → Git failure with a message to instantiate first or check version numbers.
-   - Clone each unique source at its release tag; callback `(sourceId → path, targetPath)`; always clean temp dirs.
+1. Remove `init`, `withClonedSourceAndTargetAtCheckpoint`, and `monorepoNoCompositionRenderAndCopy` from the use-case-visible contract.
+2. Add:
+   - `openSources(Blueprint parentBlueprint, List<SourceRepositoryDto> sources, Consumer<Map<String, Path>> operation)` — bind provider from parent `BlueprintRepo` on first use; clone each unique source at its release tag once; callback receives source id → path map (`__parent__` for parent); always clean temp dirs after callback.
+   - `openTargetAtCheckpoint(UpdateDataProductTargetRepositoryDto target, String currentCheckpointTag, Consumer<Path> operation)` — clone **target** at `currentCheckpointTag` (not default branch). Missing tag → Git failure with a message to instantiate first or check version numbers. Always clean temp dir after callback.
 3. Keep: `createAndCheckoutBranch`, `cleanWorkingTreePreservingGit`, `commitAll`, `createCheckpointTag`, `pushBranch`, `pushTag`, `openPullRequest`.
 4. Collision of existing next tag / update branch: keep current Git-layer rejection behavior.
 
@@ -297,7 +299,7 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
    - `applyRoute(sourceRoot, sourcePath, targetRoot, destinationPath, parameters)` → `blueprintRenderService.renderAndCopySubtree` (skip `.git`; no lineage sidecar).
    - `renderDescriptorToRoot(parentSourceRoot, descriptorTemplatePath, rootTarget, parameters)` → `renderDescriptorTemplate`.
    - `recordParentLineage(rootTarget, nextParentVersion, nextParentResolvedParameters)` → enrich descriptor + `relocateParentLineageSidecar`.
-3. Use case invokes descriptor + lineage **only** when the processed key equals next `instantiation.root.repository` and `descriptorTemplatePath` is non-blank (descriptor render); lineage record still only on that root key (even if descriptor path blank, sidecar relocate follows instantiate: only when that root is processed — match instantiate: skip entire descriptor+lineage block if not root or blank template; if instantiate currently skips lineage when template is blank, **align with instantiate**).
+3. Use case invokes descriptor + lineage **only** when the processed key equals next `instantiation.root.repository` **and** `descriptorTemplatePath` is non-blank (both conditions required — if template path is blank, skip descriptor render and lineage even on root key).
 
 ### Factory — `UpdateDataProductFromBlueprintVersionFactory`
 
@@ -402,9 +404,9 @@ Feature: Validation collect-all and Git policy
 | Validation collect-all and Git policy / Global pull request failure is a warning | `BlueprintUpdateDataProductControllerIT` | `whenPullRequestOpenFailsThenReturn200WithWarningAndContinueTargets` |
 | Validation collect-all and Git policy / Git failure stops later targets | `BlueprintUpdateDataProductControllerIT` | `whenFirstTargetGitFailsThenDoNotProcessLaterTargets` |
 
-Implement each Gherkin scenario as the listed test method; copy the Scenario sentence into that method's Javadoc. Keep existing 1→1 PR/warning/collision tests; convert any remaining "composition/polyrepo not supported" negatives into the positives above. Add a unit test class `UpdateDataProductOdmBlueprintManifestOutboundPortTest` for fingerprint path normalization (`./` vs `""`) and exclusion of `parameterMapping` from the freeze.
+Implement each Gherkin scenario as the listed test method; copy the Scenario sentence into that method's Javadoc. Keep existing 1→1 PR/warning/collision tests. Additional IT methods on the same class: `whenUpdateWithPullRequestThenReturnWebUrl`, `whenCompositionModuleIsNotMonorepoNoCompositionThenReturn400`, `whenCompositionModuleProviderMismatchesParentThenReturn400`.
 
-Existing happy-path method `whenUpdateWithoutPullRequestThenReturn200` may be kept or folded into `whenMonorepoNoCompositionUpdateThenHonorRootTargetsAndCheckpoint` as long as 1→1 still honors `root.targets` (path splits) instead of whole-tree copy.
+Add unit test class `UpdateDataProductOdmBlueprintManifestOutboundPortTest` for fingerprint path normalization (`./` vs `""`) and exclusion of `parameterMapping` from the freeze (methods: `whenRootTargetPathNormalizationDiffersOnlyByDotSlashThenNoStructureFreezeIssue`, `whenParameterMappingDiffersThenNoStructureFreezeIssue`).
 
 ## Norms
 

@@ -67,6 +67,8 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
             "Composition modules must use the same Git provider type and base URL as the parent.";
     private static final String HINT_ROOT_REPOSITORY =
             "Set instantiation.root.repository to a declared instantiation.repositories[].key.";
+    private static final String HINT_RESOLVE_PARENT_PARAM =
+            "Supply the parent parameter in the request or declare a default in the manifest.";
 
     private static LocalValidatorFactoryBean buildValidator() {
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
@@ -207,6 +209,92 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
             }
         }
         return out;
+    }
+
+    @Override
+    public List<InstantiationValidationIssue> collectModuleParameterResolutionIssues(
+            JsonNode content,
+            Map<String, JsonNode> parentResolvedParameters) {
+        List<InstantiationValidationIssue> issues = new ArrayList<>();
+        Manifest manifest = parse(content);
+        if (manifest.getComposition() == null || manifest.getComposition().isEmpty()) {
+            return issues;
+        }
+
+        Map<String, JsonNode> parentParams =
+                parentResolvedParameters == null ? Map.of() : parentResolvedParameters;
+
+        for (int i = 0; i < manifest.getComposition().size(); i++) {
+            ManifestComposition composition = manifest.getComposition().get(i);
+            if (composition == null
+                    || composition.getParameterMapping() == null
+                    || composition.getParameterMapping().isEmpty()) {
+                continue;
+            }
+            for (Map.Entry<String, JsonNode> entry : composition.getParameterMapping().entrySet()) {
+                JsonNode mappingValue = entry.getValue();
+                if (mappingValue == null || !mappingValue.isObject() || !mappingValue.has("$param")) {
+                    continue;
+                }
+                JsonNode paramNode = mappingValue.get("$param");
+                if (paramNode == null || !paramNode.isTextual() || !StringUtils.hasText(paramNode.asText())) {
+                    continue;
+                }
+                String parentKey = paramNode.asText().trim();
+                JsonNode resolved = parentParams.get(parentKey);
+                if (resolved == null || resolved.isNull()) {
+                    issues.add(new InstantiationValidationIssue(
+                            "composition[%d].parameterMapping.%s.$param".formatted(i, entry.getKey()),
+                            "parameterMapping '$param' references parent parameter '%s' that cannot be resolved"
+                                    .formatted(parentKey),
+                            HINT_RESOLVE_PARENT_PARAM));
+                }
+            }
+        }
+        return issues;
+    }
+
+    @Override
+    public Map<String, Map<String, JsonNode>> resolveModuleParameters(
+            JsonNode content,
+            Map<String, JsonNode> parentResolvedParameters) {
+        Manifest manifest = parse(content);
+        Map<String, Map<String, JsonNode>> result = new LinkedHashMap<>();
+        if (manifest.getComposition() == null || manifest.getComposition().isEmpty()) {
+            return result;
+        }
+
+        Map<String, JsonNode> parentParams =
+                parentResolvedParameters == null ? Map.of() : parentResolvedParameters;
+
+        for (ManifestComposition composition : manifest.getComposition()) {
+            if (composition == null || !StringUtils.hasText(composition.getModule())) {
+                continue;
+            }
+            Map<String, JsonNode> childParams = new LinkedHashMap<>();
+            Map<String, JsonNode> parameterMapping = composition.getParameterMapping();
+            if (parameterMapping != null && !parameterMapping.isEmpty()) {
+                for (Map.Entry<String, JsonNode> entry : parameterMapping.entrySet()) {
+                    JsonNode mappingValue = entry.getValue();
+                    if (mappingValue == null || !mappingValue.isObject()) {
+                        continue;
+                    }
+                    if (mappingValue.has("$param")) {
+                        JsonNode paramNode = mappingValue.get("$param");
+                        if (paramNode != null && paramNode.isTextual() && StringUtils.hasText(paramNode.asText())) {
+                            JsonNode parentValue = parentParams.get(paramNode.asText().trim());
+                            if (parentValue != null && !parentValue.isNull()) {
+                                childParams.put(entry.getKey(), parentValue);
+                            }
+                        }
+                    } else if (mappingValue.has("value")) {
+                        childParams.put(entry.getKey(), mappingValue.get("value"));
+                    }
+                }
+            }
+            result.put(composition.getModule().trim(), childParams);
+        }
+        return result;
     }
 
     @Override

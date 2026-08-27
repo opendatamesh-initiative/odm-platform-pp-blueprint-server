@@ -56,7 +56,10 @@ class InstantiateBlueprintVersion implements UseCase {
         Map<String, JsonNode> parentParameters = enrichRequestParametersWithDefaultsIfNeeded(parentBlueprintVersion);
         Map<String, BlueprintVersion> modulesByAlias = retrieveModulesBlueprintVersions(parentBlueprintVersion);
         validateModulesBlueprintVersions(parentBlueprintVersion, modulesByAlias);
-        Map<String, Map<String, JsonNode>> modulesParameters = retrieveModulesParameters(parentBlueprintVersion, parentParameters);
+        throwIfAnyIssues(manifestPort.collectModuleParameterResolutionIssues(
+                parentBlueprintVersion.getContent(), parentParameters));
+        Map<String, Map<String, JsonNode>> modulesParameters = manifestPort.resolveModuleParameters(
+                parentBlueprintVersion.getContent(), parentParameters);
 
         Map<String, TargetRepositoryDto> targetsByKey = indexTargetRepositoriesByKey(command.targetRepositories());
         List<InstantiationRoute> routes = manifestPort.flattenRoutes(parentBlueprintVersion.getContent());
@@ -281,17 +284,6 @@ class InstantiateBlueprintVersion implements UseCase {
             }
         }
         throwIfAnyIssues(validationIssues);
-    }
-
-    private Map<String, Map<String, JsonNode>> retrieveModulesParameters(
-            BlueprintVersion rootBlueprintVersion,
-            Map<String, JsonNode> parentParameters) {
-        Map<String, Map<String, JsonNode>> modulesParameters = new HashMap<>();
-
-        for (InstantiationCompositionIdentity composition : manifestPort.listCompositionIdentities(rootBlueprintVersion.getContent())) {
-            modulesParameters.put(composition.moduleAlias(), parentParameters);
-        }
-        return modulesParameters;
     }
 
     private void validateBlueprintManifest(BlueprintVersion parentVersion) {

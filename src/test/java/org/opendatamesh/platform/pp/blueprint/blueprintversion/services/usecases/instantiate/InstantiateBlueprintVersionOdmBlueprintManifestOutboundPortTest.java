@@ -1,6 +1,7 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.opendatamesh.platform.pp.blueprint.manifest.ManifestYamlTestSupport;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
@@ -18,6 +19,42 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
 
     private final InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl port =
             new InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl();
+
+    @Test
+    void whenResolvingModuleParametersThenParamReferencesAndLiteralValuesBuildChildContexts() throws IOException {
+        JsonNode content = ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                "/manifest/example-2.2-monorepo-composition.yaml");
+        Map<String, JsonNode> parentParameters = Map.of(
+                "projectSlug", JsonNodeFactory.instance.textNode("acme-lake"),
+                "enablePiiMasking", JsonNodeFactory.instance.booleanNode(true));
+
+        Map<String, Map<String, JsonNode>> resolved =
+                port.resolveModuleParameters(content, parentParameters);
+
+        assertThat(resolved.get("storage"))
+                .containsOnlyKeys("bucketPrefix", "encryptAtRest", "region");
+        assertThat(resolved.get("storage").get("bucketPrefix").asText()).isEqualTo("acme-lake");
+        assertThat(resolved.get("storage").get("encryptAtRest").asBoolean()).isTrue();
+        assertThat(resolved.get("storage").get("region").asText()).isEqualTo("eu-west-1");
+        assertThat(resolved.get("serving"))
+                .containsOnlyKeys("serviceName");
+        assertThat(resolved.get("serving").get("serviceName").asText()).isEqualTo("acme-lake");
+    }
+
+    @Test
+    void whenMappedParentParameterHasNoResolvedValueThenResolutionIssueIncludesHint() throws IOException {
+        JsonNode content = ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                "/manifest/example-2.2-monorepo-composition.yaml");
+
+        List<InstantiationValidationIssue> issues =
+                port.collectModuleParameterResolutionIssues(content, Map.of());
+
+        assertThat(issues).hasSize(3).allSatisfy(issue -> {
+            assertThat(issue.fieldPath()).contains("parameterMapping").endsWith(".$param");
+            assertThat(issue.problem()).containsIgnoringCase("cannot be resolved");
+            assertThat(issue.hint()).isNotBlank();
+        });
+    }
 
     /*
      * Feature: Structural validation at publish and instantiate

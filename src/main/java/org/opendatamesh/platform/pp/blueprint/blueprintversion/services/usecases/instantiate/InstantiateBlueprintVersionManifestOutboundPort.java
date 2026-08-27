@@ -34,6 +34,22 @@ interface InstantiateBlueprintVersionManifestOutboundPort {
     Map<String, JsonNode> enrichRequestParametersWithDefaultsIfNeeded(JsonNode content, Map<String, JsonNode> requestParameters);
 
     /**
+     * Collects unresolved {@code $param} references after request values and parent
+     * defaults have been merged.
+     */
+    List<InstantiationValidationIssue> collectModuleParameterResolutionIssues(
+            JsonNode content,
+            Map<String, JsonNode> parentResolvedParameters);
+
+    /**
+     * Builds one module-local render context per composition alias from
+     * {@code parameterMapping}.
+     */
+    Map<String, Map<String, JsonNode>> resolveModuleParameters(
+            JsonNode content,
+            Map<String, JsonNode> parentResolvedParameters);
+
+    /**
      * Lists composition module identities so the use case can look up published versions.
      */
     List<InstantiationCompositionIdentity> listCompositionIdentities(JsonNode content);

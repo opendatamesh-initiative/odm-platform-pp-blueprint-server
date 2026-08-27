@@ -173,12 +173,12 @@ flowchart LR
 
 - **Blueprint / Blueprint version**: Platform records for a template Git repository and a published snapshot. Update always loads **two** parent versions of the **same** blueprint (current vs next). Composition modules are other published versions looked up from the **next** parent’s `composition[]`.
 - **Blueprint Manifest**: Authoritative routing contract (`instantiation.repositories[]`, `instantiation.root.repository`, `instantiation.root.targets[]`, `composition[]` with `targets[]` and `parameterMapping`). Relationship: **next** version must **repeat the same layout** as current (keys, root, routes, composition slots); **`parameterMapping` is content** and may differ. The use case then renders next content (including next mappings) through that frozen layout. Current is the **layout baseline**, not only a checkpoint name.
-- **Instantiation scenario**: Four cases (1→1, N→1, 1→N, N→N) derived from repository-key cardinality × composition. Relationship: instantiate already runs **one pipeline** for all four; update still **switches** and throws “not supported yet” for three cases. Scenario remains a taxonomy for logging/tests, not four Git scripts.
-- **Logical repository key / target mapping**: Request `targetRepositories[].targetId` must match `instantiation.repositories[].key`. Relationship: the update API is **already list-based** (`targetRepositories` / `results`); validation still requires **exactly one** entry matching the sole key.
+- **Instantiation scenario**: Four cases (1→1, N→1, 1→N, N→N) derived from repository-key cardinality × composition. Relationship: instantiate and update each run **one route-driven pipeline** for all four; scenario enum is taxonomy for logging/tests, not four Git scripts.
+- **Logical repository key / target mapping**: Request `targetRepositories[].targetId` must match `instantiation.repositories[].key`. Relationship: the update API is list-based (`targetRepositories` / `results`); validation requires a **complete unique map** of every next-version key (no longer “exactly one”).
 - **Update data product from blueprint version**: Dedicated hexagonal use case (`POST .../update-data-product`). Relationship: Git flow differs from instantiate (branch from checkpoint, clean, no orphan, no merge to main, optional PR). It must **not** call the instantiate use case.
 - **Tag-based 3-way merge / checkpoint / update branch**: Domain naming via `BlueprintGitNamingConventions` (`blueprint-v{version}`, `update/blueprint-v{version}`). Relationship: each **data-product remote** that received instantiate files already has a **pure** checkpoint; update creates the next pure commit **from that tag**. Same tag **name** on every remote is correct because tags live in different Git repositories — no per-key discriminator is required.
 - **Optional Pull Request (global)**: `createPullRequest` applies to **all** processed targets; each entry may set `pullRequestTargetBranch`. PR open is a **side operation** (HTTP 200 + `warnings` on failure). Merge/delete remain out of scope.
-- **Route (`sourcePath` → `repository` + `path`)**: Uniform mapping for parent root and composition modules. Relationship: instantiate already flattens routes and applies them per target; update still whole-tree-copies the **parent only** via `monorepoNoCompositionRenderAndCopy`.
+- **Route (`sourcePath` → `repository` + `path`)**: Uniform mapping for parent root and composition modules. Relationship: update flattens **next** routes via the manifest port and applies each through `applyRoute` after a clean working tree; the former whole-tree `monorepoNoCompositionRenderAndCopy` path is removed.
 - **Parameter set (parent) + module `parameterMapping`**: Next parent parameters come from the request; modules use **next** `{ $param }` / `{ value }` mappings (changes vs current are **supported**). Parent lineage must not include module-only parameters.
 - **Blueprint–data-product lineage**: Parent version identity + parent resolved parameters on the **root** descriptor and `.odm/blueprint/` sidecar. Relationship: this ticket **keeps** parent-only lineage on the designated root target only, including during update.
 - **Keyed data-product repositories (registry)**: Root `dataProductRepo` plus additional repos keyed by manifest `key`. Relationship: **preparatory** for clients to assemble `targetRepositories`; **update does not read or write the registry**.
@@ -215,6 +215,8 @@ flowchart LR
 ### Solution Direction
 
 Treat this as a **backend** expansion of the existing **update** use case in blueprint-server only. Registry and instantiate contracts stay as delivered by the companion instantiate work. UI stays out of scope.
+
+**Implementation status (synced from branch `16-feature-multi-repository-support`):** `UpdateDataProductFromBlueprintVersion` now runs one route-driven loop for all four topologies. Git workspaces use `openSources` (parent + modules at next release tags, shared across targets) plus per-target `openTargetAtCheckpoint` (current tag). Manifest validation collects structure-freeze and next structural issues; provider mismatch and module `parameterMapping` resolution use dedicated collect-all port methods before Git.
 
 Keep the existing update hexagon (command + presenter + persistency / manifest / templating / git ports). Replace the scenario switch’s three “unsupported” branches with **one routing-and-render loop** parameterized by next-version sources (parent ± modules) and targets (one or many keys) — the same shape instantiate already uses — while **keeping update Git policy**: checkpoint checkout, update branch, clean, no merge to integration, optional PR.
 
@@ -297,6 +299,7 @@ execute
 
 - The use case **calls** ports; ports do not call the use case (except a workspace callback whose name states intent, e.g. sources + target available at checkpoint).
 - **Do not** keep `gitPort.init` as a visible business step: bind the Git provider when materializing the first workspace, from the **parent** blueprint, as instantiate now does.
+- Git workspaces use **`openSources`** (shared parent/module clones) plus per-target **`openTargetAtCheckpoint`** (update) or **`openTarget`** (instantiate), not a single combined callback.
 - **Do not** specialize the use case into four Git scripts.
 - **Do not** keep `monorepoNoCompositionRenderAndCopy` as the update render path; rendering is **apply route**, shared conceptually with instantiate (each templating port still **delegates** to `BlueprintRenderService`, without a shared validator or a call from update into the instantiate use case).
 - Lineage is **only** invoked for the root target, from the use case.
@@ -318,7 +321,7 @@ execute
 - **PR policy across many targets**: Already global on/off; already per-target base branch. → After **each** successful target push, attempt PR if the flag is on; PR failure warns and **does not** skip later targets. Git failure **does** stop later targets.
 - **Does update write or read the registry?** → **No.** List-based `targetRepositories` remains the contract. Keyed additional repos help **callers** reconcile; they are not loaded inside this use case.
 - **Missing current checkpoint**: → Fail that target; do not fall back to the default branch (would poison purity / 3-way semantics).
-- **Intent-revealing Git port**: Today `init` + `withClonedSourceAndTargetAtCheckpoint` + `monorepoNoCompositionRenderAndCopy` leak 1→1 mechanics. → Evolve ports so `execute()` reads as the procedure above. Checkpoint **order** stays in the use case.
+- **Intent-revealing Git port**: Today `init` + `withClonedSourceAndTargetAtCheckpoint` + `monorepoNoCompositionRenderAndCopy` leaked 1→1 mechanics. → Evolve ports so `execute()` reads as the procedure above. Delivered as `openSources` + `openTargetAtCheckpoint` with granular commit/tag/push steps. Checkpoint **order** stays in the use case.
 - **Partial Git failure**: Pushes are not a distributed transaction. → **Fail-fast**; document that earlier `results` may already exist on remotes (presenter may still only run on success today — if the use case throws, the client may not see partial `results`; that limitation is acceptable unless presenters already support partial success).
 - **UI**: → Out of scope.
 
@@ -401,8 +404,8 @@ None remaining for this analysis after the decisions above. Open product questio
 
 ### Technical Risks
 
-- **Update Git clone is 1×1 today**: `withClonedSourceAndTargetAtCheckpoint` cannot hold parent + modules. Mitigation: evolve the update Git port like instantiate’s multi-source workspace callback, but check out the **target at the current checkpoint**.
-- **Render path split**: Instantiate uses `applyRoute`; update still uses whole-tree `monorepoNoCompositionRenderAndCopy` (which also embeds lineage relocate). Mitigation: point update templating at the same route/descriptor/lineage operations instantiate uses; keep 1→1 as a special case of routes, not a second algorithm.
+- **Update Git clone evolved to multi-source + per-target checkpoint**: Sources are cloned once via `openSources`; each target is opened at `blueprint-v{current}` via `openTargetAtCheckpoint`. Mitigation delivered: same two-step workspace pattern as instantiate, with checkpoint checkout instead of integration branch.
+- **Render path unified**: Update templating uses `applyRoute`, `renderDescriptorToRoot`, and `recordParentLineage` — same intents as instantiate. Mitigation delivered.
 - **Instantiate module parameters may still skip `parameterMapping`**: Blindly copying instantiate’s use-case body could ship the same gap. Mitigation: update must resolve `{ $param }` / `{ value }` correctly even if instantiate still needs a follow-up.
 - **Structural rule drift** across publish, instantiate, and now update: three code paths. Mitigation: the same invalid fixtures exercised on **all three** gates.
 - **Same Git provider constraint**: Mixed hosts fail; validate up front with a named child.

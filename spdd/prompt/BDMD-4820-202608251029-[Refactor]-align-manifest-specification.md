@@ -1,5 +1,7 @@
 # Align Blueprint Manifest code to repositories / root / composition targets specification
 
+> **Supersession note (2026-08-27):** Manifest shape alignment from this prompt is delivered. Runtime scope that was deferred here (all four instantiate/update topologies, route-driven render, `instantiation.root.repository`) is specified and implemented in `BDMD-4820-202608261148` / `-202608271455` and their analysis files. Treat those as the source of truth for current behavior; this document remains the phase-1 manifest-contract record.
+
 ## Requirements
 
 - Align the Blueprint Manifest contract in **blueprint-server** and **blindata-ui** with the updated specification: logical `instantiation.repositories[]`, `instantiation.root.targets[]`, and co-located `composition[].targets[]` — replacing `strategy`, `compositionLayout`, and postfix/`createPolicy` targets.
