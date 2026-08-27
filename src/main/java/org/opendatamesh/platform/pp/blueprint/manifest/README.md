@@ -83,6 +83,11 @@ The manifest must define a list of **Protected Resources** (specific files, dire
   context of future updates.
 - This ensures that critical infrastructure definitions or core scaffolding cannot be accidentally modified or
   overwritten by developers working in the target repository.
+- Each `path` is relative to the **instantiated data-product repository root after render**, not the source blueprint
+  tree. Instantiation relocates the blueprint README and writes a lineage snapshot under `.odm/blueprint/` — do not
+  protect `README.md` or `manifest.yaml` at their source paths. The service guide
+  [Protected resources](../../../../../../../../docs/service/protected-resources.md) covers the publication-time
+  integrity check.
 
 #### 3.3. Blueprint Composition (Modularity)
 
@@ -177,7 +182,11 @@ integrations.
       for forward compatibility. See [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui) for how to use them.
 - `protectedResources` (Array of Objects, Optional): Files, directories, or globs marked immutable after initial
   generation. Each item:
-    - `path` (String, Required): Path relative to the repository root, or a glob (e.g., `infrastructure/`*).
+    - `path` (String, Required): Path or glob relative to the **instantiated data-product repository root** after
+      render (e.g. `infrastructure/core/**`, `docs/architecture.md`). Do **not** list source-only paths that
+      instantiation relocates (`README.md` at the blueprint `readmePath`, `manifest.yaml` at `manifestRootPath`).
+      To protect lineage, declare the destination (`.odm/blueprint/README.md`, `.odm/blueprint/blueprint-manifest.yaml`,
+      or `.odm/blueprint/**`). The checker does not rewrite source paths to `.odm/blueprint/`.
     - `integrity` (Object, Optional): Cryptographic digest for tamper detection. **Omitted** in the **source** Blueprint
       manifest; **populated** on the manifest copy stored in the instantiated Data Product repository (for concrete
       files, or per platform rules for globs/directories). When present:
@@ -318,7 +327,7 @@ parameters:
 
 protectedResources:
   - path: infrastructure/core/**
-  - path: README.md
+  - path: docs/architecture.md
 
 instantiation:
   strategy: monorepo

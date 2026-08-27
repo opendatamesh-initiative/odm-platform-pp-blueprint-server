@@ -32,7 +32,7 @@ parameters:
 
 protectedResources:
   - path: infrastructure/core/**
-  - path: README.md
+  - path: docs/architecture.md
 
 instantiation:
   strategy: monorepo

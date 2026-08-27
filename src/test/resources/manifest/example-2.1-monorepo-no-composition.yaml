@@ -29,9 +29,11 @@ parameters:
       label: Data retention (days)
       formType: number
 
+# Paths are relative to the instantiated data-product repo root (after render).
+# Do not list README.md or manifest.yaml: instantiate relocates them under .odm/blueprint/.
 protectedResources:
   - path: infrastructure/core/**
-  - path: README.md
+  - path: docs/architecture.md
 
 instantiation:
   strategy: monorepo
