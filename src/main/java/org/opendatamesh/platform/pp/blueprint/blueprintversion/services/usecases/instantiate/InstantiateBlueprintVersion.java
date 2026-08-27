@@ -22,6 +22,8 @@ import java.util.stream.Collectors;
 
 class InstantiateBlueprintVersion implements UseCase {
 
+    static final String PARENT_SOURCE_ID = "__parent__";
+
     private final InstantiateBlueprintVersionCommand command;
     private final InstantiateBlueprintVersionPresenter presenter;
     private final InstantiateBlueprintVersionPersistencyOutboundPort persistencyPort;
@@ -57,18 +59,24 @@ class InstantiateBlueprintVersion implements UseCase {
         Map<String, Map<String, JsonNode>> modulesParameters = retrieveModulesParameters(parentBlueprintVersion, parentParameters);
 
         Map<String, TargetRepositoryDto> targetsByKey = indexTargetRepositoriesByKey(command.targetRepositories());
-        Map<String, List<InstantiationRoute>> routesByTargetKey = groupRoutesByTargetRepository(parentBlueprintVersion);
+        List<InstantiationRoute> routes = manifestPort.flattenRoutes(parentBlueprintVersion.getContent());
+        Map<String, List<InstantiationRoute>> routesByTargetKey = groupRoutesByTargetRepository(routes);
+        String rootTargetRepositoryKey = manifestPort.retrieveRootTargetRepositoryKey(parentBlueprintVersion.getContent());
+        List<SourceRepositoryDto> sourceRepositories = sourceRepositoriesForRoutes(parentBlueprintVersion, modulesByAlias, routes);
 
-        for (Map.Entry<String, List<InstantiationRoute>> entry : routesByTargetKey.entrySet()) {
-            instantiateTargetRepository(
-                    parentBlueprintVersion,
-                    parentParameters,
-                    modulesByAlias,
-                    modulesParameters,
-                    targetsByKey,
-                    entry.getKey(),
-                    entry.getValue());
-        }
+        gitPort.openSources(parentBlueprintVersion.getBlueprint(), sourceRepositories, sourcePaths -> {
+            for (Map.Entry<String, List<InstantiationRoute>> entry : routesByTargetKey.entrySet()) {
+                TargetRepositoryDto targetRepository = requireTargetRepository(targetsByKey, entry.getKey());
+                instantiateTargetRepository(
+                        parentBlueprintVersion,
+                        parentParameters,
+                        modulesParameters,
+                        rootTargetRepositoryKey,
+                        sourcePaths,
+                        targetRepository,
+                        entry.getValue());
+            }
+        });
 
         presenter.presentResults(new InstantiateBlueprintVersionResult());
     }
@@ -86,9 +94,9 @@ class InstantiateBlueprintVersion implements UseCase {
         return targetsByKey;
     }
 
-    private Map<String, List<InstantiationRoute>> groupRoutesByTargetRepository(BlueprintVersion parentBlueprintVersion) {
+    private Map<String, List<InstantiationRoute>> groupRoutesByTargetRepository(List<InstantiationRoute> routes) {
         Map<String, List<InstantiationRoute>> routesByTargetKey = new LinkedHashMap<>();
-        for (InstantiationRoute route : manifestPort.flattenRoutes(parentBlueprintVersion.getContent())) {
+        for (InstantiationRoute route : routes) {
             routesByTargetKey.computeIfAbsent(route.repositoryKey(), ignored -> new ArrayList<>()).add(route);
         }
         return routesByTargetKey;
@@ -100,35 +108,33 @@ class InstantiateBlueprintVersion implements UseCase {
      * <p>
      * The rendered content is always built on a throwaway orphan branch, tagged as
      * the blueprint checkpoint and only then merged into the integration branch, so
-     * the checkpoint stays a faithful snapshot of the blueprint output regardless of
+     * the checkpoint stays a faithful snapshot of the blueprint output regardless
+     * of
      * what the target repository already contains.
      */
     private void instantiateTargetRepository(
             BlueprintVersion parentBlueprintVersion,
             Map<String, JsonNode> parentParameters,
-            Map<String, BlueprintVersion> modulesByAlias,
             Map<String, Map<String, JsonNode>> modulesParameters,
-            Map<String, TargetRepositoryDto> targetsByKey,
-            String targetRepositoryKey,
+            String rootTargetRepositoryKey,
+            Map<String, Path> sourcePaths,
+            TargetRepositoryDto targetRepository,
             List<InstantiationRoute> routes) {
         if (routes.isEmpty()) {
             return;
         }
 
-        TargetRepositoryDto targetRepository = requireTargetRepository(targetsByKey, targetRepositoryKey);
-        List<SourceRepositoryDto> sourceRepositories = sourceRepositoriesForRoutes(parentBlueprintVersion, modulesByAlias, routes);
+        String targetRepositoryKey = targetRepository.targetId();
         String integrationBranch = resolveIntegrationBranch(targetRepository);
         String checkpointBranch = BlueprintGitNamingConventions.orphanInitBranchName();
 
-        gitPort.openSourcesAndTarget(
-                parentBlueprintVersion.getBlueprint(),
-                sourceRepositories,
+        gitPort.openTarget(
                 targetRepository,
                 integrationBranch,
-                (sourcePaths, targetPath) -> {
+                targetPath -> {
                     gitPort.createAndCheckoutOrphanBranch(targetPath, checkpointBranch);
                     renderRoutedSources(targetRepositoryKey, routes, sourcePaths, targetPath, parentParameters, modulesParameters);
-                    renderDescriptorAndLineageOnRootRepository(parentBlueprintVersion, parentParameters, targetRepositoryKey, sourcePaths, targetPath);
+                    renderDescriptorAndLineageOnRootRepository(parentBlueprintVersion, parentParameters, rootTargetRepositoryKey, targetRepositoryKey, sourcePaths, targetPath);
                     String checkpointTag = commitAndTagCheckpoint(targetPath, checkpointBranch);
                     publishCheckpointOnIntegrationBranch(targetPath, checkpointBranch, integrationBranch, checkpointTag);
                 });
@@ -196,22 +202,24 @@ class InstantiateBlueprintVersion implements UseCase {
     private void renderDescriptorAndLineageOnRootRepository(
             BlueprintVersion parentBlueprintVersion,
             Map<String, JsonNode> parentParameters,
+            String rootTargetRepositoryKey,
             String targetRepositoryKey,
             Map<String, Path> sourcePaths,
             Path targetPath) {
         BlueprintRepo parentRepo = parentBlueprintVersion.getBlueprint().getBlueprintRepo();
-        String rootTargetRepositoryKey = manifestPort.retrieveRootTargetRepositoryKey(parentBlueprintVersion.getContent());
-        if (!targetRepositoryKey.equals(rootTargetRepositoryKey) || !StringUtils.hasText(parentRepo.getDescriptorTemplatePath())) {
+        if (!targetRepositoryKey.equals(rootTargetRepositoryKey)
+                || !StringUtils.hasText(parentRepo.getDescriptorTemplatePath())) {
             return;
         }
 
-        Path parentSourceRoot = sourcePaths.get(InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl.PARENT_SOURCE_ID);
+        Path parentSourceRoot = sourcePaths.get(PARENT_SOURCE_ID);
         if (parentSourceRoot == null) {
             throw new InternalException(
                     "Parent source workspace missing when rendering descriptor on root key '%s'"
                             .formatted(targetRepositoryKey));
         }
-        templatingPort.renderDescriptorToRoot(parentSourceRoot, parentRepo.getDescriptorTemplatePath(), targetPath, parentParameters);
+        templatingPort.renderDescriptorToRoot(parentSourceRoot, parentRepo.getDescriptorTemplatePath(), targetPath,
+                parentParameters);
         templatingPort.recordParentLineage(targetPath, parentBlueprintVersion, parentParameters);
     }
 

@@ -97,15 +97,15 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
 
-        // Git: first read clones the blueprint repo at the released version tag;
-        // second read clones the target repo at the branch we populate.
+        // Git: source workspaces are opened before target workspaces so they can be
+        // shared across every target.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         // Git: populate flow stages changes, commits with the expected message, then
         // pushes (no force-push).
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
@@ -147,11 +147,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
         when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(Optional.of(new Repository()));
-        AtomicInteger callCounter = new AtomicInteger(0);
         AtomicReference<Commit> commitRef = new AtomicReference<>();
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
+            RepositoryPointer pointer = invocation.getArgument(1);
+            consumer.accept(pointer instanceof RepositoryPointerBranch
+                    ? targetDir.toFile()
+                    : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
         doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
@@ -184,10 +186,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
@@ -217,11 +219,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
         when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(Optional.of(new Repository()));
-        AtomicInteger callCounter = new AtomicInteger(0);
         AtomicReference<Commit> commitRef = new AtomicReference<>();
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
+            RepositoryPointer pointer = invocation.getArgument(1);
+            consumer.accept(pointer instanceof RepositoryPointerBranch
+                    ? targetDir.toFile()
+                    : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
         doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
@@ -254,10 +258,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
@@ -296,10 +300,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
@@ -328,10 +332,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
         when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(Optional.of(new Repository()));
-        AtomicInteger callCounter = new AtomicInteger(0);
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
+            RepositoryPointer pointer = invocation.getArgument(1);
+            consumer.accept(pointer instanceof RepositoryPointerBranch
+                    ? targetDir.toFile()
+                    : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
         doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
@@ -350,15 +356,15 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
                         null, null, null), jsonHeaders()),
                 InstantiateBlueprintVersionResponseRes.class);
 
-        // Git: no explicit target branch in request → second read uses repository
+        // Git: no explicit target branch in request → target read uses repository
         // default branch (main).
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
@@ -387,10 +393,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
         when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(Optional.of(new Repository()));
-        AtomicInteger callCounter = new AtomicInteger(0);
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
+            RepositoryPointer pointer = invocation.getArgument(1);
+            consumer.accept(pointer instanceof RepositoryPointerBranch
+                    ? targetDir.toFile()
+                    : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
         doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
@@ -411,14 +419,14 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
                 new HttpEntity<>(request, jsonHeaders()),
                 InstantiateBlueprintVersionResponseRes.class);
 
-        // Git: second read uses the requested branch instead of the repository default.
+        // Git: target read uses the requested branch instead of the repository default.
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("feature/custom");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("feature/custom");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
@@ -662,6 +670,8 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(Files.exists(infraTarget.resolve(".odm/blueprint"))).isFalse();
         assertThat(Files.exists(infraTarget.resolve("terraform"))).isTrue();
         assertThat(Files.exists(infraTarget.resolve("governance/policies"))).isTrue();
+        // One shared parent source clone plus one clone for each target.
+        verify(mockGitOperation, times(3)).readRepository(any(), any(), any());
 
         deleteCreatedBlueprint(context);
     }
@@ -832,10 +842,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
         when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(Optional.of(new Repository()));
-        AtomicInteger callCounter = new AtomicInteger(0);
         doAnswer(invocation -> {
             Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(callCounter.getAndIncrement() == 0 ? targetDir.toFile() : sourceDir.toFile());
+            RepositoryPointer pointer = invocation.getArgument(1);
+            consumer.accept(pointer instanceof RepositoryPointerBranch
+                    ? targetDir.toFile()
+                    : sourceDir.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
         doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
@@ -892,10 +904,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());
@@ -939,10 +951,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
         verify(mockGitOperation, times(2)).readRepository(any(), pointerCaptor.capture(), any());
         List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
-        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerBranch.class);
-        assertThat(pointers.get(0).getRefValue()).isEqualTo("main");
-        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerTag.class);
-        assertThat(pointers.get(1).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(0)).isInstanceOf(RepositoryPointerTag.class);
+        assertThat(pointers.get(0).getRefValue()).isEqualTo("v" + context.versionNumber);
+        assertThat(pointers.get(1)).isInstanceOf(RepositoryPointerBranch.class);
+        assertThat(pointers.get(1).getRefValue()).isEqualTo("main");
         InOrder gitOpOrder = Mockito.inOrder(mockGitOperation);
         ArgumentCaptor<Commit> commitCaptor = ArgumentCaptor.forClass(Commit.class);
         gitOpOrder.verify(mockGitOperation).createAndCheckoutOrphanBranch(eq(targetDir.toFile()), anyString());

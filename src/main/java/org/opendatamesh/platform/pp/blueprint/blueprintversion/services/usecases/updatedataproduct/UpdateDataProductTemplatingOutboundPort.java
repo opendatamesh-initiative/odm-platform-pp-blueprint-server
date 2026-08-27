@@ -8,14 +8,21 @@ import java.util.Map;
 
 interface UpdateDataProductTemplatingOutboundPort {
 
-    void monorepoNoCompositionRenderAndCopy(
-            BlueprintVersion blueprintVersion,
-            Map<String, JsonNode> parameters,
+    void applyRoute(
             Path sourceRoot,
-            Path targetRoot);
-
-    void enrichDescriptorWithBlueprintMetadata(
-            Path rootTarget,
-            BlueprintVersion version,
+            String sourcePath,
+            Path targetRoot,
+            String destinationPath,
             Map<String, JsonNode> parameters);
+
+    void renderDescriptorToRoot(
+            Path parentSourceRoot,
+            String descriptorTemplatePath,
+            Path rootTarget,
+            Map<String, JsonNode> parameters);
+
+    void recordParentLineage(
+            Path rootTarget,
+            BlueprintVersion parentVersion,
+            Map<String, JsonNode> parentResolvedParameters);
 }

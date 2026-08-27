@@ -42,12 +42,6 @@ import java.util.regex.PatternSyntaxException;
 class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
         implements InstantiateBlueprintVersionManifestOutboundPort {
 
-    /**
-     * Sentinel {@code sourceId} for the parent blueprint repo in {@link InstantiationRoute}
-     * and {@link SourceRepositoryDto}, so it never collides with composition module aliases.
-     */
-    static final String PARENT_SOURCE_ID = "__parent__";
-
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     /**
      * Matches manifest schema versions used in the platform (e.g. {@code v1},
@@ -124,7 +118,7 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
 
         BlueprintRepo parentRepo = parentVersion.getBlueprint().getBlueprintRepo();
         sources.add(new SourceRepositoryDto(
-                PARENT_SOURCE_ID,
+                InstantiateBlueprintVersion.PARENT_SOURCE_ID,
                 parentVersion.getTag(),
                 toGitRepository(parentRepo)));
 
@@ -159,7 +153,7 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
         List<InstantiationRoute> routes = new ArrayList<>();
         for (ManifestTarget target : manifest.getInstantiation().getRoot().getTargets()) {
             routes.add(new InstantiationRoute(
-                    PARENT_SOURCE_ID,
+                    InstantiateBlueprintVersion.PARENT_SOURCE_ID,
                     defaultPath(target.getSourcePath()),
                     target.getRepository(),
                     defaultPath(target.getPath()),

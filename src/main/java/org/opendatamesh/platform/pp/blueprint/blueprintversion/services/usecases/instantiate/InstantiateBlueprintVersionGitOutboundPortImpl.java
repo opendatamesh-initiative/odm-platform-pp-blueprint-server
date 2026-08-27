@@ -19,7 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBlueprintVersionGitOutboundPort {
 
@@ -34,34 +34,33 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
     }
 
     @Override
-    public void openSourcesAndTarget(
+    public void openSources(
             Blueprint parentBlueprint,
             List<SourceRepositoryDto> sources,
-            TargetRepositoryDto target,
-            String integrationBranch,
-            BiConsumer<Map<String, Path>, Path> operation) {
+            Consumer<Map<String, Path>> operation) {
         initGitProvider(parentBlueprint);
         List<SourceRepositoryDto> uniqueSources = dedupeSources(sources);
-        // Target first (integration branch), then nest source clones at release tags.
+        openSourcesRecursively(uniqueSources, 0, new LinkedHashMap<>(), operation);
+    }
+
+    @Override
+    public void openTarget(
+            TargetRepositoryDto target,
+            String integrationBranch,
+            Consumer<Path> operation) {
         gitProvider.gitOperation().readRepository(
                 target.repository(),
                 new RepositoryPointerBranch(integrationBranch),
-                targetRepoDir -> cloneSourcesRecursively(
-                        uniqueSources,
-                        0,
-                        new LinkedHashMap<>(),
-                        targetRepoDir.toPath(),
-                        operation));
+                targetRepoDir -> operation.accept(targetRepoDir.toPath()));
     }
 
-    private void cloneSourcesRecursively(
+    private void openSourcesRecursively(
             List<SourceRepositoryDto> sources,
             int index,
             Map<String, Path> sourcePaths,
-            Path targetPath,
-            BiConsumer<Map<String, Path>, Path> operation) {
+            Consumer<Map<String, Path>> operation) {
         if (index >= sources.size()) {
-            operation.accept(Map.copyOf(sourcePaths), targetPath);
+            operation.accept(Map.copyOf(sourcePaths));
             return;
         }
         SourceRepositoryDto source = sources.get(index);
@@ -70,7 +69,7 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
                 new RepositoryPointerTag(source.tag()),
                 sourceRepoDir -> {
                     sourcePaths.put(source.id(), sourceRepoDir.toPath());
-                    cloneSourcesRecursively(sources, index + 1, sourcePaths, targetPath, operation);
+                    openSourcesRecursively(sources, index + 1, sourcePaths, operation);
                 });
     }
 

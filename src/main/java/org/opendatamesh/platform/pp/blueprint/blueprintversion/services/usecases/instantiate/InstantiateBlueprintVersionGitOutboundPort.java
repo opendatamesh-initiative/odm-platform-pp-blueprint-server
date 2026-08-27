@@ -5,7 +5,7 @@ import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * Git capabilities used while creating the initial checkpoint of a blueprint
@@ -18,22 +18,27 @@ import java.util.function.BiConsumer;
  */
 interface InstantiateBlueprintVersionGitOutboundPort {
 
-        /**
-         * Clones each unique source at its release tag and the target at the
-         * integration branch,
-         * then invokes {@code operation} with
-         * {@code (sourceId → local path, target path)}.
-         * Temporary directories are always cleaned up after the callback returns.
-         * <p>
-         * Binds the Git provider from the parent blueprint's {@code BlueprintRepo} on
-         * first use.
-         */
-        void openSourcesAndTarget(
-                        Blueprint parentBlueprint,
-                        List<SourceRepositoryDto> sources,
-                        TargetRepositoryDto target,
-                        String integrationBranch,
-                        BiConsumer<Map<String, Path>, Path> operation);
+    /**
+     * Opens each unique source at its release tag for the duration of
+     * {@code operation}. This lets one source workspace serve every target that
+     * consumes it. Temporary directories are cleaned up after the callback returns.
+     * <p>
+     * Binds the Git provider from the parent blueprint's {@code BlueprintRepo} on
+     * first use.
+     */
+    void openSources(
+            Blueprint parentBlueprint,
+            List<SourceRepositoryDto> sources,
+            Consumer<Map<String, Path>> operation);
+
+    /**
+     * Opens one target at its integration branch for the duration of
+     * {@code operation}. The temporary directory is cleaned up afterwards.
+     */
+    void openTarget(
+            TargetRepositoryDto target,
+            String integrationBranch,
+            Consumer<Path> operation);
 
         void createAndCheckoutOrphanBranch(Path targetRepository, String branchName);
 
