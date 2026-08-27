@@ -2,17 +2,17 @@
 
 ## Original Business Requirement
 
-# [Blueprint 2.0] Supporto a feature Protected Resources
+# [Blueprint 2.0] Support for Protected Resources
 
 ## Original business requirement (high level description)
 
-Sviluppo processo di validazione
+Build a validation process.
 
-Serve un punto dove venga validato il constraint durante la pubblicazione di una data product version.
-Posibile validazione:
-Blueprint service diventa anche un policy adapter (come fa ora anche l’Observer). Fare il clone della repository (dato il tag), leggere le protected resources e generare gli hash, e verficare che coincidano (e.g. che non siano state modificate le protected resources)
+There needs to be a point where the constraint is validated during publication of a data product version.
+Possible validation:
+Blueprint service also becomes a policy adapter (as Observer already does). Clone the repository (given the tag), read the protected resources and generate hashes, and verify they match (for example, that the protected resources have not been modified).
 
-NOTE venute fuori da sviluppi precedenti:
+Notes from earlier development:
 
 Protected Resource Policy Extensions
 
@@ -54,19 +54,19 @@ Ensures that:
 
 ## Initial analysis (high level)
 
-Evento DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/rest/v2/resources/dataproductversion/events/emitted/EmittedEventDataProductVersionPublicationRequestedRes.java , policy service cattura evento, dispatch dell'evento ai policy engine per richiesta validazine, eseguono la validazione dell'evento
-Sottoscrivere blueprint service a policy service come adapter se protected resources e' attivo. Riceve evento, clona repo in locale, vede se protected resource modificate calcolando hashes e confrontando.
-Observer fa anche da validator, prendere spunto da li per implementazione validator package: @odm-platform-adapter-observer-blindata/src/main/java/org/opendatamesh/platform/up/metaservice/blindata/validator -> aggiungere package equivalente sul blueprint con evento DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED.
-Probabile sia necessario modificare evento @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/rest/v2/resources/dataproductversion/events/emitted/EmittedEventDataProductVersionPublicationRequestedRes.java @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/dataproductversion/services/usecases/publish/DataProductVersionPublisherNotificationOutboundPortImpl.java e aggiungere repo da clonare per evitare che blueprint contatti registry
+Event `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/rest/v2/resources/dataproductversion/events/emitted/EmittedEventDataProductVersionPublicationRequestedRes.java — Policy Service captures the event, dispatches it to policy engines for a validation request, engines run the validation.
+Subscribe Blueprint service to Policy Service as an adapter when protected resources is active. It receives the event, clones the repo locally, and checks whether protected resources were modified by computing and comparing hashes.
+Observer also acts as a validator; use that as a pattern for the validator package: @odm-platform-adapter-observer-blindata/src/main/java/org/opendatamesh/platform/up/metaservice/blindata/validator → add an equivalent package on Blueprint for event `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`.
+The event may need to be extended @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/rest/v2/resources/dataproductversion/events/emitted/EmittedEventDataProductVersionPublicationRequestedRes.java @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/dataproductversion/services/usecases/publish/DataProductVersionPublisherNotificationOutboundPortImpl.java to include the repo to clone so Blueprint does not have to contact Registry.
 
-Protected resources possono essere semplici file o folders, confronto hash direttamente. Se sono template velocity potrei voler verificare che template non siano stati modificati: instanziare blueprint con params del data product e calcolo hash
+Protected resources can be simple files or folders; compare hashes directly. If they are Velocity templates we may want to verify the templates were not modified: instantiate the blueprint with the data product parameters and compute hashes.
 
-Per implementazione validazione policy: tengo use case @odm-platform-pp-blueprint-server/src/main/java/org/opendatamesh/platform/pp/blueprint/blueprintversion/services/usecases/instantiate/InstantiateBlueprintVersion.java e fare un'altra implementazione identica, cambiare solo InstantiateBlueprintVersionGitOutboundPort e fare mock (e.g. instanzio InstantiateBlueprintVersionLocalinstantiationGitOutboundPort), mock di tutti push @odm-platform-pp-blueprint-server/src/main/java/org/opendatamesh/platform/pp/blueprint/blueprintversion/services/usecases/instantiate/InstantiateBlueprintVersionGitOutboundPort.java:53-55. Fare mock metodi pushTag e pushBranch
+For policy validation implementation: keep use case @odm-platform-pp-blueprint-server/src/main/java/org/opendatamesh/platform/pp/blueprint/blueprintversion/services/usecases/instantiate/InstantiateBlueprintVersion.java and make another identical implementation, changing only `InstantiateBlueprintVersionGitOutboundPort` with a mock (e.g. `InstantiateBlueprintVersionLocalinstantiationGitOutboundPort`), mock all pushes @odm-platform-pp-blueprint-server/src/main/java/org/opendatamesh/platform/pp/blueprint/blueprintversion/services/usecases/instantiate/InstantiateBlueprintVersionGitOutboundPort.java:53-55. Mock `pushTag` and `pushBranch`.
 
-Definire due packages/servizi distinti:
+Define two distinct packages/services:
 
-1. Servizio per validazione con calcolo hash. interfaccia useCase per protected resources, chiamato dal servizio di validator.
-2. Policy sottoscrizione e validazione, creare policy custom da eventi ValidatorPolicySubscriber, su evento di pubblicazione DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED, policy bloccante equivalente di odm-platform-adapter-observer-blindata/src/main/java/org/opendatamesh/platform/up/metaservice/blindata/validator
+1. Service for validation with hash computation. UseCase interface for protected resources, called by the validator service.
+2. Policy subscription and validation: create a custom policy from ValidatorPolicySubscriber events, on publication event `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`, blocking policy equivalent to odm-platform-adapter-observer-blindata/src/main/java/org/opendatamesh/platform/up/metaservice/blindata/validator
 
 ## Involved Projects
 
@@ -94,7 +94,7 @@ If the blocking policy fails, Policy reports failure; Registry’s V1 bridge emi
 
 Actors: data-product owner (publish), platform governance (Policy V1), Registry V1 bridge (sync Policy call + approve/reject), Blueprint Server (integrity engine + temporary reconstruction adapter), Git hosts. End users of Blindata UI are not in this loop.
 
-When Policy V2 can dispatch `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with the nested version resource, the Blueprint `old/v1` package is deleted. The integrity use case and V2-shaped validator service stay. No Notification or Policy changes are required for the current slice.
+When Policy V2 can dispatch `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with the nested version resource, the Blueprint `old/v1` package is deleted (reconstruction, CREATION subscription, Registry client, Policy DTOs/clients, and `ProtectedResourcesPolicyValidatorService`). The integrity use case stays. A thin lasting evaluate controller is added in its place. No Notification or Policy changes are required for the current slice.
 
 ### Project Boundaries
 
@@ -121,7 +121,7 @@ When Policy V2 can dispatch `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with th
 - **Protected resources**: authoritative in the blueprint manifest; evaluated against the product repo at tag vs a local re-instantiate.
 - **Git credentials**: never on events. Authoritative as Blueprint Server configuration (service credentials for the policy path).
 - **Blueprint validator configuration**: `active` + `blocking` (Observer-like) stay. Registry address used by the fetch is **V1-adapter-only** config and becomes unused when `old/v1` is removed.
-- **Isolation / removal**: Blueprint `old/v1` may depend on core (integrity use case, V2-shaped validator service). Core must not depend on `old/v1`. Deleting the package is the Policy V2 migration.
+- **Isolation / removal**: Blueprint `old/v1` may depend on core (integrity use case, `blueprint.validator` Git/config). Core must not depend on `old/v1`. Deleting the package is the Policy V2 migration.
 
 ### Interaction Flow
 
@@ -183,12 +183,12 @@ Because that V1 payload cannot clone a Git tag, introduce an **isolated Blueprin
 
 Treat File Immutability (A) and Parameter Sanity (B) as **one check**. First delivery remains **monorepo, no composition**.
 
-The V2 target is unchanged: Policy V2 will forward `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with the nested version resource; Blueprint will subscribe to that name and call the integrity use case directly. The only deletion required is `old/v1` (reconstruction + CREATION subscription + Registry client).
+The V2 target is unchanged: Policy V2 will forward `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with the nested version resource; Blueprint will subscribe to that name and call the integrity use case directly. The only deletion required is `old/v1` (reconstruction + CREATION subscription + Registry client + Policy adapter types). Then add a thin lasting evaluate controller.
 
 ### Key System-Level Design Decisions
 
 - **Do not use Notification as Blueprint’s trigger**: Subscribing Blueprint (or Policy) to `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` would require Policy to handle V2 events. Policy and Notification stay untouched. → Registry’s existing V1 bridge remains the Policy entry; Blueprint registers on `DATA_PRODUCT_VERSION_CREATION`.
-- **Isolated `old/v1` adapter in Blueprint**: Same band-aid idea as Registry `old`. Reconstruction, CREATION subscription, and Registry fetch live only there. Core integrity / V2-shaped validator stay. Core must not import `old/v1`. The package is deleted when Policy V2 exists.
+- **Isolated `old/v1` adapter in Blueprint**: Same band-aid idea as Registry `old`. Reconstruction, CREATION subscription, Registry fetch, Policy clients/DTOs, and `ProtectedResourcesPolicyValidatorService` live only there. Core integrity and Git/validator config stay. Core must not import `old/v1`. The package is deleted when Policy V2 exists.
 - **Fetch Registry from Blueprint (temporary)**: The V1 evaluate object has no tag and no product repo. → `old/v1` fetches Registry V2 to reconstruct the nested version resource. The integrity use case still does not call Registry. This hop goes away with Policy V2.
 - **Reconstruct, then reuse the existing use case**: `old/v1` only simulates “Policy V2 called us with the V2 object.” It does not reimplement hashing or instantiate.
 - **Policy adapter vs Notification observer**: A Notification-only observer cannot block publish. → **Policy adapter**. The V1 event name is the temporary subscription; the V2 name remains the target.

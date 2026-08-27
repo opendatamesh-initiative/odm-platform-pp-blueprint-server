@@ -1,4 +1,4 @@
-package org.opendatamesh.platform.pp.blueprint.validator.resources;
+package org.opendatamesh.platform.pp.blueprint.old.v1.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.media.Schema;

@@ -6,8 +6,20 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * User-facing policy failure messages for protected-resource mismatches.
+ * Scenarios trace to {@code spdd/prompt/BDMD-5124-202608210930-[Feat]-service-protected-resources-integrity-policy-adapter.md} (Gherkin).
+ */
 class EvaluateProtectedResourcesIntegrityMessageTest {
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Failure message names declared path, kind, and files
+     *   Given mismatches for missing on published, contents differ, not produced by the blueprint, and unsupported algorithm
+     *   When the failure message is formatted
+     *   Then the message lists each declared path and the user-facing reason without mentioning digest
+     */
     @Test
     void failureMessageNamesDeclaredPathKindAndFiles() {
         List<ProtectedResourceMismatch> mismatches = List.of(

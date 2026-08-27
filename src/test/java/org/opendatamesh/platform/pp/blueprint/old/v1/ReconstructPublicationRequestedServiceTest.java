@@ -10,11 +10,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.RegistryProductRes;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.RegistryProductVersionRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationRequestRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationResultRes;
-import org.opendatamesh.platform.pp.blueprint.validator.services.ProtectedResourcesValidatorService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 
@@ -27,6 +26,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Reconstruction of a V2 nested version resource from Policy V1 evaluate payloads.
+ * Scenarios trace to {@code spdd/prompt/BDMD-5124-202608241546-[Feat]-service-v1-protected-resources-policy-adapter.md} (Gherkin).
+ */
 @ExtendWith(MockitoExtension.class)
 class ReconstructPublicationRequestedServiceTest {
 
@@ -39,7 +42,7 @@ class ReconstructPublicationRequestedServiceTest {
     @Mock
     private RegistryClient registryClient;
     @Mock
-    private ProtectedResourcesValidatorService validatorService;
+    private ProtectedResourcesPolicyValidatorService validatorService;
 
     private ReconstructPublicationRequestedService service;
 
@@ -48,6 +51,15 @@ class ReconstructPublicationRequestedServiceTest {
         service = new ReconstructPublicationRequestedService(registryClient, validatorService, OBJECT_MAPPER);
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: V2-shaped payload skips Registry and delegates to the validator
+     *   Given a Policy evaluate request whose objectToEvaluate already has nested version content and clone metadata
+     *   When reconstruction evaluates the request
+     *   Then the Registry client is never called
+     *   And the policy validator is called with the original request
+     */
     @Test
     void v2ShapedPayloadSkipsRegistryAndDelegates() {
         PolicyEvaluationRequestRes request = request(v2VersionResource(true, true));
@@ -62,6 +74,18 @@ class ReconstructPublicationRequestedServiceTest {
         verify(validatorService).evaluate(request);
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: V1 afterState reconstructs the version resource from Registry
+     *   Given a Policy V1 objectToEvaluate with afterState.dataProductVersion.info fullyQualifiedName and version
+     *   And Registry returns exactly one product for that FQN
+     *   And Registry returns exactly one version for that product uuid and version number
+     *   And GET version returns a nested version resource with tag and product repository
+     *   When reconstruction evaluates the request
+     *   Then the policy validator is called
+     *   And objectToEvaluate is the GET version body including tag and nested product repository
+     */
     @Test
     void v1AfterStateReconstructsAndDelegatesGetVersionBody() {
         stubUniqueLookup();
@@ -87,6 +111,17 @@ class ReconstructPublicationRequestedServiceTest {
                 .isEqualTo("https://github.com/org/customer360.git");
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: Missing FQN and version fail closed without integrity
+     *   Given a Policy V1 objectToEvaluate whose afterState descriptor has no fullyQualifiedName and no version
+     *   When reconstruction evaluates the request
+     *   Then evaluationResult is false
+     *   And the message states the data product name or version could not be determined
+     *   And the Registry client is never called
+     *   And the policy validator is never called
+     */
     @Test
     void missingFqnAndVersionReturns200FalseWithoutIntegrity() {
         PolicyEvaluationRequestRes request = request(v1Payload(null, null));
@@ -102,6 +137,17 @@ class ReconstructPublicationRequestedServiceTest {
         verify(validatorService, never()).evaluate(any());
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: No data product found in Registry fails closed
+     *   Given a Policy V1 objectToEvaluate with a readable FQN and version
+     *   And Registry search by FQN returns zero products
+     *   When reconstruction evaluates the request
+     *   Then evaluationResult is false
+     *   And the message states no data product was found
+     *   And the policy validator is never called
+     */
     @Test
     void zeroProductsReturns200False() {
         when(registryClient.searchProductsByFqn(FQN)).thenReturn(Page.empty());
@@ -114,6 +160,17 @@ class ReconstructPublicationRequestedServiceTest {
         verify(validatorService, never()).evaluate(any());
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: Multiple data products for FQN fail closed
+     *   Given a Policy V1 objectToEvaluate with a readable FQN and version
+     *   And Registry search by FQN returns more than one product
+     *   When reconstruction evaluates the request
+     *   Then evaluationResult is false
+     *   And the message states multiple data products were found
+     *   And the policy validator is never called
+     */
     @Test
     void multipleProductsReturns200False() {
         when(registryClient.searchProductsByFqn(FQN)).thenReturn(new PageImpl<>(List.of(
@@ -126,6 +183,40 @@ class ReconstructPublicationRequestedServiceTest {
         verify(validatorService, never()).evaluate(any());
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: No data product version found in Registry fails closed
+     *   Given a Policy V1 objectToEvaluate with a readable FQN and version
+     *   And Registry returns exactly one product
+     *   And Registry search for versions returns zero versions
+     *   When reconstruction evaluates the request
+     *   Then evaluationResult is false
+     *   And the message states no data product version was found
+     *   And the policy validator is never called
+     */
+    @Test
+    void zeroVersionsReturns200False() {
+        when(registryClient.searchProductsByFqn(FQN)).thenReturn(new PageImpl<>(List.of(product(PRODUCT_UUID))));
+        when(registryClient.searchVersions(PRODUCT_UUID, VERSION_NUMBER)).thenReturn(Page.empty());
+
+        PolicyEvaluationResultRes result = service.evaluate(request(v1Payload(FQN, VERSION_NUMBER)));
+
+        assertThat(result.getEvaluationResult()).isFalse();
+        assertThat(result.getOutputObject().getMessage()).contains("no data product version found");
+        verify(validatorService, never()).evaluate(any());
+    }
+
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: GET version without nested repo nests the product before delegate
+     *   Given a Policy V1 objectToEvaluate with a readable FQN and version
+     *   And GET version omits dataProduct.dataProductRepo
+     *   And GET product returns a product with a repository
+     *   When reconstruction evaluates the request
+     *   Then the policy validator receives objectToEvaluate with nested dataProduct.dataProductRepo
+     */
     @Test
     void getVersionWithoutRepoNestsProductBeforeDelegate() {
         stubUniqueLookup();
@@ -144,6 +235,17 @@ class ReconstructPublicationRequestedServiceTest {
         verify(registryClient).getProduct(PRODUCT_UUID);
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: Registry not configured fails closed for a V1 payload
+     *   Given a Policy V1 objectToEvaluate with a readable FQN and version
+     *   And the Registry client is not configured
+     *   When reconstruction evaluates the request
+     *   Then evaluationResult is false
+     *   And the message states Registry is not configured
+     *   And the policy validator is never called
+     */
     @Test
     void registryNotConfiguredAndV1PayloadReturns200False() {
         when(registryClient.searchProductsByFqn(FQN))
@@ -156,6 +258,15 @@ class ReconstructPublicationRequestedServiceTest {
         verify(validatorService, never()).evaluate(any());
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: Unreadable payload throws BadRequest
+     *   Given a Policy evaluate request with no objectToEvaluate
+     *   When reconstruction evaluates the request
+     *   Then a BadRequestException is thrown with message "Empty/Malformed Policy Evaluation Object"
+     *   And the Registry client is never called
+     */
     @Test
     void unreadablePayloadThrowsBadRequest() {
         PolicyEvaluationRequestRes request = new PolicyEvaluationRequestRes();
@@ -166,6 +277,15 @@ class ReconstructPublicationRequestedServiceTest {
         verify(registryClient, never()).searchProductsByFqn(any());
     }
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: Neither currentState nor afterState is an object throws BadRequest
+     *   Given a Policy evaluate request whose afterState is not a JSON object
+     *   When reconstruction evaluates the request
+     *   Then a BadRequestException is thrown with message "Empty/Malformed Policy Evaluation Object"
+     *   And the policy validator is never called
+     */
     @Test
     void neitherCurrentNorAfterStateIsObjectThrowsBadRequest() {
         ObjectNode payload = OBJECT_MAPPER.createObjectNode();

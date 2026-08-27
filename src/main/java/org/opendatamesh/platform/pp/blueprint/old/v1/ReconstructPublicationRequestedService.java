@@ -7,9 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.RegistryProductRes;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.RegistryProductVersionRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationRequestRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationResultRes;
-import org.opendatamesh.platform.pp.blueprint.validator.services.ProtectedResourcesValidatorService;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -20,8 +19,9 @@ import java.util.List;
 
 /**
  * Policy V1 evaluate adapter: reconstruct a V2 nested version resource from Registry, then
- * delegate to the lasting validator. Registry is called only here so this package can be deleted
- * when Policy V2 forwards {@code DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED} with tag + repo.
+ * delegate to {@link ProtectedResourcesPolicyValidatorService}. Registry is called only here so this
+ * package can be deleted when Policy V2 forwards {@code DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED}
+ * with tag + repo.
  */
 @Service
 public class ReconstructPublicationRequestedService {
@@ -34,12 +34,12 @@ public class ReconstructPublicationRequestedService {
     private static final Logger log = LoggerFactory.getLogger(ReconstructPublicationRequestedService.class);
 
     private final RegistryClient registryClient;
-    private final ProtectedResourcesValidatorService validatorService;
+    private final ProtectedResourcesPolicyValidatorService validatorService;
     private final ObjectMapper objectMapper;
 
     public ReconstructPublicationRequestedService(
             RegistryClient registryClient,
-            ProtectedResourcesValidatorService validatorService,
+            ProtectedResourcesPolicyValidatorService validatorService,
             ObjectMapper objectMapper
     ) {
         this.registryClient = registryClient;

@@ -5,9 +5,13 @@ import org.opendatamesh.platform.pp.blueprint.blueprint.services.core.BlueprintS
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.core.BlueprintVersionCrudService;
 import org.opendatamesh.platform.pp.blueprint.exceptions.NotFoundException;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
+import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintSearchOptions;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionSearchOptions;
 import org.springframework.data.domain.Pageable;
+
+import java.io.IOException;
 
 class EvaluateProtectedResourcesIntegrityPersistencyOutboundPortImpl
         implements EvaluateProtectedResourcesIntegrityPersistencyOutboundPort {
@@ -44,5 +48,16 @@ class EvaluateProtectedResourcesIntegrityPersistencyOutboundPortImpl
                         "Blueprint version '%s' not found for blueprint '%s'"
                                 .formatted(blueprintVersion, blueprintName)
                 ));
+    }
+
+    @Override
+    public Manifest readManifest(BlueprintVersion blueprintVersion) {
+        try {
+            return ManifestParserFactory.getParser().deserialize(blueprintVersion.getContent());
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Cannot check protected resources: the blueprint manifest could not be read",
+                    e);
+        }
     }
 }

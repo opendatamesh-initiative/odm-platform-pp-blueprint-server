@@ -23,7 +23,8 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
     private static final char[] GLOB_META = {'*', '?', '[', '{'};
 
     @Override
-    public DigestResult digest(Path repoRoot, String declaredPath) {
+    public DigestResult computeDigest(WorkingTree tree, String declaredPath) {
+        Path repoRoot = tree == null ? null : tree.path();
         if (repoRoot == null || declaredPath == null || declaredPath.isBlank()) {
             return new DigestResult(MismatchKind.INVALID_PATH, "the protected path is empty", Map.of());
         }

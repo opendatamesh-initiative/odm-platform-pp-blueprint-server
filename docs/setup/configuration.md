@@ -65,9 +65,6 @@ odm:
     policy-service:
       active: false
       address: http://localhost:8005
-    registry-service:
-      active: false
-      address: http://localhost:8086
 ```
 
 | Property | Description |
@@ -77,7 +74,6 @@ odm:
 | `blueprint.validator.policy.blocking` | Whether Policy treats a failed check as blocking publication |
 | `blueprint.validator.git.credentials` | Service-level Git auth for policy-path clones (never taken from the event) |
 | `odm.product-plane.policy-service.active` / `address` | Policy Server used to register the engine and receive evaluate calls |
-| `odm.product-plane.registry-service.active` / `address` | Registry V2 used only by the Policy V1 adapter to reconstruct publication metadata |
 
 Do not commit real Git tokens. Use environment overrides (relaxed binding), for example `BLUEPRINT_VALIDATOR_ACTIVE`.
 

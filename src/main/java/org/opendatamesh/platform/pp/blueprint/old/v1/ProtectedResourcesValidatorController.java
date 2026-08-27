@@ -3,8 +3,8 @@ package org.opendatamesh.platform.pp.blueprint.old.v1;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationRequestRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationResultRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Temporary Policy V1 evaluate endpoint. Same path as the lasting validator contract.
  * Delete with {@code old/v1}; replace with a thin controller that calls
- * {@code ProtectedResourcesValidatorService} directly.
+ * {@code ProtectedResourcesPolicyValidatorService} directly.
  */
 @Hidden
 @RestController

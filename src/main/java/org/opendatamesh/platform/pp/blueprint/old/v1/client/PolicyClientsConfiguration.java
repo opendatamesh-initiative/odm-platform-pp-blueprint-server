@@ -1,10 +1,10 @@
-package org.opendatamesh.platform.pp.blueprint.validator.client;
+package org.opendatamesh.platform.pp.blueprint.old.v1.client;
 
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEngineResource;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEngineSearchOptions;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyResource;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicySearchOptions;
 import org.opendatamesh.platform.pp.blueprint.utils.client.RestUtilsFactory;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEngineResource;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEngineSearchOptions;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyResource;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicySearchOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

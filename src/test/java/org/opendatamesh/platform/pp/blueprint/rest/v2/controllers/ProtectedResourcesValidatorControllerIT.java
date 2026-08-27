@@ -22,8 +22,8 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.Bluepr
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationRequestRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationResultRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -47,10 +47,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Integration tests for protected-resources integrity evaluation.
+ * Scenarios trace to {@code spdd/prompt/BDMD-5124-202608210930-[Feat]-service-protected-resources-integrity-policy-adapter.md} (Gherkin).
+ */
 public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicationIT {
 
     private static final String EVALUATE_PATH = "/api/v1/up/validator/evaluate-policy";
@@ -79,6 +84,14 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         gitProviderFactoryMock.reset();
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Missing objectToEvaluate returns 400
+     *   Given a Policy evaluate request with no objectToEvaluate
+     *   When the validator evaluates the request
+     *   Then the response status is 400
+     */
     @Test
     void missingObjectToEvaluateReturns400() {
         PolicyEvaluationRequestRes request = new PolicyEvaluationRequestRes();
@@ -92,6 +105,42 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Unreadable Policy evaluation object returns 400
+     *   Given a Policy evaluate request whose objectToEvaluate is not a JSON object
+     *   When the validator evaluates the request
+     *   Then the response status is 400
+     *   And the error message is "Empty/Malformed Policy Evaluation Object"
+     */
+    @Test
+    void unreadableObjectToEvaluateReturns400() {
+        PolicyEvaluationRequestRes request = new PolicyEvaluationRequestRes();
+        request.setPolicyEvaluationId(1L);
+        request.setObjectToEvaluate(OBJECT_MAPPER.getNodeFactory().textNode("not-an-object"));
+        ResponseEntity<ErrorRes> response = rest.exchange(
+                apiUrlFromString(EVALUATE_PATH),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                ErrorRes.class
+        );
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage()).contains("Empty/Malformed Policy Evaluation Object");
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: No blueprint lineage is not applicable
+     *   Given a Policy evaluate request for a data product version
+     *   And the version has no blueprint lineage
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is true
+     *   And the message states the version was not created from a blueprint
+     */
     @Test
     void noLineageReturnsNotApplicablePass() {
         PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
@@ -106,6 +155,18 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         assertThat(response.getBody().getOutputObject().getMessage()).contains("not created from a blueprint");
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Empty protectedResources is not applicable
+     *   Given a recorded monorepo blueprint version without composition
+     *   And the blueprint manifest has an empty protectedResources list
+     *   And the data product version has blueprint lineage for that version
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is true
+     *   And the message states the blueprint does not declare protected resources
+     */
     @Test
     void lineageWithEmptyProtectedResourcesReturnsNotApplicable() throws Exception {
         JsonNode manifest = manifestMonorepoNoComposition();
@@ -123,6 +184,17 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         deleteCreatedBlueprint(context);
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Unsupported instantiation strategy is not applicable
+     *   Given a recorded blueprint version whose strategy is not monorepo without composition
+     *   And the data product version has blueprint lineage for that version
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is true
+     *   And the message states that checks currently apply only to monorepo blueprints without composition
+     */
     @Test
     void unsupportedStrategyReturnsNotApplicable() throws Exception {
         JsonNode manifest = readYamlManifestResource("manifest/example-2.2-monorepo-composition.yaml");
@@ -139,6 +211,18 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         deleteCreatedBlueprint(context);
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Applicable check missing product repository or tag fails closed
+     *   Given a recorded monorepo blueprint version with protected resources
+     *   And the data product version has blueprint lineage for that version
+     *   And the evaluation object has no publication tag and no nested product repository
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message states the data product version is missing its Git repository or tag
+     */
     @Test
     void applicableMissingTagAndRepoFails() throws Exception {
         BlueprintContext context = createBlueprintAndVersion(
@@ -156,6 +240,19 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         deleteCreatedBlueprint(context);
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Matching protected resources pass and Git is not mutated
+     *   Given a recorded monorepo blueprint version with protected resources
+     *   And the published data product version tree matches a local re-instantiation of that blueprint
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is true
+     *   And the message states protected resources match the blueprint
+     *   And Git pushBranch was never invoked
+     *   And Git pushTag was never invoked
+     */
     @Test
     void applicableMatchingTreesPass(@TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
@@ -179,6 +276,20 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         deleteCreatedBlueprint(context);
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Protected file contents that differ from the blueprint fail
+     *   Given a recorded monorepo blueprint version that protects "infrastructure/core/**"
+     *   And the published data product version has a modified "infrastructure/core/network.tf"
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message names the declared path and the file "infrastructure/core/network.tf"
+     *   And the message states that file contents differ from the blueprint
+     *   And Git pushBranch was never invoked
+     *   And Git pushTag was never invoked
+     */
     @Test
     void applicableModifiedProtectedFileFailsWithPath(@TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
@@ -202,6 +313,206 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         assertThat(response.getBody().getOutputObject().getMessage()).contains("differ from the blueprint");
         verify(gitOperation, never()).pushBranch(any(), anyString());
         verify(gitOperation, never()).pushTag(any(), anyString());
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Unknown recorded blueprint version fails
+     *   Given a data product version with blueprint lineage for a name and version this service does not store
+     *   And the evaluation object has a publication tag and nested product repository
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message states the blueprint version was not found
+     */
+    @Test
+    void unknownBlueprintVersionFails() {
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "v1.0.0",
+                lineageContent("does-not-exist", "9.9.9"),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("was not found");
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Missing blueprint repository configuration fails
+     *   Given a recorded blueprint version with protected resources whose blueprint has no Git repository
+     *   And the data product version has blueprint lineage for that version
+     *   And the evaluation object has a publication tag and nested product repository
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message states the blueprint repository is not configured
+     */
+    @Test
+    void missingBlueprintRepositoryFails() throws Exception {
+        BlueprintContext context = createBlueprintAndVersion(
+                "no-repo", "1.0.0", manifestMonorepoNoComposition(), false);
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "v1.0.0",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage())
+                .contains("the blueprint repository is not configured");
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Git clone failure fails closed
+     *   Given a recorded monorepo blueprint version with protected resources
+     *   And the data product version has blueprint lineage for that version
+     *   And cloning the published data product version fails
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message is a non-blank infrastructure failure
+     *   And the message does not contain Git tokens
+     */
+    @Test
+    void gitCloneFailureFailsClosed() throws Exception {
+        BlueprintContext context = createBlueprintAndVersion(
+                "clone-fail", "1.0.0", manifestMonorepoNoComposition());
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+        when(mockGitProvider.getRepository(anyString(), anyString()))
+                .thenReturn(java.util.Optional.of(new Repository()));
+        doThrow(new RuntimeException("clone failed")).when(mockGitOperation).readRepository(any(), any(), any());
+
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "v1.0.0",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).isNotBlank();
+        assertThat(response.getBody().getOutputObject().getMessage()).doesNotContain("test-token");
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Protected resource missing from the data product version fails
+     *   Given a recorded monorepo blueprint version that protects "infrastructure/core/**"
+     *   And the published data product version is missing "infrastructure/core/network.tf"
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message states the protected resource is missing from the data product version
+     */
+    @Test
+    void protectedFileMissingFromDataProductVersionFails(
+            @TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        copyProtectedPublishedFiles(sourceDir, productDir);
+        Files.delete(productDir.resolve("infrastructure/core/network.tf"));
+        BlueprintContext context = createBlueprintAndVersion(
+                "missing-published", "1.2.0", manifestMonorepoNoComposition());
+        stubGit(sourceDir, productDir);
+
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "publication-v1",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("infrastructure/core");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("network.tf");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("missing");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("data product version");
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Protected resource not produced by the blueprint fails
+     *   Given a recorded monorepo blueprint version that protects "infrastructure/core/**"
+     *   And the published data product version contains an extra file under "infrastructure/core/" that the blueprint does not produce
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message states the file is not produced by the blueprint
+     */
+    @Test
+    void extraProtectedFileNotProducedByBlueprintFails(
+            @TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        copyProtectedPublishedFiles(sourceDir, productDir);
+        Files.writeString(productDir.resolve("infrastructure/core/extra.tf"), "not-from-blueprint\n");
+        BlueprintContext context = createBlueprintAndVersion(
+                "extra-published", "1.2.0", manifestMonorepoNoComposition());
+        stubGit(sourceDir, productDir);
+
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "publication-v1",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("infrastructure/core/extra.tf");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("not produced by the blueprint");
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Protected path missing from both the data product version and the blueprint fails
+     *   Given a recorded monorepo blueprint version that protects a path present in neither tree
+     *   When the validator evaluates the request
+     *   Then the response status is 200
+     *   And evaluationResult is false
+     *   And the message states the path is missing from the data product version
+     *   And the message states the path is not produced by the blueprint
+     */
+    @Test
+    void protectedPathMissingFromBothTreesFails(
+            @TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        copyProtectedPublishedFiles(sourceDir, productDir);
+        JsonNode manifest = manifestMonorepoNoComposition();
+        ((ObjectNode) manifest).set(
+                "protectedResources",
+                OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode().put("path", "missing/protected.txt")));
+        BlueprintContext context = createBlueprintAndVersion("missing-both", "1.2.0", manifest);
+        stubGit(sourceDir, productDir);
+
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "publication-v1",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("missing/protected.txt");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("missing from the data product version");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("not produced by the blueprint");
         deleteCreatedBlueprint(context);
     }
 
@@ -307,6 +618,12 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
 
     private BlueprintContext createBlueprintAndVersion(String blueprintName, String version, JsonNode manifestContent)
             throws Exception {
+        return createBlueprintAndVersion(blueprintName, version, manifestContent, true);
+    }
+
+    private BlueprintContext createBlueprintAndVersion(
+            String blueprintName, String version, JsonNode manifestContent, boolean includeBlueprintRepo)
+            throws Exception {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String uniqueBlueprintName = blueprintName + "-" + suffix;
         ObjectNode content = (ObjectNode) manifestContent.deepCopy();
@@ -317,7 +634,9 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
-        blueprint.setBlueprintRepo(buildBlueprintRepo());
+        if (includeBlueprintRepo) {
+            blueprint.setBlueprintRepo(buildBlueprintRepo());
+        }
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),

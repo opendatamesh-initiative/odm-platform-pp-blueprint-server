@@ -5,11 +5,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.opendatamesh.platform.pp.blueprint.validator.client.PolicyClient;
-import org.opendatamesh.platform.pp.blueprint.validator.client.PolicyEngineClient;
+import org.opendatamesh.platform.pp.blueprint.old.v1.client.PolicyClient;
+import org.opendatamesh.platform.pp.blueprint.old.v1.client.PolicyEngineClient;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEngineResource;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyResource;
 import org.opendatamesh.platform.pp.blueprint.validator.config.BlueprintValidatorProperties;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEngineResource;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 
@@ -21,6 +21,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Policy engine and policy create-if-absent on {@code DATA_PRODUCT_VERSION_CREATION}.
+ * Scenarios trace to {@code spdd/prompt/BDMD-5124-202608241546-[Feat]-service-v1-protected-resources-policy-adapter.md} (Gherkin).
+ */
 @ExtendWith(MockitoExtension.class)
 class ProtectedResourcesValidatorPolicySubscriberTest {
 
@@ -29,6 +33,14 @@ class ProtectedResourcesValidatorPolicySubscriberTest {
     @Mock
     private PolicyClient policyClient;
 
+    /**
+     * Feature: Policy engine registration (V1)
+     *
+     * Scenario: Validator inactive does not register a Policy engine
+     *   Given blueprint.validator.active is false
+     *   When the Policy subscriber initializes
+     *   Then Policy engine and policy clients are never called
+     */
     @Test
     void inactiveDoesNotCallClients() {
         BlueprintValidatorProperties properties = activeProperties(false);
@@ -39,6 +51,21 @@ class ProtectedResourcesValidatorPolicySubscriberTest {
         verify(policyClient, never()).createPolicy(any());
     }
 
+    /**
+     * Feature: Policy engine registration (V1)
+     *
+     * Scenario: Validator active creates engine and policy if absent
+     *   Given blueprint.validator.active is true
+     *   And Policy Service is configured
+     *   And no Policy engine or policy named for this validator exists
+     *   When the Policy subscriber initializes
+     *   Then a Policy engine is created with adapterUrl equal to server.baseUrl
+     *   And a policy named "Protected Resources Integrity" is created
+     *   And the policy blockingFlag is taken from Blueprint configuration
+     *   And the policy evaluation events contain exactly "DATA_PRODUCT_VERSION_CREATION"
+     *   And the policy evaluation events do not contain "DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED"
+     *   And the policy evaluation events do not contain "DATA_PRODUCT_CREATION"
+     */
     @Test
     void activeCreatesEngineAndPolicyIfAbsent() {
         BlueprintValidatorProperties properties = activeProperties(true);
@@ -77,6 +104,17 @@ class ProtectedResourcesValidatorPolicySubscriberTest {
                 .doesNotContain("DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED", "DATA_PRODUCT_CREATION");
     }
 
+    /**
+     * Feature: Policy engine registration (V1)
+     *
+     * Scenario: Validator active does not recreate an existing policy
+     *   Given blueprint.validator.active is true
+     *   And Policy Service is configured
+     *   And the Policy engine and policy already exist
+     *   When the Policy subscriber initializes
+     *   Then createPolicyEngine is never called
+     *   And createPolicy is never called
+     */
     @Test
     void activeDoesNotRecreateExistingPolicy() {
         BlueprintValidatorProperties properties = activeProperties(true);
@@ -92,6 +130,25 @@ class ProtectedResourcesValidatorPolicySubscriberTest {
         subscriber.init();
 
         verify(policyEngineClient, never()).createPolicyEngine(any());
+        verify(policyClient, never()).createPolicy(any());
+    }
+
+    /**
+     * Feature: Policy engine registration (V1)
+     *
+     * Scenario: Validator active but Policy Service is not configured skips registration
+     *   Given blueprint.validator.active is true
+     *   And Policy Service is inactive or has a blank address
+     *   When the Policy subscriber initializes
+     *   Then Policy engine and policy clients are never called
+     */
+    @Test
+    void activeWithoutPolicyServiceDoesNotCallClients() {
+        BlueprintValidatorProperties properties = activeProperties(true);
+        ProtectedResourcesValidatorPolicySubscriber subscriber = new ProtectedResourcesValidatorPolicySubscriber(
+                properties, policyEngineClient, policyClient, "http://localhost:8080", false, "");
+        subscriber.init();
+        verify(policyEngineClient, never()).getPolicyEngines(any(), any());
         verify(policyClient, never()).createPolicy(any());
     }
 

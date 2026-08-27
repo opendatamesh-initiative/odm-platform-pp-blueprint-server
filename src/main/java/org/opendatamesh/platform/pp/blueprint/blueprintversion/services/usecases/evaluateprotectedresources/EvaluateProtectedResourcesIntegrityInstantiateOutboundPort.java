@@ -1,14 +1,11 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources;
 
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.InstantiateBlueprintVersionCommand;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.RenderedTreeSnapshot;
-import org.springframework.http.HttpHeaders;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 
 interface EvaluateProtectedResourcesIntegrityInstantiateOutboundPort {
 
-    void executeLocalInstantiation(
-            InstantiateBlueprintVersionCommand command,
-            HttpHeaders blueprintGitHeaders,
-            RenderedTreeSnapshot snapshot
+    WorkingTree reinstantiateBlueprintLocally(
+            BlueprintVersion blueprintVersion,
+            EvaluateProtectedResourcesIntegrityCommand command
     );
 }

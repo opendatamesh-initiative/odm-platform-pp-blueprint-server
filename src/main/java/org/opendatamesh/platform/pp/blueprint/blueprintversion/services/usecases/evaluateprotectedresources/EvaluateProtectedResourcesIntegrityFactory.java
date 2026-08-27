@@ -40,9 +40,9 @@ public class EvaluateProtectedResourcesIntegrityFactory {
                 presenter,
                 new EvaluateProtectedResourcesIntegrityPersistencyOutboundPortImpl(
                         blueprintService, blueprintVersionCrudService),
-                new EvaluateProtectedResourcesIntegrityCredentialsOutboundPortImpl(validatorProperties),
-                new EvaluateProtectedResourcesIntegrityGitOutboundPortImpl(gitProviderFactory),
-                new EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl(instantiateBlueprintVersionFactory),
+                new EvaluateProtectedResourcesIntegrityGitOutboundPortImpl(gitProviderFactory, validatorProperties),
+                new EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl(
+                        instantiateBlueprintVersionFactory, validatorProperties),
                 new EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl()
         );
     }

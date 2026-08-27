@@ -3,11 +3,11 @@ package org.opendatamesh.platform.pp.blueprint.old.v1;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.RegistryProductRes;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.RegistryProductVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationRequestRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationResultRes;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -24,6 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+/**
+ * Integration test that Policy V1 evaluate payloads reconstruct via Registry then hit the policy validator.
+ * Scenarios trace to {@code spdd/prompt/BDMD-5124-202608241546-[Feat]-service-v1-protected-resources-policy-adapter.md} (Gherkin).
+ */
 public class OldV1ProtectedResourcesValidatorControllerIT extends BlueprintApplicationIT {
 
     private static final String EVALUATE_PATH = "/api/v1/up/validator/evaluate-policy";
@@ -36,6 +40,17 @@ public class OldV1ProtectedResourcesValidatorControllerIT extends BlueprintAppli
     @MockitoBean
     private RegistryClient registryClient;
 
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: Reconstructed content without lineage is not applicable
+     *   Given a Policy V1 evaluate request with afterState identity
+     *   And Registry GET version returns content without blueprint lineage
+     *   When the evaluate endpoint is called
+     *   Then the response status is 200
+     *   And evaluationResult is true
+     *   And the message states the version was not created from a blueprint
+     */
     @Test
     void v1AfterStateWithReconstructedContentWithoutLineageIsNotApplicable() {
         RegistryProductRes product = new RegistryProductRes();

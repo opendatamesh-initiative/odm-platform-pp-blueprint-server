@@ -54,20 +54,18 @@ The Blindata **starter blueprint** (new repo from registration) ships only the m
 
 When a data product version is published and the validator is **active**:
 
-1. Policy calls Blueprint (`POST /api/v1/up/validator/evaluate-policy`).
+1. Policy calls Blueprint (`POST /api/v1/up/validator/evaluate-policy`) with the published version, including its Git repository and tag.
 2. If the version has **no blueprint lineage**, evaluation **passes** (not applicable).
 3. If the recorded blueprint has **no** `protectedResources`, evaluation **passes** (not applicable).
 4. Otherwise the service clones the **product** repo at the publication tag, clones the **blueprint** source, re-instantiates locally (same render as instantiate, **no push**), and compares each protected path.
 
 A mismatch fails with a business-facing message (file missing from the data product version, not produced by the blueprint, or contents differ). Clone, auth, timeout, and render errors **fail closed**.
 
-Today Policy V1 dispatches this as `DATA_PRODUCT_VERSION_CREATION`. Blueprint reconstructs the publication payload (product repo + tag) from Registry, then runs the same check. That reconstruction lives in a removable `old/v1` adapter.
-
 ---
 
 ## Configuration
 
-Off by default. Enable with `blueprint.validator.active: true` and point at Policy (and Registry for the V1 adapter). Service-level Git credentials are required for clones on this path — they are **not** taken from the event.
+Off by default. Enable with `blueprint.validator.active: true` and point at Policy. Service-level Git credentials are required for clones on this path — they are **not** taken from the event.
 
 See [Configuration](../setup/configuration.md).
 

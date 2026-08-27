@@ -1,13 +1,13 @@
 package org.opendatamesh.platform.pp.blueprint.old.v1;
 
-import org.opendatamesh.platform.pp.blueprint.validator.client.PolicyClient;
-import org.opendatamesh.platform.pp.blueprint.validator.client.PolicyEngineClient;
+import org.opendatamesh.platform.pp.blueprint.old.v1.client.PolicyClient;
+import org.opendatamesh.platform.pp.blueprint.old.v1.client.PolicyEngineClient;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEngineResource;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEngineSearchOptions;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEvaluationEventResource;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyResource;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicySearchOptions;
 import org.opendatamesh.platform.pp.blueprint.validator.config.BlueprintValidatorProperties;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEngineResource;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEngineSearchOptions;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEvaluationEventResource;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyResource;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicySearchOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

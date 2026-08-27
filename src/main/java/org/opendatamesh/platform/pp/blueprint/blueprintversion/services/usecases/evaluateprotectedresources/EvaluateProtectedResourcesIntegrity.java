@@ -1,46 +1,27 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenario;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.InstantiateBlueprintVersionCommand;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.RenderedTreeSnapshot;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.TargetRepositoryDto;
 import org.opendatamesh.platform.pp.blueprint.exceptions.NotFoundException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
-import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
-import org.springframework.http.HttpHeaders;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
-import java.io.IOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Stream;
 
 class EvaluateProtectedResourcesIntegrity implements UseCase {
 
     private final EvaluateProtectedResourcesIntegrityCommand command;
     private final EvaluateProtectedResourcesIntegrityPresenter presenter;
     private final EvaluateProtectedResourcesIntegrityPersistencyOutboundPort persistencyPort;
-    private final EvaluateProtectedResourcesIntegrityCredentialsOutboundPort credentialsPort;
     private final EvaluateProtectedResourcesIntegrityGitOutboundPort productGitPort;
     private final EvaluateProtectedResourcesIntegrityInstantiateOutboundPort instantiatePort;
     private final EvaluateProtectedResourcesIntegrityDigestOutboundPort digestPort;
@@ -51,7 +32,6 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
             EvaluateProtectedResourcesIntegrityCommand command,
             EvaluateProtectedResourcesIntegrityPresenter presenter,
             EvaluateProtectedResourcesIntegrityPersistencyOutboundPort persistencyPort,
-            EvaluateProtectedResourcesIntegrityCredentialsOutboundPort credentialsPort,
             EvaluateProtectedResourcesIntegrityGitOutboundPort productGitPort,
             EvaluateProtectedResourcesIntegrityInstantiateOutboundPort instantiatePort,
             EvaluateProtectedResourcesIntegrityDigestOutboundPort digestPort
@@ -59,7 +39,6 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         this.command = command;
         this.presenter = presenter;
         this.persistencyPort = persistencyPort;
-        this.credentialsPort = credentialsPort;
         this.productGitPort = productGitPort;
         this.instantiatePort = instantiatePort;
         this.digestPort = digestPort;
@@ -67,24 +46,29 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
 
     @Override
     public void execute() {
-        Path actualTree = null;
-        RenderedTreeSnapshot snapshot = new RenderedTreeSnapshot();
         try {
-            actualTree = evaluate(snapshot);
-        } catch (RuntimeException e) {
-            if (!presented) {
-                presenter.presentInfrastructureFailure(infrastructureMessage(e));
+            BlueprintVersion blueprintVersion = loadBlueprintVersion();
+            if (blueprintVersion == null) {
+                return;
             }
-        } finally {
-            deleteRecursively(actualTree);
-            deleteRecursively(snapshot.getExpectedTreeRoot());
+            Manifest manifest = persistencyPort.readManifest(blueprintVersion);
+            if (refuseIfNotEvaluable(blueprintVersion, manifest)) {
+                return;
+            }
+            try (WorkingTree published = productGitPort.clonePublishedDataProductVersion(
+                    command.productRepo(), command.publicationTag());
+                 WorkingTree expected = instantiatePort.reinstantiateBlueprintLocally(
+                         blueprintVersion, command)) {
+                compareProtectedResources(manifest.getProtectedResources(), published, expected);
+            }
+        } catch (RuntimeException e) {
+            presentInfrastructureIfNeeded(e);
         }
     }
 
-    private Path evaluate(RenderedTreeSnapshot snapshot) {
-        BlueprintVersion blueprintVersion;
+    private BlueprintVersion loadBlueprintVersion() {
         try {
-            blueprintVersion = persistencyPort.findByBlueprintNameAndVersion(
+            return persistencyPort.findByBlueprintNameAndVersion(
                     command.blueprintName(), command.blueprintVersionNumber());
         } catch (NotFoundException e) {
             presentInfrastructure(
@@ -92,7 +76,9 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
                             .formatted(command.blueprintName(), command.blueprintVersionNumber()));
             return null;
         }
+    }
 
+    private boolean refuseIfNotEvaluable(BlueprintVersion blueprintVersion, Manifest manifest) {
         BlueprintRepo blueprintRepo = blueprintVersion.getBlueprint() == null
                 ? null
                 : blueprintVersion.getBlueprint().getBlueprintRepo();
@@ -100,147 +86,48 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
                 || !StringUtils.hasText(blueprintRepo.getRemoteUrlHttp())
                 || blueprintRepo.getProviderType() == null) {
             presentInfrastructure("Cannot check protected resources: the blueprint repository is not configured");
-            return null;
+            return true;
         }
-
-        Manifest manifest = parseManifest(blueprintVersion);
-        InstantiationScenario scenario = resolveScenario(manifest);
-        if (scenario != InstantiationScenario.MONOREPO_NO_COMPOSITION) {
+        if (resolveScenario(manifest) != InstantiationScenario.MONOREPO_NO_COMPOSITION) {
             presentNotApplicable(
                     "Protected-resource checks currently apply only to monorepo blueprints without composition");
-            return null;
+            return true;
         }
         if (CollectionUtils.isEmpty(manifest.getProtectedResources())) {
             presentNotApplicable("This blueprint does not declare protected resources");
-            return null;
+            return true;
         }
-
         if (!StringUtils.hasText(command.publicationTag())
                 || command.productRepo() == null
                 || !StringUtils.hasText(command.productRepo().remoteUrlHttp())
                 || !StringUtils.hasText(command.productRepo().providerType())) {
             presentFailed(List.of(),
                     "Cannot check protected resources: the data product version is missing its Git repository or tag");
-            return null;
+            return true;
         }
+        return false;
+    }
 
-        HttpHeaders productHeaders = credentialsPort.resolveHeaders(
-                command.productRepo().providerType(),
-                command.productRepo().providerBaseUrl()
-        ).orElse(null);
-        if (productHeaders == null) {
-            presentInfrastructure("Cannot check protected resources: Git access is not configured for provider "
-                    + command.productRepo().providerType());
-            return null;
-        }
-        HttpHeaders blueprintHeaders = credentialsPort.resolveHeaders(
-                blueprintRepo.getProviderType().name(),
-                blueprintRepo.getProviderBaseUrl()
-        ).orElse(null);
-        if (blueprintHeaders == null) {
-            presentInfrastructure("Cannot check protected resources: Git access is not configured for provider "
-                    + blueprintRepo.getProviderType().name());
-            return null;
-        }
-
-        Path actualTree = copyProductClone(productHeaders);
-
-        instantiatePort.executeLocalInstantiation(
-                buildInstantiateCommand(),
-                blueprintHeaders,
-                snapshot
-        );
-        if (snapshot.getExpectedTreeRoot() == null || !Files.isDirectory(snapshot.getExpectedTreeRoot())) {
-            presentInfrastructure("Cannot check protected resources: failed to rebuild the expected files from the blueprint");
-            return actualTree;
-        }
-
+    private void compareProtectedResources(
+            List<ManifestProtectedResource> protectedResources,
+            WorkingTree published,
+            WorkingTree expected
+    ) {
         List<ProtectedResourceMismatch> mismatches = new ArrayList<>();
-        for (ManifestProtectedResource protectedResource : manifest.getProtectedResources()) {
-            compareProtectedResource(protectedResource, actualTree, snapshot.getExpectedTreeRoot(), mismatches);
+        for (ManifestProtectedResource protectedResource : protectedResources) {
+            compareProtectedResource(protectedResource, published, expected, mismatches);
         }
         if (mismatches.isEmpty()) {
             presentPassed("Protected resources match the blueprint");
         } else {
             presentFailed(mismatches, formatFailureMessage(mismatches));
         }
-        return actualTree;
-    }
-
-    private Path copyProductClone(HttpHeaders productHeaders) {
-        try {
-            Path actualTree = Files.createTempDirectory("blueprint-integrity-actual-");
-            productGitPort.withClonedProductAtTag(
-                    command.productRepo(),
-                    command.publicationTag(),
-                    productHeaders,
-                    clonePath -> copyTree(clonePath, actualTree)
-            );
-            return actualTree;
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to copy the data product version files", e);
-        }
-    }
-
-    private void copyTree(Path source, Path destination) {
-        try {
-            Files.walkFileTree(source, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (dir.getFileName() != null && ".git".equals(dir.getFileName().toString())) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    Path relative = source.relativize(dir);
-                    if (!relative.toString().isEmpty()) {
-                        Files.createDirectories(destination.resolve(relative));
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    if (Files.isSymbolicLink(file) || !Files.isRegularFile(file)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    Path target = destination.resolve(source.relativize(file));
-                    if (target.getParent() != null) {
-                        Files.createDirectories(target.getParent());
-                    }
-                    Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to copy the data product version files", e);
-        }
-    }
-
-    private InstantiateBlueprintVersionCommand buildInstantiateCommand() {
-        ProductRepoLocator productRepo = command.productRepo();
-        Repository repository = EvaluateProtectedResourcesIntegrityGitOutboundPortImpl.toGitRepository(productRepo);
-        TargetRepositoryDto target = new TargetRepositoryDto(
-                productRepo.externalIdentifier(),
-                BlueprintRepositoryLogicalType.ROOT,
-                productRepo.defaultBranch(),
-                repository
-        );
-        Map<String, JsonNode> parameters = command.lineageParameters() == null
-                ? Map.of()
-                : command.lineageParameters();
-        return new InstantiateBlueprintVersionCommand(
-                command.blueprintName(),
-                command.blueprintVersionNumber(),
-                List.of(target),
-                parameters,
-                BlueprintGitNamingConventions.DEFAULT_COMMIT_AUTHOR_NAME,
-                BlueprintGitNamingConventions.DEFAULT_COMMIT_AUTHOR_EMAIL
-        );
     }
 
     private void compareProtectedResource(
             ManifestProtectedResource protectedResource,
-            Path actualRoot,
-            Path expectedRoot,
+            WorkingTree published,
+            WorkingTree expected,
             List<ProtectedResourceMismatch> mismatches
     ) {
         String declaredPath = protectedResource.getPath();
@@ -257,21 +144,21 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
             return;
         }
 
-        DigestResult actual = digestPort.digest(actualRoot, declaredPath);
-        DigestResult expected = digestPort.digest(expectedRoot, declaredPath);
+        DigestResult actual = digestPort.computeDigest(published, declaredPath);
+        DigestResult expectedDigest = digestPort.computeDigest(expected, declaredPath);
 
         if (actual.hasError()) {
             mismatches.add(new ProtectedResourceMismatch(
                     declaredPath, actual.error(), List.of(), actual.detail()));
             return;
         }
-        if (expected.hasError()) {
+        if (expectedDigest.hasError()) {
             mismatches.add(new ProtectedResourceMismatch(
-                    declaredPath, expected.error(), List.of(), expected.detail()));
+                    declaredPath, expectedDigest.error(), List.of(), expectedDigest.detail()));
             return;
         }
 
-        if (actual.isEmptyMatch() && expected.isEmptyMatch()) {
+        if (actual.isEmptyMatch() && expectedDigest.isEmptyMatch()) {
             mismatches.add(new ProtectedResourceMismatch(
                     declaredPath,
                     MismatchKind.MISSING_ON_PUBLISHED,
@@ -290,12 +177,12 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
             mismatches.add(new ProtectedResourceMismatch(
                     declaredPath,
                     MismatchKind.MISSING_ON_PUBLISHED,
-                    List.copyOf(expected.fileDigests().keySet()),
+                    List.copyOf(expectedDigest.fileDigests().keySet()),
                     "the path is missing from the data product version"
             ));
             return;
         }
-        if (expected.isEmptyMatch()) {
+        if (expectedDigest.isEmptyMatch()) {
             mismatches.add(new ProtectedResourceMismatch(
                     declaredPath,
                     MismatchKind.MISSING_ON_REINSTANTIATED,
@@ -308,14 +195,14 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         List<String> missingOnPublished = new ArrayList<>();
         List<String> missingOnReinstantiated = new ArrayList<>();
         List<String> contentDiffers = new ArrayList<>();
-        for (String relative : unionKeys(actual.fileDigests(), expected.fileDigests())) {
+        for (String relative : unionKeys(actual.fileDigests(), expectedDigest.fileDigests())) {
             boolean onActual = actual.fileDigests().containsKey(relative);
-            boolean onExpected = expected.fileDigests().containsKey(relative);
+            boolean onExpected = expectedDigest.fileDigests().containsKey(relative);
             if (onExpected && !onActual) {
                 missingOnPublished.add(relative);
             } else if (onActual && !onExpected) {
                 missingOnReinstantiated.add(relative);
-            } else if (!actual.fileDigests().get(relative).equals(expected.fileDigests().get(relative))) {
+            } else if (!actual.fileDigests().get(relative).equals(expectedDigest.fileDigests().get(relative))) {
                 contentDiffers.add(relative);
             }
         }
@@ -399,16 +286,6 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         };
     }
 
-    private Manifest parseManifest(BlueprintVersion blueprintVersion) {
-        try {
-            return ManifestParserFactory.getParser().deserialize(blueprintVersion.getContent());
-        } catch (IOException e) {
-            throw new IllegalStateException(
-                    "Cannot check protected resources: the blueprint manifest could not be read",
-                    e);
-        }
-    }
-
     private void presentNotApplicable(String reason) {
         presented = true;
         presenter.presentNotApplicable(reason);
@@ -429,6 +306,12 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         presenter.presentInfrastructureFailure(message);
     }
 
+    private void presentInfrastructureIfNeeded(RuntimeException e) {
+        if (!presented) {
+            presenter.presentInfrastructureFailure(infrastructureMessage(e));
+        }
+    }
+
     private String infrastructureMessage(RuntimeException e) {
         String message = e.getMessage();
         if (!StringUtils.hasText(message)) {
@@ -437,22 +320,5 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         return message.toLowerCase(Locale.ROOT).contains("token")
                 ? "Cannot complete the protected-resource check"
                 : message;
-    }
-
-    static void deleteRecursively(Path path) {
-        if (path == null || !Files.exists(path)) {
-            return;
-        }
-        try (Stream<Path> walk = Files.walk(path)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    // best-effort cleanup
-                }
-            });
-        } catch (IOException ignored) {
-            // best-effort cleanup
-        }
     }
 }

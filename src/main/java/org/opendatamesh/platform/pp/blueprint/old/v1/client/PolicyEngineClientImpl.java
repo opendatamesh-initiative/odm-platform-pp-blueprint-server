@@ -1,8 +1,8 @@
-package org.opendatamesh.platform.pp.blueprint.validator.client;
+package org.opendatamesh.platform.pp.blueprint.old.v1.client;
 
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEngineResource;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.policy.PolicyEngineSearchOptions;
 import org.opendatamesh.platform.pp.blueprint.utils.client.RestUtils;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEngineResource;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.policy.PolicyEngineSearchOptions;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 

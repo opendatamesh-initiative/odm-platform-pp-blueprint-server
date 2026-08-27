@@ -1,4 +1,4 @@
-package org.opendatamesh.platform.pp.blueprint.validator.services;
+package org.opendatamesh.platform.pp.blueprint.old.v1;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -10,11 +10,13 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.ProductRepoLocator;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.ProtectedResourceMismatch;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
 import org.opendatamesh.platform.pp.blueprint.validator.config.BlueprintValidatorProperties;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationRequestRes;
-import org.opendatamesh.platform.pp.blueprint.validator.resources.PolicyEvaluationResultRes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -22,66 +24,86 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+/**
+ * Policy adapter: maps the Policy evaluate contract to {@code EvaluateProtectedResourcesIntegrity}
+ * and maps the integrity outcome back to a Policy result. Temporary in {@code old/v1} with Policy V1.
+ */
 @Service
-public class ProtectedResourcesValidatorService {
+public class ProtectedResourcesPolicyValidatorService {
 
-    private static final Logger log = LoggerFactory.getLogger(ProtectedResourcesValidatorService.class);
+    private static final Logger log = LoggerFactory.getLogger(ProtectedResourcesPolicyValidatorService.class);
 
     private final EvaluateProtectedResourcesIntegrityFactory integrityFactory;
     private final BlueprintValidatorProperties validatorProperties;
     private final ObjectMapper objectMapper;
+    private final ProtectedResourcesPolicyValidatorService self;
 
-    public ProtectedResourcesValidatorService(
+    public ProtectedResourcesPolicyValidatorService(
             EvaluateProtectedResourcesIntegrityFactory integrityFactory,
             BlueprintValidatorProperties validatorProperties,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            @Lazy ProtectedResourcesPolicyValidatorService self
     ) {
         this.integrityFactory = integrityFactory;
         this.validatorProperties = validatorProperties;
         this.objectMapper = objectMapper.copy()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.self = self;
     }
 
     public PolicyEvaluationResultRes evaluate(PolicyEvaluationRequestRes document) {
+        JsonNode objectToEvaluate = requireReadableObjectToEvaluate(document);
+        EvaluateProtectedResourcesIntegrityCommand command = mapToIntegrityCommand(objectToEvaluate);
+        if (command == null) {
+            return notApplicable(document.getPolicyEvaluationId());
+        }
+        IntegrityOutcome outcome = runIntegrityEvaluation(command);
+        return toPolicyResult(document.getPolicyEvaluationId(), outcome);
+    }
+
+    @Async
+    public CompletableFuture<Void> executeIntegrity(
+            EvaluateProtectedResourcesIntegrityCommand command,
+            OutcomeHolder holder
+    ) {
+        integrityFactory.buildEvaluateProtectedResourcesIntegrity(command, holder).execute();
+        return CompletableFuture.completedFuture(null);
+    }
+
+    private JsonNode requireReadableObjectToEvaluate(PolicyEvaluationRequestRes document) {
         if (document == null || document.getObjectToEvaluate() == null || !document.getObjectToEvaluate().isObject()) {
             throw new BadRequestException("Empty/Malformed Policy Evaluation Object");
         }
+        return document.getObjectToEvaluate();
+    }
 
-        JsonNode versionResource = extractVersionResource(document.getObjectToEvaluate());
+    private EvaluateProtectedResourcesIntegrityCommand mapToIntegrityCommand(JsonNode objectToEvaluate) {
+        JsonNode versionResource = extractVersionResource(objectToEvaluate);
         JsonNode content = versionResource == null ? null : versionResource.get("content");
         JsonNode blueprint = content == null ? null : content.get("blueprint");
         String blueprintName = text(blueprint, "blueprintName");
         String blueprintVersionNumber = text(blueprint, "blueprintVersionNumber");
-
-        OutcomeHolder holder = new OutcomeHolder();
         if (!StringUtils.hasText(blueprintName) || !StringUtils.hasText(blueprintVersionNumber)) {
-            holder.presentNotApplicable("This data product version was not created from a blueprint");
-            return toResult(document.getPolicyEvaluationId(), holder.outcome);
+            return null;
         }
-
-        EvaluateProtectedResourcesIntegrityCommand command = new EvaluateProtectedResourcesIntegrityCommand(
+        return new EvaluateProtectedResourcesIntegrityCommand(
                 versionResource == null ? null : text(versionResource, "tag"),
                 mapProductRepo(versionResource),
                 blueprintName,
                 blueprintVersionNumber,
                 mapParameters(blueprint)
         );
+    }
 
+    private IntegrityOutcome runIntegrityEvaluation(EvaluateProtectedResourcesIntegrityCommand command) {
+        OutcomeHolder holder = new OutcomeHolder();
         int timeoutSeconds = Math.max(1, validatorProperties.getEvaluationTimeoutSeconds());
-        ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-            Thread thread = new Thread(r, "blueprint-service-validator-eval");
-            thread.setDaemon(true);
-            return thread;
-        });
-        Future<?> future = executor.submit(() ->
-                integrityFactory.buildEvaluateProtectedResourcesIntegrity(command, holder).execute());
+        CompletableFuture<Void> future = self.executeIntegrity(command, holder);
         try {
             future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
@@ -97,13 +119,17 @@ public class ProtectedResourcesValidatorService {
             holder.presentInfrastructureFailure(cause.getMessage() == null
                     ? cause.getClass().getSimpleName()
                     : cause.getMessage());
-        } finally {
-            executor.shutdownNow();
         }
-        return toResult(document.getPolicyEvaluationId(), holder.outcome);
+        return holder.outcome;
     }
 
-    JsonNode extractVersionResource(JsonNode objectToEvaluate) {
+    private PolicyEvaluationResultRes notApplicable(Long policyEvaluationId) {
+        return toPolicyResult(
+                policyEvaluationId,
+                IntegrityOutcome.notApplicable("This data product version was not created from a blueprint"));
+    }
+
+    private JsonNode extractVersionResource(JsonNode objectToEvaluate) {
         JsonNode eventContent = objectToEvaluate.get("eventContent");
         if (eventContent != null && eventContent.has("dataProductVersion") && eventContent.get("dataProductVersion").isObject()) {
             return eventContent.get("dataProductVersion");
@@ -155,7 +181,7 @@ public class ProtectedResourcesValidatorService {
         return parameters;
     }
 
-    private PolicyEvaluationResultRes toResult(Long policyEvaluationId, IntegrityOutcome outcome) {
+    private PolicyEvaluationResultRes toPolicyResult(Long policyEvaluationId, IntegrityOutcome outcome) {
         PolicyEvaluationResultRes result = new PolicyEvaluationResultRes();
         result.setPolicyEvaluationId(policyEvaluationId);
         PolicyEvaluationResultRes.OutputObject output = new PolicyEvaluationResultRes.OutputObject();
