@@ -1,16 +1,12 @@
 spec: odm-blueprint-manifest
 specVersion: 1.0.0
-name: ext-test
+name: missing-root-repository
 version: 1.0.0
-dumb_extension:
-  fieldA: valueA
-  fieldB: valueB
-x-prop: x-prop-value
+
 instantiation:
   repositories:
     - key: main
   root:
-    repository: main
     targets:
       - sourcePath: ./
         repository: main

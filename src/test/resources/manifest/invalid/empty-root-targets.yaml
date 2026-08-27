@@ -1,0 +1,11 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: empty-root-targets
+version: 1.0.0
+
+instantiation:
+  repositories:
+    - key: main
+  root:
+    repository: main
+    targets: []

@@ -38,6 +38,7 @@ instantiation:
   repositories:
     - key: main
   root:
+    repository: main
     targets:
       - sourcePath: ./
         repository: main

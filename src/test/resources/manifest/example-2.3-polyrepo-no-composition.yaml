@@ -22,13 +22,14 @@ instantiation:
       description: Target repository for application code
 
   root:
+    repository: app-repo
     targets:
       - sourcePath: terraform/
         repository: infra-repo
-        path: ./
-      - sourcePath: application/
-        repository: app-repo
-        path: ./
+        path: terraform/
       - sourcePath: policies/
         repository: infra-repo
         path: governance/policies
+      - sourcePath: application/
+        repository: app-repo
+        path: ./

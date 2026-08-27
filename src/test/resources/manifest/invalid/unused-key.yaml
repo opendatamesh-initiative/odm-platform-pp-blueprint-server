@@ -1,14 +1,12 @@
 spec: odm-blueprint-manifest
 specVersion: 1.0.0
-name: ext-test
+name: unused-key
 version: 1.0.0
-dumb_extension:
-  fieldA: valueA
-  fieldB: valueB
-x-prop: x-prop-value
+
 instantiation:
   repositories:
     - key: main
+    - key: orphan
   root:
     repository: main
     targets:

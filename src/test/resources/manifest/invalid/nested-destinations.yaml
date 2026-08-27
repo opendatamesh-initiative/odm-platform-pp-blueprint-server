@@ -1,11 +1,8 @@
 spec: odm-blueprint-manifest
 specVersion: 1.0.0
-name: ext-test
+name: nested-destinations
 version: 1.0.0
-dumb_extension:
-  fieldA: valueA
-  fieldB: valueB
-x-prop: x-prop-value
+
 instantiation:
   repositories:
     - key: main
@@ -15,3 +12,6 @@ instantiation:
       - sourcePath: ./
         repository: main
         path: ./
+      - sourcePath: docs/
+        repository: main
+        path: data-plane/storage

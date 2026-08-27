@@ -24,6 +24,15 @@ class InstantiateBlueprintVersionPersistencyOutboundPortImpl implements Instanti
 
     @Override
     public BlueprintVersion findByBlueprintNameAndVersion(String blueprintName, String blueprintVersion) {
+        return lookup(blueprintName, blueprintVersion);
+    }
+
+    @Override
+    public BlueprintVersion findModuleBlueprintVersion(String blueprintName, String blueprintVersion) {
+        return lookup(blueprintName, blueprintVersion);
+    }
+
+    private BlueprintVersion lookup(String blueprintName, String blueprintVersion) {
         BlueprintSearchOptions blueprintSearchOptions = new BlueprintSearchOptions();
         blueprintSearchOptions.setName(blueprintName);
         Blueprint blueprint = blueprintService.findAllFiltered(Pageable.unpaged(), blueprintSearchOptions)

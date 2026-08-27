@@ -8,7 +8,21 @@ import java.util.List;
 
 public class ManifestInstantiationRoot extends ManifestComponentBase {
 
+    /**
+     * Declared {@code instantiation.repositories[].key} that is the data-product root
+     * (lineage, descriptor enrichment, registry {@code dataProductRepo}).
+     */
+    private String repository;
+
     private List<ManifestTarget> targets = new ArrayList<>();
+
+    public String getRepository() {
+        return repository;
+    }
+
+    public void setRepository(String repository) {
+        this.repository = repository;
+    }
 
     public List<ManifestTarget> getTargets() {
         return targets;

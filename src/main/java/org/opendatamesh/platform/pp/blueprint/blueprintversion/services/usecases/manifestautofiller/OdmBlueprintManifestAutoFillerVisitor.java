@@ -95,17 +95,37 @@ class OdmBlueprintManifestAutoFillerVisitor implements ManifestVisitor, Manifest
         }
 
         if (manifestInstantiation.getRoot() == null) {
-            manifestInstantiation.setRoot(new ManifestInstantiationRoot());
-        }
-        if (manifestInstantiation.getRoot().getTargets() == null) {
-            manifestInstantiation.getRoot().setTargets(new ArrayList<>());
-        }
-        if (manifestInstantiation.getRoot().getTargets().isEmpty()) {
+            ManifestInstantiationRoot root = new ManifestInstantiationRoot();
+            root.setRepository(repositoryKey.trim());
             ManifestTarget target = new ManifestTarget();
             target.setSourcePath("./");
             target.setRepository(repositoryKey.trim());
             target.setPath("./");
-            manifestInstantiation.getRoot().getTargets().add(target);
+            List<ManifestTarget> targets = new ArrayList<>();
+            targets.add(target);
+            root.setTargets(targets);
+            manifestInstantiation.setRoot(root);
+            return;
+        }
+
+        ManifestInstantiationRoot root = manifestInstantiation.getRoot();
+        // Do not autofill root.repository when omitted: it is required and rejected at publish/instantiate.
+        // Only seed a default whole-tree route when root.targets is omitted (null).
+        // An explicit empty list is a structural error rejected by publish/instantiate validators.
+        if (root.getTargets() == null) {
+            if (!StringUtils.hasText(root.getRepository())) {
+                root.setRepository(repositoryKey.trim());
+            }
+            ManifestTarget target = new ManifestTarget();
+            target.setSourcePath("./");
+            target.setRepository(
+                    StringUtils.hasText(root.getRepository())
+                            ? root.getRepository().trim()
+                            : repositoryKey.trim());
+            target.setPath("./");
+            List<ManifestTarget> targets = new ArrayList<>();
+            targets.add(target);
+            root.setTargets(targets);
         }
     }
 

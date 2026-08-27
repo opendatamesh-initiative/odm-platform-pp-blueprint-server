@@ -8,12 +8,17 @@ import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.git.provider.GitProviderIdentifier;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
+import org.opendatamesh.platform.pp.blueprint.exceptions.InternalException;
 import org.opendatamesh.platform.pp.blueprint.git.provider.GitProviderFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.util.StringUtils;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.BiConsumer;
 
 class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBlueprintVersionGitOutboundPort {
@@ -23,33 +28,78 @@ class InstantiateBlueprintVersionGitOutboundPortImpl implements InstantiateBluep
     private GitProvider gitProvider;
 
     public InstantiateBlueprintVersionGitOutboundPortImpl(HttpHeaders gitProviderHttpHeaders,
-                                                          GitProviderFactory gitProviderFactory) {
+            GitProviderFactory gitProviderFactory) {
         this.gitProviderHttpHeaders = gitProviderHttpHeaders;
         this.gitProviderFactory = gitProviderFactory;
     }
 
     @Override
-    public void init(Blueprint blueprint) {
-        gitProvider = gitProviderFactory.buildGitProvider(
-                new GitProviderIdentifier(blueprint.getBlueprintRepo().getProviderType().name(),
-                        blueprint.getBlueprintRepo().getProviderBaseUrl()),
-                gitProviderHttpHeaders);
-    }
-
-    @Override
-    public void withClonedSourceAndTarget(
-            SourceRepositoryDto source,
+    public void openSourcesAndTarget(
+            Blueprint parentBlueprint,
+            List<SourceRepositoryDto> sources,
             TargetRepositoryDto target,
             String integrationBranch,
-            BiConsumer<Path, Path> operation) {
-        // Target repositories always point to a branch, sources are frozen with tag snapshots.
+            BiConsumer<Map<String, Path>, Path> operation) {
+        initGitProvider(parentBlueprint);
+        List<SourceRepositoryDto> uniqueSources = dedupeSources(sources);
+        // Target first (integration branch), then nest source clones at release tags.
         gitProvider.gitOperation().readRepository(
                 target.repository(),
                 new RepositoryPointerBranch(integrationBranch),
-                targetRepoDir -> gitProvider.gitOperation().readRepository(
-                        source.repository(),
-                        new RepositoryPointerTag(source.tag()),
-                        sourceRepoDir -> operation.accept(sourceRepoDir.toPath(), targetRepoDir.toPath())));
+                targetRepoDir -> cloneSourcesRecursively(
+                        uniqueSources,
+                        0,
+                        new LinkedHashMap<>(),
+                        targetRepoDir.toPath(),
+                        operation));
+    }
+
+    private void cloneSourcesRecursively(
+            List<SourceRepositoryDto> sources,
+            int index,
+            Map<String, Path> sourcePaths,
+            Path targetPath,
+            BiConsumer<Map<String, Path>, Path> operation) {
+        if (index >= sources.size()) {
+            operation.accept(Map.copyOf(sourcePaths), targetPath);
+            return;
+        }
+        SourceRepositoryDto source = sources.get(index);
+        gitProvider.gitOperation().readRepository(
+                source.repository(),
+                new RepositoryPointerTag(source.tag()),
+                sourceRepoDir -> {
+                    sourcePaths.put(source.id(), sourceRepoDir.toPath());
+                    cloneSourcesRecursively(sources, index + 1, sourcePaths, targetPath, operation);
+                });
+    }
+
+    private void initGitProvider(Blueprint parentBlueprint) {
+        if (gitProvider != null) {
+            return;
+        }
+        if (parentBlueprint == null || parentBlueprint.getBlueprintRepo() == null) {
+            throw new InternalException("Parent blueprint repository is required to bind a Git provider");
+        }
+        gitProvider = gitProviderFactory.buildGitProvider(
+                new GitProviderIdentifier(
+                        parentBlueprint.getBlueprintRepo().getProviderType().name(),
+                        parentBlueprint.getBlueprintRepo().getProviderBaseUrl()),
+                gitProviderHttpHeaders);
+    }
+
+    private static List<SourceRepositoryDto> dedupeSources(List<SourceRepositoryDto> sources) {
+        if (sources == null || sources.isEmpty()) {
+            throw new InternalException("At least one source repository is required for instantiation");
+        }
+        Map<String, SourceRepositoryDto> byId = new LinkedHashMap<>();
+        for (SourceRepositoryDto source : sources) {
+            if (source == null || !StringUtils.hasText(source.id())) {
+                throw new InternalException("Each source repository must have a non-empty id");
+            }
+            byId.putIfAbsent(source.id(), source);
+        }
+        return new ArrayList<>(byId.values());
     }
 
     @Override

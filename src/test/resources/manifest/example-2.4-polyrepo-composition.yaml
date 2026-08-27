@@ -21,17 +21,18 @@ instantiation:
       description: Target repository for API serving components
 
   root:
+    repository: pipeline-repo
     targets:
       - sourcePath: ./core
         repository: pipeline-repo
-        path: ./
+        path: ./core
 
 composition:
   - module: ingest
     blueprintName: odm-blueprint-ingest-batch
     blueprintVersion: 2.0.0
     parameterMapping:
-      domain: dataDomain
+      domain: { $param: dataDomain }
     targets:
       - sourcePath: ./
         repository: pipeline-repo
@@ -41,7 +42,7 @@ composition:
     blueprintName: odm-blueprint-consumer-api
     blueprintVersion: 1.1.0
     parameterMapping:
-      domain: dataDomain
+      domain: { $param: dataDomain }
     targets:
       - sourcePath: ./
         repository: api-repo

@@ -13,6 +13,10 @@ class OdmBlueprintManifestValidatorContext {
         errors.add(new OdmBlueprintValidatorErrorMessage(fieldPath, message));
     }
 
+    void addError(String fieldPath, String message, String hint) {
+        errors.add(new OdmBlueprintValidatorErrorMessage(fieldPath, message, hint));
+    }
+
     boolean hasErrors() {
         return !errors.isEmpty();
     }
@@ -42,5 +46,9 @@ class OdmBlueprintManifestValidatorContext {
         }
         parameters.add(key);
         return true;
+    }
+
+    boolean containsParameterKey(String key) {
+        return key != null && parameters.contains(key);
     }
 }

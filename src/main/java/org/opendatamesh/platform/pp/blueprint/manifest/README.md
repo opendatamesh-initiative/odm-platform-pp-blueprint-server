@@ -198,12 +198,18 @@ integrations.
     - `module` (String, Required): A logical alias for the child module.
     - `blueprintName` (String, Required): The identifier of the child blueprint.
     - `blueprintVersion` (String, Required): The target release version of the child blueprint.
-    - `parameterMapping` (Object, Optional): Maps **child** parameter keys to **values** supplied at instantiation. Each
-      value is either a **literal** (string, number, boolean) or a **reference** to a parent parameter by key (the
-      orchestrator resolves references from the parent parameter set). This is the manifest analogue of Terraform’s
-      explicit `module "x" { ... }` variable passing: only declared inputs are passed—there is no implicit global scope.
-      Nested expressions (e.g., string concatenation) are out of scope; if a value must be derived, expose it as a
-      parent parameter.
+    - `parameterMapping` (Object, Optional): Maps **child** parameter keys to values supplied at instantiation. Every
+      entry **must** be an object with **exactly one** discriminant:
+      - `{ $param: <parentKey> }` — dynamic reference resolved from the parent parameter set (request value, else parent
+        default; fail if the parent key is undeclared or has neither value nor default). Extra properties besides
+        `$param` are ignored.
+      - `{ value: <actualValue> }` — fixed literal copied from the manifest (`actualValue` may be string, number,
+        boolean, object, or array). Extra properties besides `value` are ignored; the literal is **not** looked up on
+        the parent.
+      Bare scalars, arrays, or objects with both/neither discriminants are **invalid**. This is the manifest analogue of
+      Terraform’s explicit `module "x" { ... }` variable passing: only declared inputs are passed—there is no implicit
+      global scope. Nested expressions (e.g., string concatenation) are out of scope; if a value must be derived, expose
+      it as a parent parameter.
     - `targets` (Array of Objects, Required): Routes subdirectories of the **child blueprint repository** to destination
       repositories. Same shape as `instantiation.root.targets[]`. May contain multiple entries for path splitting.
       - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the child blueprint repository
@@ -216,13 +222,18 @@ integrations.
     - `key` (String, Required): Unique logical alias referenced by `root.targets` and `composition[].targets` (e.g.,
       `main`, `infra-repo`).
     - `description` (String, Optional): Human-readable guidance for UI selection.
-  - `root` (Object, Required): Routes subdirectories of the **parent blueprint repository** to destination repositories.
-    - `targets` (Array of Objects, Required): May be an **empty array** for pure orchestration parents that delegate all
-      output to composed modules. Same shape as `composition[].targets[]`.
+  - `root` (Object, Required): Routes subdirectories of the **parent blueprint repository** to destination repositories
+    and designates the data-product root repository key.
+    - `repository` (String, Required): Declared `instantiation.repositories[].key` that is the data-product root
+      (lineage, descriptor enrichment, registry primary pointer). Applies **only** to parent `instantiation.root`—
+      never on `composition[].targets`. Not inferred from target order or a reserved key name.
+    - `targets` (Array of Objects, Required): **Must be non-empty** and must reference at least one declared repository
+      key. Empty `root.targets` (pure-orchestration parents) is **invalid**. Same shape as `composition[].targets[]`.
       - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the parent blueprint repository
         root.
       - `repository` (String, Required): Must match an entry in `instantiation.repositories[].key`.
       - `path` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
+        Destinations on the **same** repository key must be **siblings** (not nested path-prefixes of each other).
 
 #### Validation constraints
 
@@ -230,13 +241,24 @@ The orchestrator must enforce the following rules when validating a manifest:
 
 - `instantiation.repositories[].key` values must be **unique**.
 - `composition[].module` values must be **unique** (when `composition` is present).
+- `instantiation.root.repository` is **required** and must match a declared `instantiation.repositories[].key`.
+- `instantiation.root.targets` must be **non-empty**.
+- When `BlueprintRepo.descriptorTemplatePath` is configured, the platform **always** renders that template onto the designated root target (`instantiation.root.repository`) at the path derived from the template (same relative path with `.vm` stripped). Authors do **not** declare a `root.targets` route for the descriptor.
+- Every declared `instantiation.repositories[].key` must appear on at least one route (`root.targets` or
+  `composition[].targets`); unused keys are rejected.
 - Every `repository` reference in `instantiation.root.targets[]` and `composition[].targets[]` must match an existing
   `instantiation.repositories[].key`.
+- Exact duplicate `(repository, normalized path)` destinations across all routes are rejected.
+- Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
+  rejected; use sibling destinations.
+- `parameterMapping` entries must be `{ $param: key }` or `{ value: actualValue }` objects; bare scalars are invalid.
+- Composition modules must be published versions that are themselves **monorepo with no composition**.
 - When a `targets` array contains **more than one** entry, each entry must declare an explicit `sourcePath` (the `./`
   default must not be relied upon implicitly, to avoid accidental duplication of the entire source repository).
 - Repository paths must be **relative** to the repository root; absolute paths and path traversal segments (`..`) are
   rejected.
 - Path normalization (leading `./`, trailing slashes) is implementation-defined but must be applied consistently.
+- Validation reports **all** problems found, each with a short how-to-fix hint.
 
 #### UI metadata (`parameters[].ui`)
 
@@ -340,6 +362,7 @@ instantiation:
     - key: main
       description: Target repository for all data product assets
   root:
+    repository: main
     targets:
       - sourcePath: ./
         repository: main
@@ -381,18 +404,20 @@ instantiation:
       description: Single repository containing application and infrastructure
 
   root:
+    repository: main
     targets:
       - sourcePath: ./
         repository: main
-        path: ./
+        path: core/
 
 composition:
   - module: storage
     blueprintName: odm-blueprint-s3-lake
     blueprintVersion: 3.0.1
     parameterMapping:
-      bucketPrefix: projectSlug
-      encryptAtRest: enablePiiMasking
+      bucketPrefix: { $param: projectSlug }
+      encryptAtRest: { $param: enablePiiMasking }
+      region: { value: eu-west-1 }
     targets:
       - sourcePath: ./
         repository: main
@@ -402,7 +427,7 @@ composition:
     blueprintName: odm-blueprint-api-skeleton
     blueprintVersion: 1.4.0
     parameterMapping:
-      serviceName: projectSlug
+      serviceName: { $param: projectSlug }
     targets:
       - sourcePath: ./
         repository: main
@@ -438,16 +463,17 @@ instantiation:
       description: Target repository for application code
 
   root:
+    repository: app-repo
     targets:
       - sourcePath: terraform/
         repository: infra-repo
-        path: ./
-      - sourcePath: application/
-        repository: app-repo
-        path: ./
+        path: terraform/
       - sourcePath: policies/
         repository: infra-repo
         path: governance/policies
+      - sourcePath: application/
+        repository: app-repo
+        path: ./
 ```
 
 #### 2.4. Polyrepo + composition
@@ -477,17 +503,18 @@ instantiation:
       description: Target repository for API serving components
 
   root:
+    repository: pipeline-repo
     targets:
       - sourcePath: ./core
         repository: pipeline-repo
-        path: ./
+        path: ./core
 
 composition:
   - module: ingest
     blueprintName: odm-blueprint-ingest-batch
     blueprintVersion: 2.0.0
     parameterMapping:
-      domain: dataDomain
+      domain: { $param: dataDomain }
     targets:
       - sourcePath: ./
         repository: pipeline-repo
@@ -497,15 +524,16 @@ composition:
     blueprintName: odm-blueprint-consumer-api
     blueprintVersion: 1.1.0
     parameterMapping:
-      domain: dataDomain
+      domain: { $param: dataDomain }
     targets:
       - sourcePath: ./
         repository: api-repo
         path: services/consumer
 ```
 
-For **pure orchestration** parents that delegate all output to composed modules, set `instantiation.root.targets: []`
-and declare only `repositories` and `composition[]` entries.
+`instantiation.root.repository` must name a declared repository key (the data-product root).
+`instantiation.root.targets` must always contain at least one entry. Pure-orchestration parents with
+`root.targets: []` are **not** supported.
 
 ## Java API
 

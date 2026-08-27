@@ -1,16 +1,13 @@
 spec: odm-blueprint-manifest
 specVersion: 1.0.0
-name: ext-test
+name: unknown-root-repository
 version: 1.0.0
-dumb_extension:
-  fieldA: valueA
-  fieldB: valueB
-x-prop: x-prop-value
+
 instantiation:
   repositories:
     - key: main
   root:
-    repository: main
+    repository: unknown-repo
     targets:
       - sourcePath: ./
         repository: main

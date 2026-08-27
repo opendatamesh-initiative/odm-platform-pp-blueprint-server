@@ -29,18 +29,20 @@ instantiation:
       description: Single repository containing application and infrastructure
 
   root:
+    repository: main
     targets:
       - sourcePath: ./
         repository: main
-        path: ./
+        path: core/
 
 composition:
   - module: storage
     blueprintName: odm-blueprint-s3-lake
     blueprintVersion: 3.0.1
     parameterMapping:
-      bucketPrefix: projectSlug
-      encryptAtRest: enablePiiMasking
+      bucketPrefix: { $param: projectSlug }
+      encryptAtRest: { $param: enablePiiMasking }
+      region: { value: eu-west-1 }
     targets:
       - sourcePath: ./
         repository: main
@@ -50,7 +52,7 @@ composition:
     blueprintName: odm-blueprint-api-skeleton
     blueprintVersion: 1.4.0
     parameterMapping:
-      serviceName: projectSlug
+      serviceName: { $param: projectSlug }
     targets:
       - sourcePath: ./
         repository: main

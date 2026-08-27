@@ -1,17 +1,17 @@
 spec: odm-blueprint-manifest
 specVersion: 1.0.0
-name: ext-test
+name: exact-overlap
 version: 1.0.0
-dumb_extension:
-  fieldA: valueA
-  fieldB: valueB
-x-prop: x-prop-value
+
 instantiation:
   repositories:
     - key: main
   root:
     repository: main
     targets:
-      - sourcePath: ./
+      - sourcePath: ./a
         repository: main
-        path: ./
+        path: shared/
+      - sourcePath: ./b
+        repository: main
+        path: shared/

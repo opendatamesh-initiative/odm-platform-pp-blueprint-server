@@ -21,9 +21,28 @@ import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+/**
+ * Structural validator for an odm-blueprint-manifest.
+ *
+ * <p><b>Navigation vs validation (do not mix these up):</b>
+ * <ul>
+ *   <li><b>Navigate</b> the manifest object graph only via {@code child.accept(this)} (or the
+ *       typed visitor interface) from inside {@code visit(...)} methods. Do not factor tree walking
+ *       into private procedural navigators.</li>
+ *   <li><b>Validate locally</b> field / shape rules for the current node inside its {@code visit}.
+ *       Private helpers may implement those checks, but must not walk visitable children.
+ *       Non-visitable leaf data (e.g. {@code parameterMapping} {@code Map<String, JsonNode>}) is
+ *       validated here until it has its own model + {@code accept}/{@code visit} types.</li>
+ *   <li><b>Validate globally</b> cross-node invariants after the walk: collect facts on
+ *       {@link OdmBlueprintManifestValidatorState} during visits, then run post-pass checks at the
+ *       end of {@link #visit(Manifest)} (unused repository keys, duplicate destinations, nested
+ *       path prefixes).</li>
+ * </ul>
+ */
 class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParameterVisitor,
         ManifestProtectedResourceVisitor, ManifestInstantiationVisitor, ManifestInstantiationRootVisitor,
         ManifestCompositionVisitor {
@@ -39,14 +58,15 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
     private static final Pattern SEMVER = Pattern.compile(
             "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
                     + "(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
-                    + "(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
-    );
+                    + "(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$");
 
     @Override
     public void visit(Manifest manifest) {
         state.hasComposition = manifest.getComposition() != null && !manifest.getComposition().isEmpty();
         state.compositionModules.clear();
         state.repositoryKeys.clear();
+        state.usedRepositoryKeys.clear();
+        state.routeDestinations.clear();
 
         if (!Manifest.SPEC_NAME.equals(manifest.getSpec())) {
             context.addError("spec", "Manifest spec must be 'odm-blueprint-manifest'");
@@ -118,6 +138,10 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                 }
             }
         }
+
+        validateUnusedRepositoryKeys();
+        validateDuplicateDestinations();
+        validateNestedPathPrefixes();
     }
 
     @Override
@@ -182,12 +206,30 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
             state.compositionModules.add(manifestComposition.getModule().trim());
         }
 
+        validateParameterMapping(manifestComposition.getParameterMapping(), fieldPath);
+
         List<ManifestTarget> targets = manifestComposition.getTargets();
         if (targets == null || targets.isEmpty()) {
             context.addError(fieldPath + ".targets", "Composition targets are required");
             return;
         }
-        validateTargetsList(targets, fieldPath + ".targets", true);
+        String targetsPath = fieldPath + ".targets";
+        boolean requireExplicitSourcePath = targets.size() > 1;
+        ManifestCompositionVisitor compositionVisitor = this;
+        for (int i = 0; i < targets.size(); i++) {
+            ManifestTarget target = targets.get(i);
+            String targetPath = targetsPath + "[" + i + "]";
+            if (target == null) {
+                context.addError(targetPath, "Target entry is required");
+                continue;
+            }
+            if (requireExplicitSourcePath && !hasText(target.getSourcePath())) {
+                context.addError(targetPath + ".sourcePath",
+                        "sourcePath is required when targets contains more than one entry");
+            }
+            state.currentTargetFieldPath = targetPath;
+            target.accept(compositionVisitor);
+        }
     }
 
     @Override
@@ -243,14 +285,42 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         String fieldPath = state.currentTargetFieldPath != null
                 ? state.currentTargetFieldPath
                 : "instantiation.root";
+
+        if (!hasText(root.getRepository())) {
+            context.addError(fieldPath + ".repository",
+                    "instantiation.root.repository is required",
+                    "Set instantiation.root.repository to a declared instantiation.repositories[].key.");
+        } else {
+            String rootKey = root.getRepository().trim();
+            if (!state.repositoryKeys.contains(rootKey)) {
+                context.addError(fieldPath + ".repository",
+                        "instantiation.root.repository must match an instantiation.repositories[].key",
+                        "Use a key declared in instantiation.repositories[].key.");
+            }
+        }
+
         List<ManifestTarget> targets = root.getTargets();
-        if (targets == null) {
-            context.addError(fieldPath + ".targets", "Instantiation root.targets is required");
+        if (targets == null || targets.isEmpty()) {
+            context.addError(fieldPath + ".targets", "instantiation.root.targets must be non-empty",
+                    "Add at least one instantiation.root.targets entry that references a declared repository key.");
             return;
         }
-        // Empty array is allowed (pure orchestration parents).
-        if (!targets.isEmpty()) {
-            validateTargetsList(targets, fieldPath + ".targets", false);
+        String targetsPath = fieldPath + ".targets";
+        boolean requireExplicitSourcePath = targets.size() > 1;
+        ManifestInstantiationRootVisitor rootVisitor = this;
+        for (int i = 0; i < targets.size(); i++) {
+            ManifestTarget target = targets.get(i);
+            String targetPath = targetsPath + "[" + i + "]";
+            if (target == null) {
+                context.addError(targetPath, "Target entry is required");
+                continue;
+            }
+            if (requireExplicitSourcePath && !hasText(target.getSourcePath())) {
+                context.addError(targetPath + ".sourcePath",
+                        "sourcePath is required when targets contains more than one entry");
+            }
+            state.currentTargetFieldPath = targetPath;
+            target.accept(rootVisitor);
         }
     }
 
@@ -262,9 +332,19 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
 
         validateRequiredString(target.getRepository(), fieldPath + ".repository",
                 "Target repository is required");
-        if (hasText(target.getRepository()) && !state.repositoryKeys.contains(target.getRepository().trim())) {
-            context.addError(fieldPath + ".repository",
-                    "Target repository must match an instantiation.repositories[].key");
+        if (hasText(target.getRepository())) {
+            String repositoryKey = target.getRepository().trim();
+            if (!state.repositoryKeys.contains(repositoryKey)) {
+                context.addError(fieldPath + ".repository",
+                        "Target repository must match an instantiation.repositories[].key",
+                        "Use a key declared in instantiation.repositories[].key.");
+            } else {
+                state.usedRepositoryKeys.add(repositoryKey);
+                state.routeDestinations.add(new OdmBlueprintManifestValidatorState.RouteDestination(
+                        repositoryKey,
+                        normalizePath(target.getPath()),
+                        fieldPath));
+            }
         }
         validateRelativePath(target.getSourcePath(), fieldPath + ".sourcePath");
         validateRelativePath(target.getPath(), fieldPath + ".path");
@@ -292,24 +372,99 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                 "Protected resource integrity value must be a non-empty string");
     }
 
-    private void validateTargetsList(List<ManifestTarget> targets, String fieldPath, boolean compositionContext) {
-        boolean requireExplicitSourcePath = targets.size() > 1;
-        for (int i = 0; i < targets.size(); i++) {
-            ManifestTarget target = targets.get(i);
-            String targetPath = fieldPath + "[" + i + "]";
-            if (target == null) {
-                context.addError(targetPath, "Target entry is required");
+    /**
+     * Local shape check for non-visitable {@code parameterMapping} entries (JsonNode values).
+     * Not tree navigation — do not treat this as a substitute for {@code accept}/{@code visit}.
+     */
+    private void validateParameterMapping(Map<String, JsonNode> parameterMapping, String fieldPath) {
+        if (parameterMapping == null || parameterMapping.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, JsonNode> entry : parameterMapping.entrySet()) {
+            String entryPath = fieldPath + ".parameterMapping[" + entry.getKey() + "]";
+            JsonNode mappingNode = entry.getValue();
+            if (mappingNode == null || !mappingNode.isObject()) {
+                context.addError(entryPath, "parameterMapping entry must be a JSON object",
+                        "Use { $param: parentKey } or { value: actualValue }.");
                 continue;
             }
-            if (requireExplicitSourcePath && !hasText(target.getSourcePath())) {
-                context.addError(targetPath + ".sourcePath",
-                        "sourcePath is required when targets contains more than one entry");
+
+            boolean hasParam = mappingNode.has("$param");
+            boolean hasValue = mappingNode.has("value");
+
+            if (hasParam && hasValue) {
+                context.addError(entryPath,
+                        "The discriminants $param and value are mutually exclusive; keep only one.");
+                continue;
             }
-            state.currentTargetFieldPath = targetPath;
-            if (compositionContext) {
-                target.accept((ManifestCompositionVisitor) this);
-            } else {
-                target.accept((ManifestInstantiationRootVisitor) this);
+            if (!hasParam && !hasValue) {
+                context.addError(entryPath, "parameterMapping entry must declare $param or value",
+                        "Use { $param: key } or { value: actualValue }.");
+                continue;
+            }
+
+            if (hasParam) {
+                JsonNode paramNode = mappingNode.get("$param");
+                if (paramNode == null || !paramNode.isTextual() || !hasText(paramNode.asText())) {
+                    context.addError(entryPath + ".$param",
+                            "$param must be a non-empty textual string",
+                            "Use { $param: parentKey } or { value: actualValue }.");
+                    continue;
+                }
+                String parentKey = paramNode.asText();
+                if (!context.containsParameterKey(parentKey)) {
+                    context.addError(entryPath + ".$param",
+                            "Parent parameter key '" + parentKey + "' is not declared in parameters",
+                            "Fix the mapping or declare the parameter on the parent manifest.");
+                }
+            }
+            // value: any JsonNode (including null) is accepted; extra keys are ignored
+        }
+    }
+
+    // --- Post-pass global invariants (after accept/visit walk; operate on collected state only) ---
+
+    private void validateUnusedRepositoryKeys() {
+        for (String key : state.repositoryKeys) {
+            if (!state.usedRepositoryKeys.contains(key)) {
+                context.addError("instantiation.repositories",
+                        "Repository key '" + key + "' is not referenced by any target",
+                        "Declare a route in instantiation.root.targets or composition[].targets that uses this key, or remove the unused key.");
+            }
+        }
+    }
+
+    private void validateDuplicateDestinations() {
+        Set<String> seen = new HashSet<>();
+        for (OdmBlueprintManifestValidatorState.RouteDestination destination : state.routeDestinations) {
+            String signature = destination.repositoryKey() + '\0' + destination.normalizedPath();
+            if (!seen.add(signature)) {
+                context.addError(destination.fieldPath(),
+                        "Duplicate destination (repository, path) pair",
+                        "Make destination (repository, path) pairs unique.");
+            }
+        }
+    }
+
+    private void validateNestedPathPrefixes() {
+        List<OdmBlueprintManifestValidatorState.RouteDestination> destinations = state.routeDestinations;
+        for (int i = 0; i < destinations.size(); i++) {
+            OdmBlueprintManifestValidatorState.RouteDestination left = destinations.get(i);
+            String leftCompare = pathForPrefixCompare(left.normalizedPath());
+            for (int j = i + 1; j < destinations.size(); j++) {
+                OdmBlueprintManifestValidatorState.RouteDestination right = destinations.get(j);
+                if (!left.repositoryKey().equals(right.repositoryKey())) {
+                    continue;
+                }
+                String rightCompare = pathForPrefixCompare(right.normalizedPath());
+                if (leftCompare.equals(rightCompare)) {
+                    continue;
+                }
+                if (isPathPrefix(leftCompare, rightCompare) || isPathPrefix(rightCompare, leftCompare)) {
+                    context.addError(right.fieldPath(),
+                            "Destination paths nest under each other on the same repository key",
+                            "Use sibling destinations that do not nest under each other on the same repository key.");
+                }
             }
         }
     }
@@ -320,8 +475,44 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         }
         String trimmed = path.trim();
         if (trimmed.startsWith("/") || trimmed.contains("..")) {
-            context.addError(fieldPath, "Repository paths must be relative and must not contain '..'");
+            context.addError(fieldPath, "Repository paths must be relative and must not contain '..'",
+                    "Use a relative path without '..' or a leading '/'.");
         }
+    }
+
+    private String normalizePath(String path) {
+        if (!hasText(path)) {
+            return "./";
+        }
+        String normalized = path.trim().replace('\\', '/');
+        while (normalized.length() > 1 && normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.isEmpty() || ".".equals(normalized)) {
+            return "./";
+        }
+        return normalized;
+    }
+
+    private String pathForPrefixCompare(String normalizedPath) {
+        String path = normalizedPath;
+        if (path.startsWith("./")) {
+            path = path.substring(2);
+        }
+        if (path.isEmpty() || ".".equals(path)) {
+            return "";
+        }
+        if (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        return path;
+    }
+
+    private boolean isPathPrefix(String prefix, String path) {
+        if (prefix.isEmpty()) {
+            return true;
+        }
+        return path.equals(prefix) || path.startsWith(prefix + "/");
     }
 
     private void validateDefaultValueMatchesType(ManifestParameter manifestParameter) {

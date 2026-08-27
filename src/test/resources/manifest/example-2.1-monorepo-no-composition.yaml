@@ -38,6 +38,7 @@ instantiation:
     - key: main
       description: Target repository for all data product assets
   root:
+    repository: main
     targets:
       - sourcePath: ./
         repository: main

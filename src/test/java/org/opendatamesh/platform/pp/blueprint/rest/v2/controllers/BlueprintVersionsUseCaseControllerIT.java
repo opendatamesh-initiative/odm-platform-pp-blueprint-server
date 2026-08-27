@@ -516,4 +516,241 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
             rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
         }
     }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Empty root.targets is rejected at both gates
+     *   Given instantiation.root.targets is []
+     *   When the client publishes the version
+     *   Then the response status is 400
+     *   And the message states root.targets must be non-empty and includes a hint
+     */
+    @Test
+    public void whenPublishEmptyRootTargetsThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/empty-root-targets.yaml",
+                "root.targets",
+                "non-empty");
+    }
+
+    @Test
+    public void whenPublishMissingRootRepositoryThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/missing-root-repository.yaml",
+                "root.repository",
+                "required");
+    }
+
+    @Test
+    public void whenPublishUnknownRootRepositoryThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/unknown-root-repository.yaml",
+                "root.repository",
+                "match");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Unused repository key is rejected at both gates
+     *   Given a key "orphan" with no root or composition target referencing it
+     *   When publish validates
+     *   Then 400 lists the unused key and a hint to add a route or remove the key
+     */
+    @Test
+    public void whenPublishUnusedRepositoryKeyThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/unused-key.yaml",
+                "orphan",
+                "hint");
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Nested path-prefix on the same key is rejected at both gates
+     *   Given a route with path "./" and another with path "data-plane/storage" on the same key
+     *   When publish validates
+     *   Then 400 explains nested path coverage is forbidden and hints to use sibling destinations
+     */
+    @Test
+    public void whenPublishNestedDestinationsThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/nested-destinations.yaml",
+                "nest",
+                "hint");
+    }
+
+    /*
+     * Feature: Module parameterMapping contract
+     * Scenario: Bare scalar mapping entry is rejected at both gates
+     *   Given parameterMapping region: eu-west-1
+     *   When publish validates
+     *   Then 400 states the entry must be an object and hints to use { value: eu-west-1 } or { $param: ... }
+     */
+    @Test
+    public void whenPublishBareParameterMappingThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/bare-parameter-mapping.yaml",
+                "parameterMapping",
+                "$param");
+    }
+
+    /*
+     * Feature: Composition modules must be monorepo without composition
+     * Scenario: Publishing a parent that references a missing module version fails
+     *   Given composition.blueprintName and blueprintVersion do not exist
+     *   When the parent is published
+     *   Then 404 Not Found exception is thrown
+     */
+    @Test
+    public void whenPublishParentWithMissingModuleThenReturn404() throws IOException {
+        String classpathManifest = "/manifest/example-2.2-monorepo-composition.yaml";
+        String prefix = "composition";
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    ManifestYamlTestSupport.readYamlTreeFromClasspath(classpathManifest)
+            );
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /*
+     * Feature: Structural validation at publish and instantiate
+     * Scenario: Multiple structural problems are all reported
+     *   Given a manifest with unused key AND nested destinations AND an invalid parameterMapping entry
+     *   When publish validates
+     *   Then the 400 message contains every problem
+     *   And each problem includes a how-to-fix hint
+     *   And validation does not stop at the first error
+     */
+    @Test
+    public void whenPublishMultipleStructuralErrorsThenAllListedWithHints() throws IOException {
+        String prefix = "pubMultiErr";
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                            "/manifest/invalid/multiple-structural-errors.yaml")
+            );
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).containsIgnoringCase("hint");
+            assertThat(response.getBody()).contains("orphan");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    private void assertPublishInvalidManifestReturns400WithHint(
+            String classpathManifest,
+            String expectedProblemFragment,
+            String expectedHintFragment
+    ) throws IOException {
+        String prefix = "pubStruct" + expectedProblemFragment.replaceAll("[^a-zA-Z0-9]", "").substring(0,
+                Math.min(8, expectedProblemFragment.replaceAll("[^a-zA-Z0-9]", "").length()));
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    ManifestYamlTestSupport.readYamlTreeFromClasspath(classpathManifest)
+            );
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).containsIgnoringCase(expectedProblemFragment);
+            assertThat(response.getBody()).containsIgnoringCase(expectedHintFragment);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    private PublishBlueprintVersionCommandRes publishCommandWithContent(
+            BlueprintRes blueprint,
+            String versionName,
+            String manifestVersion,
+            JsonNode content
+    ) {
+        PublishBlueprintVersionCommandRes cmd = new PublishBlueprintVersionCommandRes();
+        PublishBlueprintVersionCommandRes.BlueprintVersion bv =
+                new PublishBlueprintVersionCommandRes.BlueprintVersion();
+        bv.setName(versionName);
+        bv.setDescription("desc");
+        bv.setReadme("readme");
+        bv.setTag("v" + manifestVersion);
+        bv.setSpec("odm-blueprint-manifest");
+        bv.setSpecVersion("1.0.0");
+        bv.setContent(content);
+        PublishBlueprintVersionCommandRes.BlueprintVersion.Blueprint bp =
+                new PublishBlueprintVersionCommandRes.BlueprintVersion.Blueprint();
+        bp.setUuid(blueprint.getUuid());
+        bv.setBlueprint(bp);
+        bv.setCreatedBy("it-created-by");
+        cmd.setBlueprintVersion(bv);
+        return cmd;
+    }
 }
