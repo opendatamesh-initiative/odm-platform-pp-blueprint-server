@@ -15,6 +15,10 @@ interface PublishBlueprintVersionManifestOutboundPort {
 
     boolean isMonorepoNoComposition(JsonNode content);
 
+    List<String> listMappedChildParameterKeys(JsonNode parentContent, String compositionFieldPath);
+
+    List<String> listModuleParameterKeysWithoutDefault(JsonNode moduleContent);
+
     String extractVersionNumber(JsonNode content);
 
     String extractSpecNumber(JsonNode content);

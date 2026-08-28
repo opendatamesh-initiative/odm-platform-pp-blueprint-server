@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,4 +41,16 @@ interface InstantiateBlueprintVersionTemplatingOutboundPort {
             Path rootTarget,
             BlueprintVersion parentVersion,
             Map<String, JsonNode> parentResolvedParameters);
+
+    /**
+     * Moves the module's {@code BlueprintRepo} file pointers ({@code readmePath}, {@code manifestRootPath})
+     * under {@code .odm/<moduleAlias>} on the target. Prefers files already rendered at
+     * {@code destinationPaths}; otherwise copies from {@code moduleSourceRoot}.
+     */
+    void relocateModuleReferencedFiles(
+            Path targetRoot,
+            String moduleAlias,
+            BlueprintVersion moduleVersion,
+            Path moduleSourceRoot,
+            List<String> destinationPaths);
 }

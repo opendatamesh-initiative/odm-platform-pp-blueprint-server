@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 interface UpdateDataProductTemplatingOutboundPort {
@@ -25,4 +26,11 @@ interface UpdateDataProductTemplatingOutboundPort {
             Path rootTarget,
             BlueprintVersion parentVersion,
             Map<String, JsonNode> parentResolvedParameters);
+
+    void relocateModuleReferencedFiles(
+            Path targetRoot,
+            String moduleAlias,
+            BlueprintVersion moduleVersion,
+            Path moduleSourceRoot,
+            List<String> destinationPaths);
 }

@@ -8,6 +8,8 @@ Keep one **update** pipeline that re-renders **next** content through a **frozen
 
 Support **content-only** deltas (source files, request parameter values, next `parameterMapping`, same-slot module `blueprintVersion`). Reject **structural** current→next deltas with collect-all 400 and a fix hint. Do not implement UI, do not call the instantiate use case, and do not read or write the data-product registry.
 
+When re-rendering a composition module, relocate that module’s `BlueprintRepo` file pointers (`readmePath`, `manifestRootPath`) under `.odm/<composition module alias>` on the target that received the module. A next parent that references a module with a valorized `descriptorTemplatePath` is rejected (only the root blueprint may own a descriptor).
+
 ## Entities
 
 ```mermaid
@@ -173,6 +175,8 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
    - Next manifest: non-empty `root.targets`, explicit `instantiation.root.repository` (declared key), unused keys rejected, exact and nested destination conflicts rejected, modules 1→1, `{ $param }` / `{ value }` only (bare scalars invalid).
    - Structure freeze: current and next share repository keys, root key, topology, normalized `root.targets`, composition slots (`alias` + `blueprintName` + composition `targets`). Allowed: files, request parameter values, `parameterMapping` rewires, same-slot `blueprintVersion` bump, parent parameter key set growth/shrink (next `$param` must still resolve).
    - Lineage: next parent version + next parent resolved parameters only, only on `instantiation.root.repository`. Descriptor rendered there when `descriptorTemplatePath` is set (platform-owned; not a manifest route). README/manifest sidecar relocate only on that root target after routes.
+   - After applying a module’s next `composition[].targets` into a target, relocate that module’s `readmePath` / `manifestRootPath` under `.odm/<module alias>/` on that target (same as instantiate). Do not write module sidecars under `.odm/blueprint/`.
+   - A composition module with non-blank `BlueprintRepo.descriptorTemplatePath` is 400 (only the parent may own a descriptor).
    - Module parameters: resolve **next** `parameterMapping`; do **not** copy instantiate's current shortcut of reusing the parent map as the module map.
    - Child Git provider type and base URL must match the parent.
    - Missing current checkpoint: fail that target at Git open; never fall back to default branch.
@@ -227,14 +231,14 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
        - Locate current and next parent versions via persistency (`findByBlueprintNameAndVersion`). Same blueprint UUID or 400.
        - `manifestPort.collectValidationIssues(current, next, parameters, targetRepositories)` — **stop** if any; throw `BadRequestException` listing **all** `UpdateValidationIssue.format()` lines (prefix analogous to instantiate: `Blueprint update validation failed:`).
        - Enrich next parent parameters via manifest port (request + defaults).
-       - Locate next composition modules; collect not-found and non-1→1 module issues; stop if any.
+       - Locate next composition modules; collect not-found, non-1→1, and module-`descriptorTemplatePath` issues; stop if any.
        - `manifestPort.collectProviderMismatchIssues(next, modulesByAlias)` — stop if any.
        - `manifestPort.collectModuleParameterResolutionIssues(next.content, nextParentParameters)` — stop if any.
        - `manifestPort.resolveModuleParameters(next.content, nextParentParameters)` for render contexts.
        - Derive next routes grouped by target key; designated root key from next `instantiation.root.repository`.
        - Filter `retrieveAllSourceRepositories` to sources referenced by routes (parent id `__parent__`, module alias ids).
        - `gitPort.openSources(nextVersion.blueprint, sources, sourcePaths -> { for each target key with routes: updateTargetRepository(...) })`.
-       - Inside each target: `gitPort.openTargetAtCheckpoint(target, blueprint-v{current}, targetPath -> { create update branch; clean; applyRoute for each route; if root + descriptorTemplatePath, renderDescriptorToRoot + recordParentLineage; commit; tag; push branch + tag })`.
+       - Inside each target: `gitPort.openTargetAtCheckpoint(target, blueprint-v{current}, targetPath -> { create update branch; clean; applyRoute for each route; relocate each module’s BlueprintRepo file pointers under .odm/<module alias>; if root + descriptorTemplatePath, renderDescriptorToRoot + recordParentLineage; commit; tag; push branch + tag })`.
        - If `createPullRequest`: `tryOpenPullRequest` — catch provider failure, append warning, continue other targets.
        - Append `UpdateDataProductTargetResult` per processed key.
        - `presenter.presentResult(new UpdateDataProductResult(results, warnings))`.
@@ -295,11 +299,12 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
 ### Update templating port — `UpdateDataProductTemplatingOutboundPort` / `Impl`
 
 1. Remove `monorepoNoCompositionRenderAndCopy` and `enrichDescriptorWithBlueprintMetadata` as the 1→1-only API.
-2. Add the same three intents as instantiate (separate impl):
+2. Add the same intents as instantiate (separate impl):
    - `applyRoute(sourceRoot, sourcePath, targetRoot, destinationPath, parameters)` → `blueprintRenderService.renderAndCopySubtree` (skip `.git`; no lineage sidecar).
+   - `relocateModuleReferencedFiles(targetRoot, moduleAlias, moduleVersion, moduleSourceRoot, destinationPaths)` → `blueprintRenderService.relocateModuleReferencedFiles` (module `readmePath` / `manifestRootPath` under `.odm/<moduleAlias>/`).
    - `renderDescriptorToRoot(parentSourceRoot, descriptorTemplatePath, rootTarget, parameters)` → `renderDescriptorTemplate`.
    - `recordParentLineage(rootTarget, nextParentVersion, nextParentResolvedParameters)` → enrich descriptor + `relocateParentLineageSidecar`.
-3. Use case invokes descriptor + lineage **only** when the processed key equals next `instantiation.root.repository` **and** `descriptorTemplatePath` is non-blank (both conditions required — if template path is blank, skip descriptor render and lineage even on root key).
+3. Use case invokes descriptor + lineage **only** when the processed key equals next `instantiation.root.repository` **and** `descriptorTemplatePath` is non-blank (both conditions required — if template path is blank, skip descriptor render and lineage even on root key). After routes, relocate module pointer files for every module that routed into that target.
 
 ### Factory — `UpdateDataProductFromBlueprintVersionFactory`
 
@@ -322,6 +327,12 @@ Feature: Content-only blueprint update across Git topologies
     And the remote has blueprint-v{current}
     When update-data-product runs with next parameterMapping
     Then parent and module routes are re-rendered into that one remote and lineage is parent-only
+    And each module's README and manifest sit under .odm/<module alias>/ on that remote
+
+  Scenario: Composition module with descriptorTemplatePath is rejected
+    Given a next parent composing a published 1→1 module whose BlueprintRepo.descriptorTemplatePath is set
+    When update-data-product is called
+    Then validation fails before Git with a hint that only the root blueprint may have descriptorTemplatePath
 
   Scenario: Polyrepo without composition updates each remote independently
     Given a next parent with two or more keys and no composition
@@ -392,6 +403,7 @@ Feature: Validation collect-all and Git policy
 | --- | --- | --- |
 | Content-only blueprint update across Git topologies / Monorepo without composition updates one target from the current checkpoint | `BlueprintUpdateDataProductControllerIT` | `whenMonorepoNoCompositionUpdateThenHonorRootTargetsAndCheckpoint` |
 | Content-only blueprint update across Git topologies / Monorepo with composition updates one target from parent and modules | `BlueprintUpdateDataProductControllerIT` | `whenMonorepoWithCompositionUpdateThenRenderParentAndModulesIntoOneTarget` |
+| Content-only blueprint update across Git topologies / Composition module with descriptorTemplatePath is rejected | `BlueprintUpdateDataProductControllerIT` | `whenCompositionModuleHasDescriptorTemplatePathThenReturn400` |
 | Content-only blueprint update across Git topologies / Polyrepo without composition updates each remote independently | `BlueprintUpdateDataProductControllerIT` | `whenPolyrepoNoCompositionUpdateThenFanOutResultsAndRootLineageOnly` |
 | Content-only blueprint update across Git topologies / Polyrepo with composition routes parent and modules across remotes | `BlueprintUpdateDataProductControllerIT` | `whenPolyrepoWithCompositionUpdateThenRouteModulesAndMatchGitProvider` |
 | Structure freeze and content-only policy / Next version with extra or renamed repository key is rejected | `BlueprintUpdateDataProductControllerIT` | `whenNextRepositoryKeysDifferThenReturn400WithoutGit` |
@@ -404,7 +416,7 @@ Feature: Validation collect-all and Git policy
 | Validation collect-all and Git policy / Global pull request failure is a warning | `BlueprintUpdateDataProductControllerIT` | `whenPullRequestOpenFailsThenReturn200WithWarningAndContinueTargets` |
 | Validation collect-all and Git policy / Git failure stops later targets | `BlueprintUpdateDataProductControllerIT` | `whenFirstTargetGitFailsThenDoNotProcessLaterTargets` |
 
-Implement each Gherkin scenario as the listed test method; copy the Scenario sentence into that method's Javadoc. Keep existing 1→1 PR/warning/collision tests. Additional IT methods on the same class: `whenUpdateWithPullRequestThenReturnWebUrl`, `whenCompositionModuleIsNotMonorepoNoCompositionThenReturn400`, `whenCompositionModuleProviderMismatchesParentThenReturn400`.
+Implement each Gherkin scenario as the listed test method; copy the Scenario sentence into that method's Javadoc. Keep existing 1→1 PR/warning/collision tests. Additional IT methods on the same class: `whenUpdateWithPullRequestThenReturnWebUrl`, `whenCompositionModuleIsNotMonorepoNoCompositionThenReturn400`, `whenCompositionModuleProviderMismatchesParentThenReturn400`, `whenCompositionModuleHasDescriptorTemplatePathThenReturn400`.
 
 Add unit test class `UpdateDataProductOdmBlueprintManifestOutboundPortTest` for fingerprint path normalization (`./` vs `""`) and exclusion of `parameterMapping` from the freeze (methods: `whenRootTargetPathNormalizationDiffersOnlyByDotSlashThenNoStructureFreezeIssue`, `whenParameterMappingDiffersThenNoStructureFreezeIssue`).
 
@@ -427,7 +439,7 @@ Add unit test class `UpdateDataProductOdmBlueprintManifestOutboundPortTest` for 
 2. Performance constraints: sequential per-target loop; no new parallelism. Temp clone directories always cleaned after each target callback.
 3. Security constraints: Git provider bound from parent blueprint credentials/headers as today; do not log tokens. PR title/body contain blueprint name/version only.
 4. Integration constraints: update does **not** read/write the registry. Clients may still assemble `targetRepositories` from keyed additional repos. Instantiate contracts unchanged. UI out of scope. Nested composition / polyrepo modules out of scope. First apply of a new remote is instantiate only.
-5. Business rule constraints: parent-only lineage on `instantiation.root.repository`. Modules must be monorepo no composition. Child `composition[].targets` win for placement. Parent parameter bag is the request contract. Version adjacency/semver order is **not** checked beyond existence and current ≠ next.
+5. Business rule constraints: parent-only lineage on `instantiation.root.repository`. Modules must be monorepo no composition and must not set `descriptorTemplatePath`. Child `composition[].targets` win for placement. Module `readmePath` / `manifestRootPath` relocate to `.odm/<module alias>/` on the receiving target. Parent parameter bag is the request contract. Version adjacency/semver order is **not** checked beyond existence and current ≠ next.
 6. Exception handling constraints: validation messages include hints and must not dump stack traces or credentials. Collect-all only for the validation gate; Git fail-fast after that.
 7. Technical constraints: no shared validator class with publish/instantiate. No `monorepoNoCompositionRenderAndCopy` on the update path. No `gitPort.init` as a business step. No key suffix on checkpoint tags. No default-branch fallback when the current checkpoint is missing. Same physical URL mapped to two keys remains unsupported.
 8. Data constraints: next `parameterMapping` entries are objects with exactly one of `$param` or `value`. Fingerprint comparison uses normalized paths and composition compared **by alias**. Parent parameter keys may grow/shrink; unresolved `$param` is 400.

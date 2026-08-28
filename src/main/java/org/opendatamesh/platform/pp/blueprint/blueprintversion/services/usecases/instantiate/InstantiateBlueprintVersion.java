@@ -74,6 +74,7 @@ class InstantiateBlueprintVersion implements UseCase {
                         parentBlueprintVersion,
                         parentParameters,
                         modulesParameters,
+                        modulesByAlias,
                         rootTargetRepositoryKey,
                         sourcePaths,
                         targetRepository,
@@ -119,6 +120,7 @@ class InstantiateBlueprintVersion implements UseCase {
             BlueprintVersion parentBlueprintVersion,
             Map<String, JsonNode> parentParameters,
             Map<String, Map<String, JsonNode>> modulesParameters,
+            Map<String, BlueprintVersion> modulesByAlias,
             String rootTargetRepositoryKey,
             Map<String, Path> sourcePaths,
             TargetRepositoryDto targetRepository,
@@ -137,6 +139,7 @@ class InstantiateBlueprintVersion implements UseCase {
                 targetPath -> {
                     gitPort.createAndCheckoutOrphanBranch(targetPath, checkpointBranch);
                     renderRoutedSources(targetRepositoryKey, routes, sourcePaths, targetPath, parentParameters, modulesParameters);
+                    relocateModuleReferencedFiles(targetPath, routes, sourcePaths, modulesByAlias);
                     renderDescriptorAndLineageOnRootRepository(parentBlueprintVersion, parentParameters, rootTargetRepositoryKey, targetRepositoryKey, sourcePaths, targetPath);
                     String checkpointTag = commitAndTagCheckpoint(targetPath, checkpointBranch);
                     publishCheckpointOnIntegrationBranch(targetPath, checkpointBranch, integrationBranch, checkpointTag);
@@ -193,6 +196,33 @@ class InstantiateBlueprintVersion implements UseCase {
                     ? parentParameters
                     : modulesParameters.getOrDefault(route.sourceId(), Map.of());
             templatingPort.applyRoute(sourceRoot, route.sourcePath(), targetPath, route.destinationPath(), params);
+        }
+    }
+
+    private void relocateModuleReferencedFiles(
+            Path targetPath,
+            List<InstantiationRoute> routes,
+            Map<String, Path> sourcePaths,
+            Map<String, BlueprintVersion> modulesByAlias) {
+        Set<String> relocatedAliases = new LinkedHashSet<>();
+        for (InstantiationRoute route : routes) {
+            if (route.fromParent() || !relocatedAliases.add(route.sourceId())) {
+                continue;
+            }
+            BlueprintVersion moduleVersion = modulesByAlias.get(route.sourceId());
+            if (moduleVersion == null) {
+                continue;
+            }
+            List<String> destinationPaths = routes.stream()
+                    .filter(candidate -> route.sourceId().equals(candidate.sourceId()))
+                    .map(InstantiationRoute::destinationPath)
+                    .toList();
+            templatingPort.relocateModuleReferencedFiles(
+                    targetPath,
+                    route.sourceId(),
+                    moduleVersion,
+                    sourcePaths.get(route.sourceId()),
+                    destinationPaths);
         }
     }
 
@@ -282,8 +312,22 @@ class InstantiateBlueprintVersion implements UseCase {
                                 .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
                         "Composition modules must be monorepo with no composition (one repository key, empty composition)."));
             }
+            if (hasDescriptorTemplatePath(moduleBlueprintVersion)) {
+                validationIssues.add(new InstantiationValidationIssue(
+                        composition.fieldPath(),
+                        "Composition module '%s' (%s@%s) declares descriptorTemplatePath"
+                                .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
+                        "Only the parent (root) blueprint may have descriptorTemplatePath; remove it from the module."));
+            }
         }
         throwIfAnyIssues(validationIssues);
+    }
+
+    private boolean hasDescriptorTemplatePath(BlueprintVersion version) {
+        if (version == null || version.getBlueprint() == null || version.getBlueprint().getBlueprintRepo() == null) {
+            return false;
+        }
+        return StringUtils.hasText(version.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath());
     }
 
     private void validateBlueprintManifest(BlueprintVersion parentVersion) {

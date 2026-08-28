@@ -252,6 +252,8 @@ The orchestrator must enforce the following rules when validating a manifest:
 - Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
   rejected; use sibling destinations.
 - `parameterMapping` entries must be `{ $param: key }` or `{ value: actualValue }` objects; bare scalars are invalid.
+- At parent **publish**, `parameterMapping` must include an entry for every parameter declared by the referenced
+  published module that has **no default**. Module parameters that declare a default may be omitted.
 - Composition modules must be published versions that are themselves **monorepo with no composition**.
 - When a `targets` array contains **more than one** entry, each entry must declare an explicit `sourcePath` (the `./`
   default must not be relied upon implicitly, to avoid accidental duplication of the entire source repository).

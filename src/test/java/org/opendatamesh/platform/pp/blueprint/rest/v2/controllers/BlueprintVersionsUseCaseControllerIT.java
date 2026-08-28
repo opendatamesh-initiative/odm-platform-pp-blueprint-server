@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.opendatamesh.platform.pp.blueprint.manifest.ManifestYamlTestSupport;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionCommandRes;
@@ -744,6 +746,109 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     }
 
     /*
+     * Feature: Only the root blueprint may declare descriptorTemplatePath
+     * Scenario: Publishing a parent that references a module with descriptorTemplatePath fails
+     *   Given a published 1→1 module whose BlueprintRepo.descriptorTemplatePath is set
+     *   When the parent listing that module is published
+     *   Then 400 names the module and hints that only the root blueprint may have descriptorTemplatePath
+     */
+    @Test
+    public void whenPublishParentWithModuleDescriptorTemplatePathThenReturn400() throws IOException {
+        StoredModule moduleWithDescriptor = createStoredModule(
+                "module-with-descriptor",
+                "1.0.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE),
+                buildModuleRepoWithDescriptorTemplatePath());
+        StoredModule servingModule = createStoredModule(
+                "valid-serving-module",
+                "1.4.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE));
+
+        ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                "/manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRef(parentManifest, "storage", moduleWithDescriptor);
+        rewriteCompositionRef(parentManifest, "serving", servingModule);
+
+        assertPublishParentWithModuleReturns400(
+                parentManifest, moduleWithDescriptor, "descriptorTemplatePath");
+        deleteStoredModule(moduleWithDescriptor);
+        deleteStoredModule(servingModule);
+    }
+
+    /*
+     * Feature: Module parameterMapping contract
+     * Scenario: Publishing a parent that omits a module parameter with no default fails
+     *   Given a published 1→1 module that declares parameter "environment" with no default
+     *   And that module also declares parameter "retentionDays" with a default
+     *   And the parent composition.parameterMapping maps "retentionDays" but not "environment"
+     *   When the parent listing that module is published
+     *   Then 400 names the missing child key "environment" and hints to add a parameterMapping entry or a module default
+     *   And the message does not require a mapping for "retentionDays"
+     */
+    @Test
+    public void whenPublishParentOmittingModuleParameterWithoutDefaultThenReturn400() throws IOException {
+        StoredModule module = createStoredModule(
+                "module-with-required-param",
+                "1.0.0",
+                ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE));
+
+        ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                MONOREPO_MANIFEST_RESOURCE);
+        ObjectNode root = (ObjectNode) parentManifest.at("/instantiation/root");
+        root.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                .put("sourcePath", "./")
+                .put("repository", "main")
+                .put("path", "core/")));
+        ObjectNode compositionEntry = OBJECT_MAPPER.createObjectNode()
+                .put("module", "storage")
+                .put("blueprintName", module.blueprintName())
+                .put("blueprintVersion", module.versionNumber());
+        compositionEntry.set("parameterMapping", OBJECT_MAPPER.createObjectNode()
+                .set("retentionDays", OBJECT_MAPPER.createObjectNode().put("value", 90)));
+        compositionEntry.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                .put("sourcePath", "./")
+                .put("repository", "main")
+                .put("path", "data-plane/storage")));
+        parentManifest.set("composition", OBJECT_MAPPER.createArrayNode().add(compositionEntry));
+
+        String prefix = "parentMissingModuleParam-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        BlueprintRes parentBlueprint = new BlueprintRes();
+        parentBlueprint.setName(prefix + "-bp");
+        parentBlueprint.setDisplayName(prefix + "-display");
+        parentBlueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(parentBlueprint),
+                BlueprintRes.class);
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    parentManifest);
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("parameterMapping.environment");
+            assertThat(response.getBody()).contains("environment");
+            assertThat(response.getBody()).containsIgnoringCase("hint");
+            assertThat(response.getBody()).containsIgnoringCase("default");
+            assertThat(response.getBody()).doesNotContain("parameterMapping.retentionDays");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            deleteStoredModule(module);
+        }
+    }
+
+    /*
      * Feature: Structural validation at publish and instantiate
      * Scenario: Multiple structural problems are all reported
      *   Given a manifest with unused key AND nested destinations AND an invalid parameterMapping entry
@@ -897,6 +1002,15 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
 
     private StoredModule createStoredModule(String blueprintName, String version, JsonNode manifestContent)
             throws IOException {
+        return createStoredModule(blueprintName, version, manifestContent, null);
+    }
+
+    private StoredModule createStoredModule(
+            String blueprintName,
+            String version,
+            JsonNode manifestContent,
+            BlueprintRes.BlueprintRepoRes blueprintRepo)
+            throws IOException {
         String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
         String uniqueName = blueprintName + "-" + suffix;
         ObjectNode content = (ObjectNode) manifestContent.deepCopy();
@@ -907,6 +1021,7 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setName(uniqueName);
         blueprint.setDisplayName(uniqueName + "-display");
         blueprint.setDescription(uniqueName + "-description");
+        blueprint.setBlueprintRepo(blueprintRepo);
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
@@ -948,6 +1063,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         if (module != null && module.blueprintUuid() != null) {
             rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + module.blueprintUuid()));
         }
+    }
+
+    private BlueprintRes.BlueprintRepoRes buildModuleRepoWithDescriptorTemplatePath() {
+        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprintRepo.setExternalIdentifier("module-blueprint-repository");
+        blueprintRepo.setName("module-blueprint-repository");
+        blueprintRepo.setDescription("module");
+        blueprintRepo.setManifestRootPath("/manifest.yaml");
+        blueprintRepo.setDescriptorTemplatePath("templates/descriptor.json.vm");
+        blueprintRepo.setReadmePath("/README.md");
+        blueprintRepo.setRemoteUrlHttp("https://github.com/org/module-blueprint-repository.git");
+        blueprintRepo.setRemoteUrlSsh("git@github.com:org/module-blueprint-repository.git");
+        blueprintRepo.setDefaultBranch("main");
+        blueprintRepo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        blueprintRepo.setProviderBaseUrl("https://github.com");
+        blueprintRepo.setOwnerId("org");
+        blueprintRepo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        return blueprintRepo;
     }
 
     private record StoredModule(String blueprintUuid, String blueprintName, String versionNumber) {

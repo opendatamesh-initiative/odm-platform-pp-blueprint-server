@@ -11,8 +11,10 @@ import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 class PublishBlueprintVersion implements UseCase {
 
@@ -93,6 +95,17 @@ class PublishBlueprintVersion implements UseCase {
                         "Composition modules must be monorepo with no composition "
                                 + "(one repository key, empty composition)."));
             }
+            if (hasDescriptorTemplatePath(moduleVersion)) {
+                issues.add(formatModuleIssue(
+                        composition,
+                        "Composition module '%s' (%s@%s) declares descriptorTemplatePath"
+                                .formatted(
+                                        composition.moduleAlias(),
+                                        composition.blueprintName(),
+                                        composition.blueprintVersion()),
+                        "Only the parent (root) blueprint may have descriptorTemplatePath; remove it from the module."));
+            }
+            collectMissingModuleParameterMappings(parentVersion, composition, moduleVersion, issues);
         }
 
         if (!issues.isEmpty()) {
@@ -101,11 +114,47 @@ class PublishBlueprintVersion implements UseCase {
         }
     }
 
+    private void collectMissingModuleParameterMappings(
+            BlueprintVersion parentVersion,
+            PublishCompositionIdentity composition,
+            BlueprintVersion moduleVersion,
+            List<String> issues
+    ) {
+        Set<String> mappedKeys = new HashSet<>(manifestOutboundPort.listMappedChildParameterKeys(
+                parentVersion.getContent(), composition.fieldPath()));
+        for (String childKey : manifestOutboundPort.listModuleParameterKeysWithoutDefault(moduleVersion.getContent())) {
+            if (mappedKeys.contains(childKey)) {
+                continue;
+            }
+            issues.add(formatModuleIssue(
+                    composition.fieldPath() + ".parameterMapping." + childKey,
+                    "Composition module '%s' (%s@%s) is missing a mapping for parameter '%s' that has no default"
+                            .formatted(
+                                    composition.moduleAlias(),
+                                    composition.blueprintName(),
+                                    composition.blueprintVersion(),
+                                    childKey),
+                    "Add a parameterMapping entry for this child key ({ $param: parentKey } or { value: actualValue }), "
+                            + "or declare a default on the module parameter."));
+        }
+    }
+
     private String formatModuleIssue(
             PublishCompositionIdentity composition,
             String problem,
             String hint
     ) {
-        return "%s: %s. Hint: %s".formatted(composition.fieldPath(), problem, hint);
+        return formatModuleIssue(composition.fieldPath(), problem, hint);
+    }
+
+    private String formatModuleIssue(String fieldPath, String problem, String hint) {
+        return "%s: %s. Hint: %s".formatted(fieldPath, problem, hint);
+    }
+
+    private boolean hasDescriptorTemplatePath(BlueprintVersion version) {
+        if (version == null || version.getBlueprint() == null || version.getBlueprint().getBlueprintRepo() == null) {
+            return false;
+        }
+        return StringUtils.hasText(version.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath());
     }
 }

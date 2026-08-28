@@ -8,6 +8,10 @@ Create a single instantiate pipeline that routes files by `instantiation.root.ta
 
 Apply the same structural manifest rules at **publication** and **instantiation** (separate implementations, shared rules), report **every** validation problem with a **fix hint**, and reject missing or undeclared `root.repository`, empty `root.targets`, unused keys, overlapping destinations, nested path-prefix destinations on the same key, and composition modules that are not themselves monorepo with no composition.
 
+At parent **publish**, reject a composition entry whose `parameterMapping` omits any parameter declared by the referenced published module that has **no default**. Module parameters that declare a default may be left unmapped.
+
+When rendering a composition module, relocate that module’s `BlueprintRepo` file pointers (`readmePath`, `manifestRootPath`) under `.odm/<composition module alias>` on the target that received the module. Only the parent (root) blueprint may set `descriptorTemplatePath`; publishing a parent that references a module with a valorized `descriptorTemplatePath` is an error (same check at instantiate).
+
 Do not implement UI or blueprint **update**. Instantiate must not write the registry.
 
 ## Entities
@@ -177,6 +181,9 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
    - Every declared key must appear on at least one route (root or composition).
    - Exact duplicate `(repository, normalized path)` and path-prefix nesting on the **same** key → 400.
    - Composition modules must be registered published 1→1 versions; check at parent **publish** (lookup) and parent **instantiate**. Both gates run this check **in their use case** (module identities and child topology come from their own manifest port; the version lookup comes from their own persistence port); neither gate delegates the whole rule to a manifest adapter method.
+   - At parent **publish**, after each module version is loaded, the mapping must cover every child parameter that has **no default**. Unmapped child parameters that declare a default are allowed. Collect missing keys with topology / `descriptorTemplatePath` issues (do not fail-fast). The structural visitor still only checks mapping **shape**; completeness vs the child parameter list is use-case policy over port-returned key lists.
+   - Only the parent (root) blueprint may have `BlueprintRepo.descriptorTemplatePath`. When looking up each composition module at **publish** and **instantiate**, a non-blank module `descriptorTemplatePath` is a collected 400 with a hint to remove it from the module. Modules remain templates; they do not own a data-product descriptor.
+   - After applying a module’s `composition[].targets` routes into a target, relocate that module’s referenced files (`readmePath`, `manifestRootPath` on the module `BlueprintRepo`) from the composition destination (or copy from the module source if they were not in the routed subtree) to `.odm/<module alias>/` on that target. Do **not** put module files under `.odm/blueprint/` (parent lineage only). Do **not** relocate `descriptorTemplatePath` (forbidden on modules).
    - Request `targetRepositories` must be a complete, unique map of every declared key (`targetId` = key). Incomplete, duplicate, or unknown `targetId` → 400 before Git.
    - Structural rules are the same at both gates; **do not** extract a shared validator class. Instantiate also validates parameters and the target map. Collect **all** problems in that gate; each entry names field/path when possible and includes a short how-to-fix hint.
    - Descriptor placement is **platform-owned**, not manifest-routed: when `descriptorTemplatePath` is set, instantiate renders it onto the root target before lineage enrichment. Missing template file in the parent source after render → `InternalException` at instantiate (not a publish-time structural 400). When `descriptorTemplatePath` is blank, skip implicit descriptor copy and lineage enrichment (info log, unchanged).
@@ -224,13 +231,13 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
        - Locate published parent via persistency (`findByBlueprintNameAndVersion`); missing → `NotFoundException`.
        - `manifestPort.collectValidationIssues(spec, specVersion, content, parameters, targetRepositories)` — **stop** if any; throw `BadRequestException` listing every `InstantiationValidationIssue.format()` line (prefix: `Blueprint instantiation validation failed:`).
        - Enrich parent parameters via manifest port (`enrichRequestParametersWithDefaultsIfNeeded`).
-       - Locate composition modules via persistency (`findModuleBlueprintVersion`); collect not-found and non-1→1 module issues; stop if any.
+       - Locate composition modules via persistency (`findModuleBlueprintVersion`); collect not-found, non-1→1, and module-`descriptorTemplatePath` issues; stop if any.
        - `manifestPort.collectModuleParameterResolutionIssues(content, parentResolvedParameters)` — stop if any `$param` cannot be resolved after request values and defaults.
        - `manifestPort.resolveModuleParameters(content, parentResolvedParameters)` — build a child-local map per alias from `{ $param }` / `{ value }`; do not leak unmapped parent keys.
        - Derive routes grouped by target key; designated root key from `instantiation.root.repository`.
        - Filter `retrieveAllSourceRepositories` to sources referenced by routes (parent id `__parent__`, module alias ids).
        - `gitPort.openSources(parentBlueprint, sources, sourcePaths -> { for each target key with routes: instantiateTargetRepository(...) })`.
-       - Inside each target: `gitPort.openTarget` at integration branch → orphan branch → `applyRoute` for each route → if root and `descriptorTemplatePath` set, `renderDescriptorToRoot` then `recordParentLineage` → commit / checkpoint tag / merge / push branch + tag.
+       - Inside each target: `gitPort.openTarget` at integration branch → orphan branch → `applyRoute` for each route → relocate each module’s `BlueprintRepo` file pointers under `.odm/<module alias>` on this target → if root and `descriptorTemplatePath` set, `renderDescriptorToRoot` then `recordParentLineage` → commit / checkpoint tag / merge / push branch + tag.
        - `presenter.presentResults(new InstantiateBlueprintVersionResult())`.
        - Do **not** call `gitPort.init` as a business step; do **not** switch on scenario for four Git implementations; do **not** write the registry.
 3. Constraints: Package-private class; ports only; existing `BlueprintGitNamingConventions` for orphan branch and checkpoint tag. Do **not** call `ManifestParserFactory` or operate on `Manifest` / `ManifestComposition` / `ManifestTarget` from this class. Route flattening, root-key designation, parent parameter merge, composition listing, child 1→1 check, and `parameterMapping` resolution live as **private methods on the instantiate manifest outbound port impl** — do not extract them into new helper/utility types.
@@ -274,12 +281,13 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
 
 ### Update Outbound Port - InstantiateBlueprintVersionTemplatingOutboundPort
 
-1. Responsibility: Apply one route into a target workspace; render the data-product descriptor onto the root target when configured; record parent lineage on the root target.
+1. Responsibility: Apply one route into a target workspace; relocate module `BlueprintRepo` file pointers under `.odm/<module alias>`; render the data-product descriptor onto the root target when configured; record parent lineage on the root target.
 2. Methods:
    - `applyRoute(sourceRoot, sourcePath, targetRoot, destinationPath, parameters): void` — Velocity-render the source subtree and copy into the destination path; skip `.git`; do not copy lineage sidecar here.
+   - `relocateModuleReferencedFiles(targetRoot, moduleAlias, moduleVersion, moduleSourceRoot, destinationPaths): void` — move that module’s `readmePath` and `manifestRootPath` (when non-blank) under `.odm/<moduleAlias>/` on `targetRoot`. Prefer files already rendered at the composition destinations; otherwise copy from the module source. Do not relocate `descriptorTemplatePath`.
    - `renderDescriptorToRoot(parentSourceRoot, descriptorTemplatePath, rootTarget, parameters): void` — when `descriptorTemplatePath` is non-blank, Velocity-render that template from the parent source into `rootTarget` at the rendered relative path (strip `.vm`, normalize slashes). Fail with `InternalException` if the rendered file is missing. Skip when path is blank.
    - `recordParentLineage(rootTarget, parentVersion, parentResolvedParameters): void` — descriptor enrichment + parent manifest snapshot / README relocate on the root tree. Descriptor path resolution uses fixed `./` → `./` mapping (same as `BlueprintDataProductDescriptorService` defaults); do **not** require a covering `root.targets` route.
-3. Remove use-case calls to `monorepoNoCompositionRenderAndCopy`. `BlueprintRenderService.renderAndCopySubtree` / `renderDescriptorTemplate` are used by the templating port impl.
+3. Remove use-case calls to `monorepoNoCompositionRenderAndCopy`. `BlueprintRenderService.renderAndCopySubtree` / `renderDescriptorTemplate` / `relocateModuleReferencedFiles` are used by the templating port impl.
 
 ### Update Shared Service - BlueprintRenderService
 
@@ -287,6 +295,7 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
 2. Methods:
    - `renderAndCopySubtree(sourceRoot, sourcePath, targetRoot, destinationPath, parameters)`.
    - `renderDescriptorTemplate(sourceRoot, descriptorTemplatePath, targetRoot, parameters)` for implicit root descriptor placement.
+   - `relocateModuleReferencedFiles(targetRoot, moduleAlias, moduleVersion, moduleSourceRoot, destinationPaths)` — move module `readmePath` / `manifestRootPath` under `.odm/<moduleAlias>/`.
    - Relocate parent README/manifest only when recording lineage on the root target, not on every subtree copy.
 3. Constraints: Stay a Spring `@Service` under `…services.usecases`; use cases never inject it directly.
 
@@ -298,6 +307,8 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
    - Ask the manifest port for `List<PublishCompositionIdentity>` from the manifest content just validated. Empty list → skip the rest.
    - For each identity, ask the persistence port for the published module version by blueprint name + version. Not found → collect an issue on that identity’s `fieldPath` with the hint “Publish the module version first.”
    - For each module actually found, ask the manifest port whether that stored child content is monorepo with no composition. Negative → collect an issue on the same `fieldPath` naming the module alias and `name@version`, with the hint that composition modules must be monorepo with no composition (one repository key, empty composition).
+   - For each module actually found, if that version’s `BlueprintRepo.descriptorTemplatePath` is non-blank → collect an issue on the same `fieldPath` naming the module, with the hint that only the parent (root) blueprint may have `descriptorTemplatePath`; remove it from the module.
+   - For each module actually found, ask the manifest port for the child parameter keys mapped by this composition entry and for the module parameter keys that have no default. For every no-default module key absent from the mapping, collect an issue on `fieldPath.parameterMapping.<missingKey>` naming the module and the child key, with the hint to add a `{ $param }` or `{ value }` entry or to declare a default on the module parameter. Do not require mappings for module parameters that have a default. Do not reject extra mapping keys the module does not declare.
    - Do not fail fast: collect every module problem across all identities, then throw a single `BadRequestException` whose message enumerates each `fieldPath: problem. Hint: hint`, matching the existing publish message prefix so current publish ITs keep their assertions.
    - Constraints: no `Manifest*` / `ManifestParserFactory` / `InstantiationScenarioResolver` import on this class; no new `*Validator` / `*Helper` type for this loop — private methods on the use case, mirroring `retrieveModulesBlueprintVersions` / `validateModulesBlueprintVersions` on `InstantiateBlueprintVersion`. Publish keeps its own record and private methods; do **not** import the instantiate package.
 3. Logic additions to the visitor (accumulate via existing `context.addError`; extend messages with hints):
@@ -318,6 +329,8 @@ Existing types (`Manifest*`, `TargetRepositoryDto`, `SourceRepositoryDto`, `Inst
    - Remove `validateCompositionModules(content)` and the `BlueprintService` / `BlueprintVersionCrudService` collaborators it needed; drop them from `PublishBlueprintVersionFactory` wiring for this port unless another method still requires them.
    - Add: list composition identities from parent content, returning `List<PublishCompositionIdentity>` (module alias, blueprint name, blueprint version, field path such as `composition[i]`). Entries with blank name or version are skipped here — the structural visitor already reports missing identity fields, so this method never duplicates that error.
    - Add: given a stored child content, report whether it is monorepo with no composition (boolean). `InstantiationScenarioResolver` may be called **only** from inside this adapter, never from the use case. Unparseable child content surfaces as `BadRequestException` from the adapter, translated by the use case into a collected issue on that module’s field path.
+   - Add: given parent content and a composition `fieldPath`, list the child parameter keys declared in that entry’s `parameterMapping` (empty list when the mapping is absent or empty).
+   - Add: given stored child content, list the module parameter keys that have no default (skip blank keys; treat a JSON null default as no default).
    - Keep `autofillManifest`, `validateManifest`, `extractVersionNumber`, `extractSpecNumber`, `extractSpecVersion` unchanged.
 3. Constraints: Plain class, no Spring stereotype; methods are intent-revealing and return domain values (identities, booleans, strings), never `Manifest` / `ManifestComposition`.
 
@@ -580,6 +593,45 @@ Feature: Composition modules must be monorepo without composition
 ```
 
 ```gherkin
+Feature: Module referenced files land under .odm/<module>
+  As a platform
+  I want each composition module's BlueprintRepo file pointers relocated under .odm/<module alias>
+  So that module readme and manifest do not mix with product files at the composition destination
+
+  Scenario: Instantiating a composed parent moves module pointer files under .odm/<module>
+    Given a published 1→1 module "storage" whose BlueprintRepo points at README.md and manifest.yaml
+    And a parent that routes that module to data-plane/storage
+    When the client instantiates
+    Then README.md and the manifest file appear under .odm/storage/ on the target
+    And those files are no longer at data-plane/storage/
+    And product files remain under data-plane/storage/
+
+  Scenario: Polyrepo composition places each module sidecar on the target that received that module
+    Given modules "ingest" and "consume" routed to different repository keys
+    When instantiate succeeds
+    Then pipeline-repo contains .odm/ingest/ with ingest pointer files
+    And api-repo contains .odm/consume/ with consume pointer files
+    And neither module sidecar is written under .odm/blueprint/
+```
+
+```gherkin
+Feature: Only the root blueprint may declare descriptorTemplatePath
+  As a platform
+  I want composition modules to be infrastructure templates without a data-product descriptor
+  So that a product has exactly one descriptor owned by the parent
+
+  Scenario: Publishing a parent that references a module with descriptorTemplatePath fails
+    Given a published 1→1 module whose BlueprintRepo.descriptorTemplatePath is set
+    When the parent listing that module is published
+    Then 400 names the module and hints that only the root blueprint may have descriptorTemplatePath
+
+  Scenario: Instantiating a parent whose module has descriptorTemplatePath fails before Git
+    Given the parent was stored with a module that has descriptorTemplatePath
+    When instantiate runs
+    Then 400 lists the descriptorTemplatePath problem with a hint and does not clone targets
+```
+
+```gherkin
 Feature: Module parameterMapping contract
   As an author
   I want every mapping entry to be { $param: key } or { value: actualValue }
@@ -642,6 +694,14 @@ Feature: Module parameterMapping contract
     Given { extra: 1 }
     When publish or instantiate validates
     Then 400 hints to use { $param: key } or { value: actualValue }
+
+  Scenario: Publishing a parent that omits a module parameter with no default fails
+    Given a published 1→1 module that declares parameter "environment" with no default
+    And that module also declares parameter "retentionDays" with a default
+    And the parent composition.parameterMapping maps "retentionDays" but not "environment"
+    When the parent listing that module is published
+    Then 400 names the missing child key "environment" and hints to add a parameterMapping entry or a module default
+    And the message does not require a mapping for "retentionDays"
 ```
 
 ```gherkin
@@ -728,7 +788,10 @@ Implement each scenario as an IT method (JUnit 5, extend `BlueprintApplicationIT
 | Structural validation (instantiate) | `BlueprintInstantiationControllerIT` | `whenInstantiateEmptyRootTargetsThenReturn400WithHint`; `whenInstantiateMissingRootRepositoryThenReturn400WithHint`; `whenInstantiateUnknownRootRepositoryThenReturn400WithHint`; `whenInstantiateUnusedRepositoryKeyThenReturn400WithHint`; `whenInstantiateNestedDestinationsThenReturn400WithHint`; `whenInstantiateBareParameterMappingThenReturn400WithHint`; `whenInstantiateExactOverlapThenReturn400WithHint`; `whenInstantiateMultipleStructuralErrorsThenAllListedWithHints` |
 | Structural validation (publish) | `BlueprintVersionsUseCaseControllerIT` | `whenPublishEmptyRootTargetsThenReturn400WithHint`; `whenPublishMissingRootRepositoryThenReturn400WithHint`; `whenPublishUnknownRootRepositoryThenReturn400WithHint`; `whenPublishUnusedRepositoryKeyThenReturn400WithHint`; `whenPublishNestedDestinationsThenReturn400WithHint`; `whenPublishBareParameterMappingThenReturn400WithHint`; `whenPublishExactOverlapThenReturn400WithHint`; `whenPublishMultipleStructuralErrorsThenAllListedWithHints` |
 | Module topology (publish + instantiate) | `BlueprintVersionsUseCaseControllerIT` / `BlueprintInstantiationControllerIT` | `whenPublishParentWithPolyrepoModuleThenReturn400`; `whenPublishParentWithComposedModuleThenReturn400`; `whenPublishParentWithMissingModuleThenReturn404`; `whenInstantiateModuleNotMonorepoNoCompositionThenReturn400`; `whenInstantiateMissingModuleThenReturn404Or400` |
+| Module referenced files under `.odm/<module>` | `BlueprintInstantiationControllerIT` | `whenInstantiateWithCompositionThenModuleReferencedFilesLandUnderDotOdmModule`; `whenInstantiatePolyrepoWithCompositionThenRouteAcrossTargets` |
+| Only root may have `descriptorTemplatePath` | `BlueprintVersionsUseCaseControllerIT` / `BlueprintInstantiationControllerIT` | `whenPublishParentWithModuleDescriptorTemplatePathThenReturn400`; `whenInstantiateModuleWithDescriptorTemplatePathThenReturn400` |
 | `$param` resolution (instantiate) | `BlueprintInstantiationControllerIT` | `whenInstantiateParameterMappingUnknownParentKeyThenReturn400`; `whenInstantiateParameterMappingMissingParentValueThenReturn400` |
+| Publishing a parent that omits a module parameter with no default | `BlueprintVersionsUseCaseControllerIT` | `whenPublishParentOmittingModuleParameterWithoutDefaultThenReturn400` |
 | Duplicate / unknown `targetId` | `BlueprintInstantiationControllerIT` | `whenDuplicateTargetIdThenReturn400`; `whenUnknownTargetIdThenReturn400` |
 | Mixed Git provider | `BlueprintInstantiationControllerIT` | `whenModuleGitProviderDiffersThenReturn400` |
 | Git fail-fast (polyrepo) | `BlueprintInstantiationControllerIT` | `whenFirstTargetPushFailsThenLaterTargetsNotPushed` |
@@ -753,7 +816,7 @@ Fixtures: add module source repos under `src/test/resources/instantiate/`; rewri
    - Do not add a parallel `GlobalExceptionHandler`; `ResponseExceptionHandler` (`@ControllerAdvice`) remains the HTTP mapper to `ErrorRes` (`status`, `error`, `message`, `path`).
    - Validation: collect all issues then throw one `BadRequestException` whose `message` enumerates every problem **and** hint. Do not expose stack traces or temp paths in client messages.
    - Git failures remain mapped by existing Git exception handlers; fail-fast after first mutation failure.
-4. Data Validation: Publish visitor and instantiate validation port implement the **same structural rules** independently (`spdd/norms/USE_CASE_IMPLEMENTATION.md`: use cases do not share a validator class across packages). Rules that need a persistence lookup (composition module exists and is 1→1) are not visitor/adapter rules at all: each use case runs them itself over its own ports, collecting all problems before throwing. Instantiate additionally validates parameters and `targetRepositories`. Commands stay domain records (`TargetRepositoryDto`, `SourceRepositoryDto`), never `*Res`.
+4. Data Validation: Publish visitor and instantiate validation port implement the **same structural rules** independently (`spdd/norms/USE_CASE_IMPLEMENTATION.md`: use cases do not share a validator class across packages). Rules that need a persistence lookup (composition module exists and is 1→1; `parameterMapping` covers every module parameter without a default) are not visitor/adapter rules at all: each use case runs them itself over its own ports, collecting all problems before throwing. Instantiate additionally validates parameters and `targetRepositories`. Commands stay domain records (`TargetRepositoryDto`, `SourceRepositoryDto`), never `*Res`.
 5. Logging: Info for expected 4xx via existing handler; error for 5xx. Scenario may be logged at info for supportability.
 6. Documentation Standards: Update manifest README examples for required `instantiation.root.repository` (parent `root` only; declared key), `{ $param: key }`, and `{ value: actualValue }`. Javadoc on new port methods states intent (business language). REST resources keep `@Schema` where lists/keys are easy to misuse.
 7. Architecture (`spdd/norms/USE_CASE_IMPLEMENTATION.md`): HTTP → `*UseCaseController` → `*UseCasesService` → `*Factory` → package-private `UseCase` → outbound ports → plain `*OutboundPortImpl`. Presenters use domain types. REST `*CommandRes` / `*ResponseRes` stay outside `…services.usecases.*`. Port method names remain intent-revealing (`openSources`, `openTarget`, `applyRoute`, `recordParentLineage`, `collectValidationIssues`, plus derive-route / designate-root verbs) rather than `clone` / `evaluate Velocity` / `deserialize Manifest`.
@@ -767,7 +830,7 @@ Fixtures: add module source repos under `src/test/resources/instantiate/`; rewri
 2. Performance Constraints: Do not hold all remotes open unbounded; clone per target the sources that target needs (or clone unique sources once per target loop and always delete temp dirs). No requirement for distributed transactions across pushes.
 3. Security Constraints: Git credentials remain HTTP headers into the git adapter only. Error messages must not dump tokens, private keys, or full server filesystem paths. Extra properties on `{ $param }` / `{ value }` objects are ignored, not executed.
 4. Integration Constraints: Child `BlueprintRepo` provider type and base URL must match the parent. Mixed GitLab/GitHub in one run is out of scope. Targets must already exist; the service does not provision repositories. Registry JSON keeps `dataProductRepo` semantics so existing clients keep working; additional list may be empty.
-5. Business Rule Constraints: Lineage = parent version + parent parameters on `instantiation.root.repository` only. Other keys map to additional registry repos, never the primary `dataProductRepo` pointer. `parameterMapping` entries are `{ $param: key }` (dynamic parent reference) or `{ value: actualValue }` (fixed literal; any JSON type). Bare scalars are invalid. Root designation is **explicit** (`root.repository`); do not infer from first `root.targets[]` or a reserved key. When `descriptorTemplatePath` is set, the platform **always** renders the descriptor onto the designated root target at the path derived from that template path; authors do not declare a descriptor route in `root.targets`. Every declared key has at least one route, therefore every key gets a checkpoint.
+5. Business Rule Constraints: Lineage = parent version + parent parameters on `instantiation.root.repository` only. Other keys map to additional registry repos, never the primary `dataProductRepo` pointer. `parameterMapping` entries are `{ $param: key }` (dynamic parent reference) or `{ value: actualValue }` (fixed literal; any JSON type). Bare scalars are invalid. At parent **publish**, every module parameter **without a default** must appear in that composition’s `parameterMapping`; module parameters with a default may be omitted. Root designation is **explicit** (`root.repository`); do not infer from first `root.targets[]` or a reserved key. When `descriptorTemplatePath` is set, the platform **always** renders the descriptor onto the designated root target at the path derived from that template path; authors do not declare a descriptor route in `root.targets`. **Only the parent** may have `descriptorTemplatePath`; a composition module with a non-blank path is 400 at publish and instantiate. Module `readmePath` / `manifestRootPath` files are relocated to `.odm/<module alias>/` on the target that received that module, not under `.odm/blueprint/`. Every declared key has at least one route, therefore every key gets a checkpoint.
 6. Exception Handling Constraints: All validation problems for a gate returned together, each with a hint. Business exceptions stay `BlueprintApiException` subclasses handled by `ResponseExceptionHandler`. Git/runtime after a valid request may fail on the first operation; document that earlier targets may already be pushed.
 7. Technical Constraints: No shared validator class between publish and instantiate. No four-way copy of Git policy in the use case. **No Manifest specification types on the instantiate or publish use case** — deserialize and walk `Manifest*` only inside the instantiate (and publish) outbound adapters; the composition-module rule on publish is orchestrated by the use case over port-returned identities and booleans, never by a manifest adapter that queries persistence itself. **No new helper/utility/resolver classes** — keep routing derivation, root designation, and `{ $param }` / `{ value }` resolution as private methods on the instantiate manifest outbound port impl; extend `BlueprintRenderService` / existing port impls instead of extracting new utilities. Do not rename REST `targetRepositories` list contract. Do not put REST types in the use case package. Do not call `gitPort.init` from the use case. Do not implement update merge policy beyond reusing instantiate’s existing per-target checkpoint steps.
 8. Data Constraints: Unique repository keys; unique composition `module` aliases; unique `manifestKey` within a data product’s `additionalDataProductRepos` (enforced in DataProduct core service only—no fixed DB unique constraint); relative `sourcePath`/`path` without `..`; `instantiation.root.repository` required and in the declared key set.

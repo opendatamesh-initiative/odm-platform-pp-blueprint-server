@@ -614,6 +614,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(Files.isDirectory(targetDir.resolve(".odm/blueprint"))).isTrue();
         assertThat(Files.exists(targetDir.resolve(".odm/blueprint/blueprint-manifest.yaml"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/storage/README.md"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/storage/manifest.yaml"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/serving/README.md"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/serving/manifest.yaml"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve("data-plane/storage/README.md"))).isFalse();
+        assertThat(Files.exists(targetDir.resolve("app/serving/README.md"))).isFalse();
         assertThat(Files.isRegularFile(targetDir.resolve("core/templates/descriptor.json"))).isTrue();
         assertThat(Files.isDirectory(targetDir.resolve("data-plane/storage"))).isTrue();
         assertThat(Files.isDirectory(targetDir.resolve("app/serving"))).isTrue();
@@ -636,6 +642,100 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         // N→1: target + parent source + 2 module sources
         verify(mockGitOperation, times(4)).readRepository(any(), any(), any());
 
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage.toContext());
+        deleteCreatedBlueprint(serving.toContext());
+    }
+
+    /*
+     * Feature: Module referenced files land under .odm/<module>
+     * Scenario: Instantiating a composed parent moves module pointer files under .odm/<module>
+     *   Given a published 1→1 module "storage" whose BlueprintRepo points at README.md and manifest.yaml
+     *   And a parent that routes that module to data-plane/storage
+     *   When the client instantiates
+     *   Then README.md and the manifest file appear under .odm/storage/ on the target
+     *   And those files are no longer at data-plane/storage/
+     *   And product files remain under data-plane/storage/
+     */
+    @Test
+    void whenInstantiateWithCompositionThenModuleReferencedFilesLandUnderDotOdmModule(
+            @TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        writeSafeDescriptor(sourceDir);
+
+        ModuleBlueprint storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1");
+        ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
+        ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+
+        stubGitHappyPath(sourceDir, targetDir);
+
+        InstantiateBlueprintVersionCommandRes request = new InstantiateBlueprintVersionCommandRes();
+        request.setBlueprintName(parent.blueprintName);
+        request.setBlueprintVersionNumber(parent.versionNumber);
+        InstantiateBlueprintVersionTargetRepositoryRes target = new InstantiateBlueprintVersionTargetRepositoryRes();
+        target.setTargetId(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY);
+        target.setRepository(buildTargetRepository());
+        request.setTargetRepositories(List.of(target));
+        request.setParameters(Map.of(
+                "projectSlug", OBJECT_MAPPER.valueToTree("acme-lake"),
+                "enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<InstantiateBlueprintVersionResponseRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                InstantiateBlueprintVersionResponseRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(Files.exists(targetDir.resolve(".odm/storage/README.md"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/storage/manifest.yaml"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve("data-plane/storage/README.md"))).isFalse();
+        assertThat(Files.exists(targetDir.resolve("data-plane/storage/manifest.yaml"))).isFalse();
+        assertThat(Files.isDirectory(targetDir.resolve("data-plane/storage"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/blueprint/blueprint-manifest.yaml"))).isTrue();
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage.toContext());
+        deleteCreatedBlueprint(serving.toContext());
+    }
+
+    /*
+     * Feature: Only the root blueprint may declare descriptorTemplatePath
+     * Scenario: Instantiating a parent whose module has descriptorTemplatePath fails before Git
+     *   Given the parent was stored with a module that has descriptorTemplatePath
+     *   When instantiate runs
+     *   Then 400 lists the descriptorTemplatePath problem with a hint and does not clone targets
+     */
+    @Test
+    void whenInstantiateModuleWithDescriptorTemplatePathThenReturn400() throws Exception {
+        ModuleBlueprint storage = createPublishedModule(
+                "odm-blueprint-s3-lake", "3.0.1", manifestMonorepoNoComposition(), buildBlueprintRepo());
+        ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
+        ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        InstantiateBlueprintVersionCommandRes request = buildInstantiateRequest(
+                parent.blueprintName, parent.versionNumber, "acme-lake", null);
+        request.setParameters(Map.of(
+                "projectSlug", OBJECT_MAPPER.valueToTree("acme-lake"),
+                "enablePiiMasking", OBJECT_MAPPER.valueToTree(true)));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(request, jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("declares descriptorTemplatePath");
+        assertThat(response.getBody()).contains("Only the parent (root) blueprint may have descriptorTemplatePath");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
         deleteCreatedBlueprint(parent);
         deleteCreatedBlueprint(storage.toContext());
         deleteCreatedBlueprint(serving.toContext());
@@ -1005,6 +1105,11 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      *   Then pipeline-repo contains parent core and ingest files plus parent lineage
      *   And api-repo contains consume files and no parent lineage sidecar
      *   And each target has its own checkpoint tag and push
+     * Feature: Module referenced files land under .odm/<module>
+     * Scenario: Polyrepo composition places each module sidecar on the target that received that module
+     *   Then pipeline-repo contains .odm/ingest/ with ingest pointer files
+     *   And api-repo contains .odm/consume/ with consume pointer files
+     *   And neither module sidecar is written under .odm/blueprint/
      */
     @Test
     void whenInstantiatePolyrepoWithCompositionThenRouteAcrossTargets(
@@ -1048,8 +1153,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         assertThat(Files.exists(pipelineTarget.resolve("core"))).isTrue();
         assertThat(Files.exists(pipelineTarget.resolve("pipelines/batch/module-ingest-marker.txt"))).isTrue();
         assertThat(Files.exists(pipelineTarget.resolve(".odm/blueprint/blueprint-manifest.yaml"))).isTrue();
+        assertThat(Files.exists(pipelineTarget.resolve(".odm/ingest/README.md"))).isTrue();
+        assertThat(Files.exists(pipelineTarget.resolve(".odm/ingest/manifest.yaml"))).isTrue();
         assertThat(Files.exists(apiTarget.resolve("services/consumer/module-consume-marker.txt"))).isTrue();
         assertThat(Files.exists(apiTarget.resolve(".odm/blueprint"))).isFalse();
+        assertThat(Files.exists(apiTarget.resolve(".odm/consume/README.md"))).isTrue();
+        assertThat(Files.exists(apiTarget.resolve(".odm/consume/manifest.yaml"))).isTrue();
+        assertThat(Files.exists(apiTarget.resolve(".odm/ingest"))).isFalse();
         verify(mockGitOperation, times(2)).pushBranch(any(), anyString());
         verify(mockGitOperation, times(5)).readRepository(any(), any(), any());
 
@@ -1132,7 +1242,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
                         .put("path", "./")));
 
         ModuleBlueprint storage = createPublishedModule(
-                "odm-blueprint-s3-lake", "3.0.1", moduleManifest, buildBlueprintRepo());
+                "odm-blueprint-s3-lake", "3.0.1", moduleManifest, buildModuleBlueprintRepo());
         ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
         ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
         rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
@@ -1309,7 +1419,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateModuleNotMonorepoNoCompositionThenReturn400() throws Exception {
         ModuleBlueprint storage = createPublishedModule(
-                "odm-blueprint-s3-lake", "3.0.1", manifestPolyrepoNoComposition(), buildBlueprintRepo());
+                "odm-blueprint-s3-lake", "3.0.1", manifestPolyrepoNoComposition(), buildModuleBlueprintRepo());
         ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
         ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
         rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
@@ -1387,7 +1497,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenModuleGitProviderDiffersThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
-        BlueprintRes.BlueprintRepoRes gitlabRepo = buildBlueprintRepo();
+        BlueprintRes.BlueprintRepoRes gitlabRepo = buildModuleBlueprintRepo();
         gitlabRepo.setProviderType(BlueprintRepoProviderTypeRes.GITLAB);
         gitlabRepo.setProviderBaseUrl("https://gitlab.com");
         gitlabRepo.setRemoteUrlHttp("https://gitlab.com/org/module-repo.git");
@@ -1752,7 +1862,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     private ModuleBlueprint createPublishedModule(String blueprintName, String version) throws Exception {
-        return createPublishedModule(blueprintName, version, manifestMonorepoNoComposition(), buildBlueprintRepo());
+        return createPublishedModule(blueprintName, version, manifestMonorepoNoComposition(), buildModuleBlueprintRepo());
     }
 
     private ModuleBlueprint createPublishedModule(
@@ -1887,6 +1997,12 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
 
     private BlueprintRes.BlueprintRepoRes buildBlueprintRepo() {
         return buildBlueprintRepo("templates/descriptor.json.vm");
+    }
+
+    private BlueprintRes.BlueprintRepoRes buildModuleBlueprintRepo() {
+        BlueprintRes.BlueprintRepoRes blueprintRepo = buildBlueprintRepo(null);
+        blueprintRepo.setDescriptorTemplatePath(null);
+        return blueprintRepo;
     }
 
     private BlueprintRes.BlueprintRepoRes buildBlueprintRepo(String descriptorTemplatePath) {

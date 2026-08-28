@@ -85,6 +85,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
                         nextVersion,
                         nextParentParameters,
                         modulesParameters,
+                        modulesByAlias,
                         rootTargetRepositoryKey,
                         sourcePaths,
                         targetRepository,
@@ -116,6 +117,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             BlueprintVersion nextVersion,
             Map<String, JsonNode> nextParentParameters,
             Map<String, Map<String, JsonNode>> modulesParameters,
+            Map<String, BlueprintVersion> modulesByAlias,
             String rootTargetRepositoryKey,
             Map<String, Path> sourcePaths,
             UpdateDataProductTargetRepositoryDto targetRepository,
@@ -140,6 +142,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
                     gitPort.createAndCheckoutBranch(targetPath, updateBranchName);
                     gitPort.cleanWorkingTreePreservingGit(targetPath);
                     renderRoutedSources(targetRepositoryKey, routes, sourcePaths, targetPath, nextParentParameters, modulesParameters);
+                    relocateModuleReferencedFiles(targetPath, routes, sourcePaths, modulesByAlias);
                     renderDescriptorAndLineageOnRootRepository(nextVersion, nextParentParameters, rootTargetRepositoryKey, targetRepositoryKey, sourcePaths, targetPath);
 
                     String commitHash = gitPort.commitAll(targetPath, updateBranchName, commitMessage, command.commitAuthorName(), command.commitAuthorEmail());
@@ -208,6 +211,33 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
         }
     }
 
+    private void relocateModuleReferencedFiles(
+            Path targetPath,
+            List<UpdateRoute> routes,
+            Map<String, Path> sourcePaths,
+            Map<String, BlueprintVersion> modulesByAlias) {
+        Set<String> relocatedAliases = new LinkedHashSet<>();
+        for (UpdateRoute route : routes) {
+            if (route.fromParent() || !relocatedAliases.add(route.sourceId())) {
+                continue;
+            }
+            BlueprintVersion moduleVersion = modulesByAlias.get(route.sourceId());
+            if (moduleVersion == null) {
+                continue;
+            }
+            List<String> destinationPaths = routes.stream()
+                    .filter(candidate -> route.sourceId().equals(candidate.sourceId()))
+                    .map(UpdateRoute::destinationPath)
+                    .toList();
+            templatingPort.relocateModuleReferencedFiles(
+                    targetPath,
+                    route.sourceId(),
+                    moduleVersion,
+                    sourcePaths.get(route.sourceId()),
+                    destinationPaths);
+        }
+    }
+
     private void renderDescriptorAndLineageOnRootRepository(
             BlueprintVersion nextVersion,
             Map<String, JsonNode> nextParentParameters,
@@ -270,8 +300,22 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
                                 .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
                         "Composition modules must be monorepo with no composition (one repository key, empty composition)."));
             }
+            if (hasDescriptorTemplatePath(moduleBlueprintVersion)) {
+                validationIssues.add(new UpdateValidationIssue(
+                        composition.fieldPath(),
+                        "Composition module '%s' (%s@%s) declares descriptorTemplatePath"
+                                .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
+                        "Only the parent (root) blueprint may have descriptorTemplatePath; remove it from the module."));
+            }
         }
         collectAndThrowIfAnyIssues(validationIssues);
+    }
+
+    private boolean hasDescriptorTemplatePath(BlueprintVersion version) {
+        if (version == null || version.getBlueprint() == null || version.getBlueprint().getBlueprintRepo() == null) {
+            return false;
+        }
+        return StringUtils.hasText(version.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath());
     }
 
     private void collectAndThrowIfAnyIssues(List<UpdateValidationIssue> issues) {

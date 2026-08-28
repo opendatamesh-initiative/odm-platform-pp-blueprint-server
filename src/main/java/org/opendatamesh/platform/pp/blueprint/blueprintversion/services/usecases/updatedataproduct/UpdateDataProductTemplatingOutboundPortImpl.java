@@ -6,6 +6,7 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintRenderService;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 class UpdateDataProductTemplatingOutboundPortImpl implements UpdateDataProductTemplatingOutboundPort {
@@ -55,5 +56,17 @@ class UpdateDataProductTemplatingOutboundPortImpl implements UpdateDataProductTe
                 parentVersion,
                 parentResolvedParameters);
         blueprintRenderService.relocateParentLineageSidecar(rootTarget, parentVersion);
+    }
+
+    @Override
+    public void relocateModuleReferencedFiles(
+            Path targetRoot,
+            String moduleAlias,
+            BlueprintVersion moduleVersion,
+            Path moduleSourceRoot,
+            List<String> destinationPaths
+    ) {
+        blueprintRenderService.relocateModuleReferencedFiles(
+                targetRoot, moduleAlias, moduleVersion, moduleSourceRoot, destinationPaths);
     }
 }

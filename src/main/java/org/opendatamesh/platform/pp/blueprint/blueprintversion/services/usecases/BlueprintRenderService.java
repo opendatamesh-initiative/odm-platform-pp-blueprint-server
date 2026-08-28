@@ -26,6 +26,7 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -162,6 +163,37 @@ public class BlueprintRenderService {
     }
 
     /**
+     * Moves a composition module's {@code BlueprintRepo} file pointers
+     * ({@code readmePath}, {@code manifestRootPath}) under
+     * {@code .odm/<moduleAlias>} on the target. Prefers files already rendered at
+     * the composition destinations; otherwise copies from the module source.
+     * Does not relocate {@code descriptorTemplatePath}.
+     */
+    public void relocateModuleReferencedFiles(
+            Path targetRoot,
+            String moduleAlias,
+            BlueprintVersion moduleVersion,
+            Path moduleSourceRoot,
+            List<String> destinationPaths) {
+        BlueprintRepo repo = moduleRepo(moduleVersion);
+        if (repo == null || !StringUtils.hasText(moduleAlias)) {
+            return;
+        }
+        try {
+            Path moduleOdmDir = moduleOdmDirectory(targetRoot, moduleAlias);
+            relocatePointerFile(
+                    targetRoot, moduleOdmDir, moduleSourceRoot, destinationPaths, repo.getReadmePath());
+            relocatePointerFile(
+                    targetRoot, moduleOdmDir, moduleSourceRoot, destinationPaths, repo.getManifestRootPath());
+        } catch (IOException e) {
+            throw new InternalException(
+                    "Failed while relocating module '%s' referenced files under '%s': %s"
+                            .formatted(moduleAlias, targetRoot, e.getMessage()),
+                    e);
+        }
+    }
+
+    /**
      * Records parent blueprint lineage on the designated root target: moves the
      * README
      * (when present) and writes a manifest snapshot under {@code .odm/blueprint/}.
@@ -258,6 +290,87 @@ public class BlueprintRenderService {
 
     private Path odmBlueprintDirectory(Path gitRoot) throws IOException {
         return Files.createDirectories(gitRoot.resolve(ODM_BLUEPRINT_DIR));
+    }
+
+    private Path moduleOdmDirectory(Path targetRoot, String moduleAlias) throws IOException {
+        Path odmRoot = targetRoot.resolve(".odm").toAbsolutePath().normalize();
+        Path moduleDir = odmRoot.resolve(moduleAlias).toAbsolutePath().normalize();
+        if (!moduleDir.startsWith(odmRoot)) {
+            throw new InternalException(
+                    "Invalid composition module alias '%s' for .odm sidecar path".formatted(moduleAlias));
+        }
+        return Files.createDirectories(moduleDir);
+    }
+
+    private BlueprintRepo moduleRepo(BlueprintVersion moduleVersion) {
+        if (moduleVersion == null || moduleVersion.getBlueprint() == null) {
+            return null;
+        }
+        return moduleVersion.getBlueprint().getBlueprintRepo();
+    }
+
+    private void relocatePointerFile(
+            Path targetRoot,
+            Path moduleOdmDir,
+            Path moduleSourceRoot,
+            List<String> destinationPaths,
+            String pointerPath) throws IOException {
+        String normalized = normalizeRepoPath(pointerPath);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        Path destinationFile = moduleOdmDir.resolve(fileName(normalized));
+        Path renderedOnTarget = findPointerOnTarget(targetRoot, destinationPaths, normalized);
+        if (renderedOnTarget != null) {
+            Files.move(renderedOnTarget, destinationFile, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+        Path sourceFile = findPointerOnSource(moduleSourceRoot, normalized);
+        if (sourceFile != null) {
+            copyFile(sourceFile, destinationFile);
+        }
+    }
+
+    private Path findPointerOnTarget(Path targetRoot, List<String> destinationPaths, String normalizedPointer) {
+        if (destinationPaths == null) {
+            return null;
+        }
+        for (String destinationPath : destinationPaths) {
+            Path destRoot = resolveSubtree(targetRoot, destinationPath);
+            Path atPointer = destRoot.resolve(normalizedPointer);
+            if (Files.isRegularFile(atPointer)) {
+                return atPointer;
+            }
+            Path stripped = destRoot.resolve(stripVmSuffix(normalizedPointer));
+            if (Files.isRegularFile(stripped)) {
+                return stripped;
+            }
+            Path byFileName = destRoot.resolve(fileName(normalizedPointer));
+            if (Files.isRegularFile(byFileName)) {
+                return byFileName;
+            }
+        }
+        return null;
+    }
+
+    private Path findPointerOnSource(Path moduleSourceRoot, String normalizedPointer) {
+        if (moduleSourceRoot == null) {
+            return null;
+        }
+        Path atPointer = moduleSourceRoot.resolve(normalizedPointer);
+        if (Files.isRegularFile(atPointer)) {
+            return atPointer;
+        }
+        Path stripped = moduleSourceRoot.resolve(stripVmSuffix(normalizedPointer));
+        if (Files.isRegularFile(stripped)) {
+            return stripped;
+        }
+        return null;
+    }
+
+    private String fileName(String normalizedPath) {
+        int slash = normalizedPath.lastIndexOf('/');
+        return slash < 0 ? normalizedPath : normalizedPath.substring(slash + 1);
     }
 
     private Map<String, JsonNode> emptyIfNull(Map<String, JsonNode> parameters) {

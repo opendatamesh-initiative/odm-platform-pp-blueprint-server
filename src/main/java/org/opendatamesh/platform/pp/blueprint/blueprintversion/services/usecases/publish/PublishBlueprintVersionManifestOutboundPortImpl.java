@@ -9,6 +9,7 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestComposition;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParser;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.springframework.util.StringUtils;
@@ -16,6 +17,7 @@ import org.springframework.util.StringUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 class PublishBlueprintVersionManifestOutboundPortImpl implements PublishBlueprintVersionManifestOutboundPort {
 
@@ -79,6 +81,52 @@ class PublishBlueprintVersionManifestOutboundPortImpl implements PublishBlueprin
     }
 
     @Override
+    public List<String> listMappedChildParameterKeys(JsonNode parentContent, String compositionFieldPath) {
+        try {
+            Manifest manifest = manifestParser.deserialize(parentContent);
+            ManifestComposition composition = compositionAtFieldPath(manifest, compositionFieldPath);
+            if (composition == null) {
+                return List.of();
+            }
+            Map<String, JsonNode> parameterMapping = composition.getParameterMapping();
+            if (parameterMapping == null || parameterMapping.isEmpty()) {
+                return List.of();
+            }
+            List<String> keys = new ArrayList<>();
+            for (String key : parameterMapping.keySet()) {
+                if (StringUtils.hasText(key)) {
+                    keys.add(key.trim());
+                }
+            }
+            return keys;
+        } catch (IOException e) {
+            throw new BadRequestException("Invalid manifest content: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public List<String> listModuleParameterKeysWithoutDefault(JsonNode moduleContent) {
+        try {
+            Manifest manifest = manifestParser.deserialize(moduleContent);
+            if (manifest == null || manifest.getParameters() == null || manifest.getParameters().isEmpty()) {
+                return List.of();
+            }
+            List<String> keys = new ArrayList<>();
+            for (ManifestParameter parameter : manifest.getParameters()) {
+                if (parameter == null || !StringUtils.hasText(parameter.getKey())) {
+                    continue;
+                }
+                if (!hasDefault(parameter)) {
+                    keys.add(parameter.getKey().trim());
+                }
+            }
+            return keys;
+        } catch (IOException e) {
+            throw new BadRequestException("Invalid composition module manifest content: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public JsonNode autofillManifest(String manifestSpec, String manifestSpecVersion, JsonNode content, String blueprintName) {
         ManifestAutoFiller manifestAutoFiller = manifestAutoFillerFactory.getManifestAutoFiller(manifestSpec, manifestSpecVersion);
         return manifestAutoFiller.autofillManifest(content, blueprintName);
@@ -121,6 +169,24 @@ class PublishBlueprintVersionManifestOutboundPortImpl implements PublishBlueprin
         } catch (IOException e) {
             throw new BadRequestException("Invalid manifest content: " + e.getMessage(), e);
         }
+    }
+
+    private ManifestComposition compositionAtFieldPath(Manifest manifest, String compositionFieldPath) {
+        if (manifest == null || manifest.getComposition() == null || !StringUtils.hasText(compositionFieldPath)) {
+            return null;
+        }
+        List<ManifestComposition> compositions = manifest.getComposition();
+        for (int i = 0; i < compositions.size(); i++) {
+            if (("composition[" + i + "]").equals(compositionFieldPath)) {
+                return compositions.get(i);
+            }
+        }
+        return null;
+    }
+
+    private boolean hasDefault(ManifestParameter parameter) {
+        JsonNode defaultValue = parameter.getDefaultValue();
+        return defaultValue != null && !defaultValue.isNull();
     }
 
 }

@@ -489,6 +489,9 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         assertThat(Files.isDirectory(targetDir.resolve("data-plane/storage"))).isTrue();
         assertThat(Files.isDirectory(targetDir.resolve("app/serving"))).isTrue();
         assertThat(Files.isDirectory(targetDir.resolve(".odm/blueprint"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/storage/README.md"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve(".odm/serving/README.md"))).isTrue();
+        assertThat(Files.exists(targetDir.resolve("data-plane/storage/README.md"))).isFalse();
         verify(mockGitOperation, times(4)).readRepository(any(), any(), any());
 
         deleteCreatedBlueprint(context.blueprintUuid);
@@ -591,7 +594,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
                 "odm-blueprint-s3-lake",
                 "3.0.1",
                 manifestPolyrepoNoComposition(),
-                buildBlueprintRepo());
+                buildModuleBlueprintRepo());
         ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
         ObjectNode manifest = (ObjectNode) manifestMonorepoWithComposition();
         rewriteCompositionRefs(manifest, storage, serving);
@@ -619,6 +622,45 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     }
 
     /**
+     * Scenario: Composition module with descriptorTemplatePath is rejected
+     * Given a next parent composing a published 1→1 module whose BlueprintRepo.descriptorTemplatePath is set
+     * When update-data-product is called
+     * Then validation fails before Git with a hint that only the root blueprint may have descriptorTemplatePath
+     */
+    @Test
+    void whenCompositionModuleHasDescriptorTemplatePathThenReturn400() throws Exception {
+        ModuleBlueprint storage = createPublishedModule(
+                "odm-blueprint-s3-lake",
+                "3.0.1",
+                manifestMonorepoNoComposition(),
+                buildBlueprintRepo());
+        ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
+        ObjectNode manifest = (ObjectNode) manifestMonorepoWithComposition();
+        rewriteCompositionRefs(manifest, storage, serving);
+
+        BlueprintPair context = createBlueprintWithVersions("full-stack-dp", "1.0.0", "2.0.0", manifest, manifest);
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        ResponseEntity<ErrorRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildCompositionUpdateRequest(context.blueprintName, false), jsonHeaders()),
+                ErrorRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMessage()).contains("declares descriptorTemplatePath");
+        assertThat(response.getBody().getMessage()).contains("Only the parent (root) blueprint may have descriptorTemplatePath");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+
+        deleteCreatedBlueprint(context.blueprintUuid);
+        deleteCreatedBlueprint(storage.blueprintUuid());
+        deleteCreatedBlueprint(serving.blueprintUuid());
+    }
+
+    /**
      * Scenario: Composition module Git provider mismatch is rejected
      * Given a next parent and a module whose provider type or base URL differs
      * When update-data-product is called
@@ -626,7 +668,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
      */
     @Test
     void whenCompositionModuleProviderMismatchesParentThenReturn400() throws Exception {
-        BlueprintRes.BlueprintRepoRes gitlabRepo = buildBlueprintRepo();
+        BlueprintRes.BlueprintRepoRes gitlabRepo = buildModuleBlueprintRepo();
         gitlabRepo.setProviderType(BlueprintRepoProviderTypeRes.GITLAB);
         gitlabRepo.setProviderBaseUrl("https://gitlab.com");
         gitlabRepo.setRemoteUrlHttp("https://gitlab.com/org/module-repo.git");
@@ -1041,7 +1083,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     }
 
     private ModuleBlueprint createPublishedModule(String blueprintName, String version) throws Exception {
-        return createPublishedModule(blueprintName, version, manifestMonorepoNoComposition(), buildBlueprintRepo());
+        return createPublishedModule(blueprintName, version, manifestMonorepoNoComposition(), buildModuleBlueprintRepo());
     }
 
     private ModuleBlueprint createPublishedModule(
@@ -1232,6 +1274,12 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         blueprintRepo.setProviderBaseUrl("https://github.com");
         blueprintRepo.setOwnerId("org");
         blueprintRepo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        return blueprintRepo;
+    }
+
+    private BlueprintRes.BlueprintRepoRes buildModuleBlueprintRepo() {
+        BlueprintRes.BlueprintRepoRes blueprintRepo = buildBlueprintRepo();
+        blueprintRepo.setDescriptorTemplatePath(null);
         return blueprintRepo;
     }
 
