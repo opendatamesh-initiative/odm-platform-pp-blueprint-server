@@ -195,27 +195,27 @@ integrations.
     - `value` (String, Required): Lowercase hex-encoded digest of the protected content at instantiation time.
 - `composition` (Array of Objects, Optional): Defines child blueprints (modules) to be instantiated alongside the
   parent.
-    - `module` (String, Required): A logical alias for the child module.
-    - `blueprintName` (String, Required): The identifier of the child blueprint.
-    - `blueprintVersion` (String, Required): The target release version of the child blueprint.
-    - `parameterMapping` (Object, Optional): Maps **child** parameter keys to values supplied at instantiation. Every
-      entry **must** be an object with **exactly one** discriminant:
-      - `{ $param: <parentKey> }` — dynamic reference resolved from the parent parameter set (request value, else parent
-        default; fail if the parent key is undeclared or has neither value nor default). Extra properties besides
-        `$param` are ignored.
-      - `{ value: <actualValue> }` — fixed literal copied from the manifest (`actualValue` may be string, number,
-        boolean, object, or array). Extra properties besides `value` are ignored; the literal is **not** looked up on
-        the parent.
+  - `module` (String, Required): A logical alias for the child module.
+  - `blueprintName` (String, Required): The identifier of the child blueprint.
+  - `blueprintVersion` (String, Required): The target release version of the child blueprint.
+  - `parameterMapping` (Object, Optional): Maps **child** parameter keys to values supplied at instantiation. Every
+    entry **must** be an object with **exactly one** discriminant:
+    - `{ $param: <parentKey> }` — dynamic reference resolved from the parent parameter set (request value, else parent
+      default; fail if the parent key is undeclared or has neither value nor default). Extra properties besides
+      `$param` are ignored.
+    - `{ value: <actualValue> }` — fixed literal copied from the manifest (`actualValue` may be string, number,
+      boolean, object, or array). Extra properties besides `value` are ignored; the literal is **not** looked up on
+      the parent.
       Bare scalars, arrays, or objects with both/neither discriminants are **invalid**. This is the manifest analogue of
       Terraform’s explicit `module "x" { ... }` variable passing: only declared inputs are passed—there is no implicit
       global scope. Nested expressions (e.g., string concatenation) are out of scope; if a value must be derived, expose
       it as a parent parameter.
-    - `targets` (Array of Objects, Required): Routes subdirectories of the **child blueprint repository** to destination
-      repositories. Same shape as `instantiation.root.targets[]`. May contain multiple entries for path splitting.
-      - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the child blueprint repository
-        root.
-      - `repository` (String, Required): Must match an entry in `instantiation.repositories[].key`.
-      - `path` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
+  - `targets` (Array of Objects, Required): Routes subdirectories of the **child blueprint repository** to destination
+    repositories. Same shape as `instantiation.root.targets[]`. May contain multiple entries for path splitting.
+    - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the child blueprint repository
+      root.
+    - `repository` (String, Required): Must match an entry in `instantiation.repositories[].key`.
+    - `path` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
 - `instantiation` (Object, Required): Defines logical repository keys and routes parent blueprint contents to mapped
   destinations.
   - `repositories` (Array of Objects, Required): Abstract repository keys the client must resolve at instantiation time.
