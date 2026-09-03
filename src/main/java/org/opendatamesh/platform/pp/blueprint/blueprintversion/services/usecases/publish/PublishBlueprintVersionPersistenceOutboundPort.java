@@ -9,4 +9,6 @@ interface PublishBlueprintVersionPersistenceOutboundPort {
     BlueprintVersion createBlueprintVersion(BlueprintVersion blueprintVersion);
 
     Optional<BlueprintVersionShort> findByBlueprintUuidAndVersionNumber(String blueprintUuid, String versionNumber);
+
+    BlueprintVersion findModuleBlueprintVersion(String blueprintName, String blueprintVersion);
 }

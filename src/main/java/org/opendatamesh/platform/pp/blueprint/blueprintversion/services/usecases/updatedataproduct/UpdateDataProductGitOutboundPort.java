@@ -2,42 +2,41 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 
 import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.SourceRepositoryDto;
 
 import java.nio.file.Path;
-import java.util.function.BiConsumer;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Git capabilities used while updating a data-product repository from a checkpoint.
- * <p>
- * The port exposes focused, single-purpose Git operations so that the update workflow
- * (branch from checkpoint, clean, render, commit, tag, push) stays orchestrated in the
- * use case and remains readable. Repository cloning lifecycle is handled by
- * {@link #withClonedSourceAndTargetAtCheckpoint}: the granular operations below are meant
- * to be invoked on the target path provided inside that callback.
  */
 interface UpdateDataProductGitOutboundPort {
 
-    void init(Blueprint blueprint);
+    /**
+     * Opens each unique source at its release tag for the duration of
+     * {@code operation}. This lets one source workspace serve every target that
+     * consumes it. Temporary directories are cleaned up after the callback returns.
+     */
+    void openSources(
+            Blueprint parentBlueprint,
+            List<SourceRepositoryDto> sources,
+            Consumer<Map<String, Path>> operation);
 
     /**
-     * Clones the target repository at {@code currentCheckpointTag} and the source repository
-     * at {@code sourceTag}, then invokes {@code operation} with local {@code (sourcePath, targetPath)}.
-     * Both working directories are cleaned up after the callback returns.
+     * Opens one target at {@code currentCheckpointTag} for the duration of
+     * {@code operation}. The temporary directory is cleaned up afterwards.
      */
-    void withClonedSourceAndTargetAtCheckpoint(
-            Repository sourceRepository,
-            String sourceTag,
-            Repository targetRepository,
+    void openTargetAtCheckpoint(
+            UpdateDataProductTargetRepositoryDto target,
             String currentCheckpointTag,
-            BiConsumer<Path, Path> operation);
+            Consumer<Path> operation);
 
     void createAndCheckoutBranch(Path targetRepository, String branchName);
 
     void cleanWorkingTreePreservingGit(Path targetRepository);
 
-    /**
-     * Stages every change, commits it on {@code branchName} and returns the resulting commit SHA.
-     */
     String commitAll(
             Path targetRepository,
             String branchName,

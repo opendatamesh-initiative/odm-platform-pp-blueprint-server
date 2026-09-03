@@ -1,0 +1,14 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: unknown-root-repository
+version: 1.0.0
+
+instantiation:
+  repositories:
+    - key: main
+  root:
+    repository: unknown-repo
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: ./

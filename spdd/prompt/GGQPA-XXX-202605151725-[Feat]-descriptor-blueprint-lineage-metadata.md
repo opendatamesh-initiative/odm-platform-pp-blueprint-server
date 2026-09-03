@@ -223,9 +223,9 @@ classDiagram
 ### Modify use case — `InstantiateBlueprintVersion`
 
 1. **Responsibility**: Call descriptor service between templating and Git push for **root** target only.
-2. **Methods**: `execute()` — parse manifest early; build `Map<String, JsonNode> resolvedParameters = mergeParametersForLineage(manifest, command.blueprintParameters())` (manifest parameter keys: request value if non-null, else manifest default); after `templatingPort.renderAndCopy(...)`, `Path rootTargetPath = resolveRootTargetPath(...)` (first target with `BlueprintRepositoryLogicalType.ROOT`, else `InternalException`), then `blueprintDataProductDescriptorService.enrichDescriptorWithBlueprintMetadata(rootTargetPath, blueprintVersion, resolvedParameters)`.
+2. **Methods**: `execute()` — parse manifest early; build `Map<String, JsonNode> resolvedParameters = mergeParametersForLineage(manifest, command.blueprintParameters())` (manifest parameter keys: request value if non-null, else manifest default); after `templatingPort.renderAndCopy(...)`, `Path rootTargetPath = resolveRootTargetPath(...)` (the sole phase-1 target / first mapped `targetId`, else `InternalException`), then `blueprintDataProductDescriptorService.enrichDescriptorWithBlueprintMetadata(rootTargetPath, blueprintVersion, resolvedParameters)`.
 3. **Logic**: `mergeParametersForLineage` mirrors manifest-declared keys only (not ad hoc request-only keys); aligns with parameters declared in blueprint manifest for lineage persistence.
-4. **Constraints**: Enrichment invoked once on root path inside clone callback, before per-target `commitAndPush`; non-root targets untouched; do not change `commitAndPush` contract.
+4. **Constraints**: Enrichment invoked once on the mapped target path inside clone callback, before per-target `commitAndPush`; do not change `commitAndPush` contract.
 
 ### Modify factory — `InstantiateBlueprintVersionFactory`
 

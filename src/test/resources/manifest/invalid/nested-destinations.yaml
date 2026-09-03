@@ -1,0 +1,17 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: nested-destinations
+version: 1.0.0
+
+instantiation:
+  repositories:
+    - key: main
+  root:
+    repository: main
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: ./
+      - sourcePath: docs/
+        repository: main
+        path: data-plane/storage

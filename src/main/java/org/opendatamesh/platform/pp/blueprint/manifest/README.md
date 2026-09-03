@@ -2,29 +2,30 @@
 
 <!-- TOC -->
 
-* [Software Requirements Specification: Blueprint Manifest](#software-requirements-specification-blueprint-manifest)
-    * [Initial Context](#initial-context)
-        * [1. Overview and Purpose](#1-overview-and-purpose)
-        * [2. Format Recommendation: YAML](#2-format-recommendation-yaml)
-        * [3. Core Responsibilities](#3-core-responsibilities)
-            * [3.1. Parameter Management](#31-parameter-management)
-            * [3.2. Resource Protection](#32-resource-protection)
-            * [3.3. Blueprint Composition (Modularity)](#33-blueprint-composition-modularity)
-            * [3.4. Instantiation Strategy](#34-instantiation-strategy)
-            * [3.5. Versioning Control](#35-versioning-control)
-        * [4. Instantiation Workflow](#4-instantiation-workflow)
-    * [Specification](#specification)
-        * [1. Specification Definition with Schema](#1-specification-definition-with-schema)
-            * [Core Schema Objects](#core-schema-objects)
-            * [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui)
-        * [2. Manifest Examples](#2-manifest-examples)
-            * [2.1. Monorepo, no composition](#21-monorepo-no-composition)
-            * [2.2. Monorepo + composition](#22-monorepo--composition)
-            * [2.3. Polyrepo, no composition](#23-polyrepo-no-composition)
-            * [2.4. Polyrepo + composition](#24-polyrepo--composition)
-    * [Java API](#java-api)
-        * [Using the parser](#using-the-parser)
-        * [Extending the specification](#extending-the-specification)
+- [Software Requirements Specification: Blueprint Manifest](#software-requirements-specification-blueprint-manifest)
+  - [Initial Context](#initial-context)
+    - [1. Overview and Purpose](#1-overview-and-purpose)
+    - [2. Format Recommendation: YAML](#2-format-recommendation-yaml)
+    - [3. Core Responsibilities](#3-core-responsibilities)
+      - [3.1. Parameter Management](#31-parameter-management)
+      - [3.2. Resource Protection](#32-resource-protection)
+      - [3.3. Blueprint Composition (Modularity)](#33-blueprint-composition-modularity)
+      - [3.4. Instantiation Strategy](#34-instantiation-strategy)
+      - [3.5. Versioning Control](#35-versioning-control)
+    - [4. Instantiation Workflow](#4-instantiation-workflow)
+  - [Specification](#specification)
+    - [1. Specification Definition with Schema](#1-specification-definition-with-schema)
+      - [Core Schema Objects](#core-schema-objects)
+      - [Validation constraints](#validation-constraints)
+      - [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui)
+    - [2. Manifest Examples](#2-manifest-examples)
+      - [2.1. Monorepo, no composition](#21-monorepo-no-composition)
+      - [2.2. Monorepo + composition](#22-monorepo--composition)
+      - [2.3. Polyrepo, no composition](#23-polyrepo-no-composition)
+      - [2.4. Polyrepo + composition](#24-polyrepo--composition)
+  - [Java API](#java-api)
+    - [Using the parser](#using-the-parser)
+    - [Extending the specification](#extending-the-specification)
 
 <!-- TOC -->
 
@@ -37,15 +38,21 @@ A Blueprint is defined as a Git repository containing parameterized templates an
 necessary to provision a Data Product within a Data Mesh architecture (e.g., databases, S3 buckets, virtual machines).
 
 The primary purpose of the manifest is to orchestrate the instantiation of the Data Product by defining required
-parameters, protecting specific resources, managing blueprint composition, and declaring the deployment strategy.
+parameters, protecting specific resources, managing blueprint composition, and declaring logical target routing.
 
 > **Architectural Note**: The location of the Data Product descriptor template within the repository is intentionally
 > not specified or tracked by this manifest. Instead, its location is registered and stored within the Platform's
 > internal
 > Blueprint model. This ensures the manifest remains strictly focused on provisioning and infrastructure orchestration.
 
-A copy of this manifest is retained in the instantiated Data Product repository to maintain lineage and trace the
-original Blueprint used.
+> **Architectural Note**: Target repository creation, physical Git URLs, and repository creation policies are handled
+> dynamically at runtime by the client orchestrator. The manifest abstracts target locations using logical repository
+> keys (`instantiation.repositories[].key`). Created or pre-existing repositories are supplied to the instantiate endpoint,
+> each mapped to a repository key.
+
+A copy of this manifest is retained in the **root target repository** (the primary data product repository designated
+at instantiation time) to maintain lineage and trace the original Blueprint used. Module and secondary target
+repositories do not receive a manifest copy.
 
 ### 2. Format Recommendation: YAML
 
@@ -72,8 +79,8 @@ The manifest must explicitly declare all parameters required to successfully ins
 - **UI/UX Presentation:** The specification must support presentation metadata for parameters to drive collection UIs
   during instantiation. The `parameters[].ui` object carries this metadata; see
   [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui) for supported fields and how to apply them.
-    - **Required parameters:** Declare mandatory inputs with `required` on the parameter. Treat `required` as binding for
-      validation and mark the corresponding control as required in the collection UI.
+  - **Required parameters:** Declare mandatory inputs with `required` on the parameter. Treat `required` as binding for
+    validation and mark the corresponding control as required in the collection UI.
 
 #### 3.2. Resource Protection
 
@@ -97,17 +104,21 @@ To support DRY (Don't Repeat Yourself) principles, the manifest must support Blu
   repositories ("Children" or "Modules").
 - **Parameter Passing:** Similar to Terraform modules, the manifest must explicitly map and pass the required parameters
   down to the referenced child Blueprints to ensure successful downstream instantiation.
+- **Co-located Routing & Mapping:** Child modules explicitly define their blueprint source, parameter mappings, and
+  routing rules (`targets[]` with `sourcePath`, `repository`, and `path`) in a single `composition[]` entry.
 
 #### 3.4. Instantiation Strategy
 
-The manifest must define how the output of the Blueprint should be distributed. It must support configurations such as:
+The manifest abstracts target destinations using logical repository identifiers declared in
+`instantiation.repositories`.
 
-- **Monorepo Strategy:** All instantiated files and infrastructure definitions are generated into a single target
-  repository.
-- **Polyrepo/Multi-repo Strategy:** Instantiated components are distributed across multiple target repositories (e.g.,
-  separating application code from infrastructure code). The manifest declares **repository name postfixes** per target;
-  the **parent repository name** is supplied **at instantiation** (not as a manifest parameter), and the platform
-  derives each target repository from that runtime name plus each postfix.
+- **Monorepo Topology:** All generated output maps to a single repository key.
+- **Polyrepo Topology:** Root contents and composed child modules are distributed across multiple repository keys.
+- **Uniform routing:** Both `instantiation.root.targets[]` and `composition[].targets[]` use the same route shape
+  (`sourcePath` → `repository` + `path`). Root `sourcePath` is relative to the parent blueprint repository; module
+  `sourcePath` is relative to the child blueprint repository.
+- **Path Splitting:** Multiple entries in a `targets[]` list route different source subdirectories to separate
+  repository keys and paths.
 
 #### 3.5. Versioning Control
 
@@ -127,19 +138,18 @@ levels:
 The system orchestrating the Blueprint must support the following lifecycle:
 
 1. **Selection:** The user selects a specific Blueprint and version for their Data Product.
-2. **Configuration:** The user provides values for all parameters declared in the Blueprint Manifest (facilitated by the
+2. **Target Resolution:** The client orchestrator resolves each logical repository key declared in
+   `instantiation.repositories` to an actual Git repository. Repository creation policies (`create_if_missing`,
+   `must_exist`, and so on) are enforced **outside** the manifest; the orchestrator creates or selects repositories and
+   passes them to the instantiate endpoint, each entry mapped to a repository key (`targetId`).
+3. **Configuration:** The user provides values for all parameters declared in the Blueprint Manifest (facilitated by the
    UI/UX metadata).
-3. **Target Designation:** The user specifies the target repository (or repositories, based on the instantiation
-   strategy). For **polyrepo**, the **parent blueprint’s repository name** is supplied at runtime to the platform (it is
-   **not** a manifest parameter); the manifest only declares **per-target postfixes** that the platform combines with
-   that name to derive each target repository identity, according to platform naming rules.
-4. **Generation & Copy:** The system copies the Blueprint files to the target repository.
-
-- All template parameters within the files are resolved/populated with the user-provided values.
-
+4. **Generation & Copy:** The system parses `instantiation.root.targets` and `composition[].targets`, extracts files from
+   the declared source directories, resolves parameter variables, and writes generated code into the mapped target
+   repositories and paths.
 5. **Lineage Preservation:** A version of the manifest, complete with the resolved parameter values and versioning
-   metadata, is copied into the target repository to serve as a historical record of the Blueprint version and
-   configuration used to create the Data Product.
+   metadata, is copied **only into the root target repository** designated at instantiation time—not into module or
+   secondary target repositories.
 
 ## Specification
 
@@ -160,77 +170,106 @@ integrations.
 - `version` (String, Required): Semantic version of the blueprint release (e.g., `1.2.0`).
 - `description` (String, Optional): Human-readable summary of the blueprint's purpose.
 - `parameters` (Array of Objects, Optional): Defines the inputs required from the user during instantiation.
-    - `key` (String, Required): The variable name to be injected into templates.
-    - `type` (Enum: `string`, `integer`, `boolean`, `array`, `object`, Optional - defaults to `string`): Data type for
-      backend parsing and structure validation.
-    - `required` (Boolean, Optional - defaults to `false`): Whether the user must provide a value.
-    - `default` (Any, Optional): A fallback value if none is provided. Must match the declared `type`.
-    - `validation` (Object, Optional): Defines strict constraints to evaluate the provided value before instantiation.
-        - `allowedValues` (Array, Optional): For `string` (and optionally other scalar types), the value must equal one
-          of the listed entries.
-        - `format` (String, Optional): Well-known string formats (e.g., `hostname`, `uri`, `email`) when the
-          orchestrator implements them; semantics align with common JSON Schema string formats where applicable.
-        - [hint, not supported for now]`schemaRef` ~~(String, Optional): URI of a machine-readable schema (e.g., JSON
-          Schema) that the value must satisfy; the orchestrator resolves and applies it if supported.~~
-        - `pattern` (String, Optional): A Regular Expression (Regex) the value must match (primarily for `string`
-          types).
-        - `min` (Number, Optional): Minimum numeric value, or minimum length/item count for strings and arrays.
-        - `max` (Number, Optional): Maximum numeric value, or maximum length/item count for strings and arrays.
-    - `ui` (Object, Optional): Presentation metadata for dynamic forms. Standard fields (all optional strings unless
-      noted) are `group`, `label`, `description`, and `formType`. The parser preserves any additional keys on this
-      object
-      for forward compatibility. See [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui) for how to use them.
+  - `key` (String, Required): The variable name to be injected into templates.
+  - `type` (Enum: `string`, `integer`, `boolean`, `array`, `object`, Optional - defaults to `string`): Data type for
+    backend parsing and structure validation.
+  - `required` (Boolean, Optional - defaults to `false`): Whether the user must provide a value.
+  - `default` (Any, Optional): A fallback value if none is provided. Must match the declared `type`.
+  - `validation` (Object, Optional): Defines strict constraints to evaluate the provided value before instantiation.
+    - `allowedValues` (Array, Optional): For `string` (and optionally other scalar types), the value must equal one
+      of the listed entries.
+    - `format` (String, Optional): Well-known string formats (e.g., `hostname`, `uri`, `email`) when the
+      orchestrator implements them; semantics align with common JSON Schema string formats where applicable.
+    - [hint, not supported for now]`schemaRef` ~~(String, Optional): URI of a machine-readable schema (e.g., JSON
+      Schema) that the value must satisfy; the orchestrator resolves and applies it if supported.~~
+    - `pattern` (String, Optional): A Regular Expression (Regex) the value must match (primarily for `string`
+      types).
+    - `min` (Number, Optional): Minimum numeric value, or minimum length/item count for strings and arrays.
+    - `max` (Number, Optional): Maximum numeric value, or maximum length/item count for strings and arrays.
+  - `ui` (Object, Optional): Presentation metadata for dynamic forms. Standard fields (all optional strings unless
+    noted) are `group`, `label`, `description`, and `formType`. The parser preserves any additional keys on this
+    object
+    for forward compatibility. See [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui) for how to use them.
 - `protectedResources` (Array of Objects, Optional): Files, directories, or globs marked immutable after initial
   generation. Each item:
-    - `path` (String, Required): Path or glob relative to the **instantiated data-product repository root** after
-      render (e.g. `infrastructure/core/**`, `docs/architecture.md`). Do **not** list source-only paths that
-      instantiation relocates (`README.md` at the blueprint `readmePath`, `manifest.yaml` at `manifestRootPath`).
-      To protect lineage, declare the destination (`.odm/blueprint/README.md`, `.odm/blueprint/blueprint-manifest.yaml`,
-      or `.odm/blueprint/**`). The checker does not rewrite source paths to `.odm/blueprint/`.
-    - `integrity` (Object, Optional): Cryptographic digest for tamper detection. **Omitted** in the **source** Blueprint
-      manifest; **populated** on the manifest copy stored in the instantiated Data Product repository (for concrete
-      files, or per platform rules for globs/directories). When present:
-        - `algorithm` (String, Required): Hash algorithm identifier (e.g., `sha256`).
-        - `value` (String, Required): Lowercase hex-encoded digest of the protected content at instantiation time.
+  - `path` (String, Required): Path or glob relative to the **instantiated destination repository root** after
+    render (e.g. `infrastructure/core/**`, `docs/architecture.md`). Do **not** list source-only paths that
+    instantiation relocates (`README.md` at the blueprint `readmePath`, `manifest.yaml` at `manifestRootPath`).
+    To protect lineage, declare the destination (`.odm/blueprint/README.md`, `.odm/blueprint/blueprint-manifest.yaml`,
+    or `.odm/blueprint/**`). The checker does not rewrite source paths to `.odm/blueprint/`.
+  - `integrity` (Object, Optional): Cryptographic digest for tamper detection. **Omitted** in the **source** Blueprint
+    manifest; **populated** on the manifest copy stored in the instantiated Data Product repository (for concrete
+    files, or per platform rules for globs/directories). When present:
+    - `algorithm` (String, Required): Hash algorithm identifier (e.g., `sha256`).
+    - `value` (String, Required): Lowercase hex-encoded digest of the protected content at instantiation time.
 - `composition` (Array of Objects, Optional): Defines child blueprints (modules) to be instantiated alongside the
   parent.
-    - `module` (String, Required): A logical alias for the child module.
-    - `blueprintName` (String, Required): The identifier of the child blueprint.
-    - `blueprintVersion` (String, Required): The target release version of the child blueprint.
-    - `parameterMapping` (Object, Optional): Maps **child** parameter keys to **values** supplied at instantiation. Each
-      value is either a **literal** (string, number, boolean) or a **reference** to a parent parameter by key (the
-      orchestrator resolves references from the parent parameter set). This is the manifest analogue of Terraform’s
-      explicit `module "x" { ... }` variable passing: only declared inputs are passed—there is no implicit global scope.
-      Nested expressions (e.g., string concatenation) are out of scope; if a value must be derived, expose it as a
-      parent parameter.
-- `instantiation` (Object, Required): Defines where generated output is written and how multi-repo or multi-module
-  layouts are resolved.
-    - `strategy` (Enum: `monorepo`, `polyrepo`, Required) — Single target repository versus multiple.
-    - `compositionLayout` (Array of Objects, Optional): Where each child module’s output is merged when using **monorepo
-      with composition**.
-        - `module` (String, Required): Must match a `composition[].module` value.
-        - `targetPath` (String, Required): Directory relative to the target repo root for that module’s generated tree.
-    - `targets` (Array of Objects, Optional): **Required when strategy is `polyrepo`.** Each entry is one **deployment
-      slice**: which logical target repository to use (via `repositoryNamePostfix` only—no full URL or host in the
-      manifest), plus either which composed `module` the slice belongs to or which paths to copy inside that repository.
-      The **parent blueprint repository name** is provided **at runtime** by the user or platform when instantiating; it
-      is **not** declared as a parameter in the manifest. The platform derives each target repository’s name (and
-      location) by combining that runtime parent name with `repositoryNamePostfix` (and any platform-specific separators
-      or conventions). Repeat the same `repositoryNamePostfix` on multiple entries if several slices land in the same
-      derived repository. With composition, each `composition[].module` should appear on **exactly one** entry that uses
-      the `module` shape (unless the platform documents a different rule).
-        - `repositoryNamePostfix` (String, Required): Suffix appended (per platform rules) to the **runtime** parent
-          repository name to form the target repository identity for this slice. This is the **only** repository locator
-          the manifest carries for polyrepo; URLs and org/project identifiers are out of scope here.
-        - `createPolicy` (Enum: `create_if_missing`, `must_exist`, Optional): Whether the orchestrator may create a
-          missing repository.
-        - **Polyrepo + composition:** set `module` (String, Required): must match `composition[].module`; that module’s
-          output is written to the repository identified by parent name (runtime) + `repositoryNamePostfix`.
-        - **Polyrepo without composition:** set `sourcePath` (String, Required) and `targetPath` (String, Required): map
-          a path within the blueprint checkout to a path **within** the repository identified by parent name (runtime) +
-          `repositoryNamePostfix`.
-        - An entry uses **either** the `module` shape **or** the `sourcePath` / `targetPath` shape, matching whether
-          `composition` is in use; do not mix both on the same object.
+  - `module` (String, Required): A logical alias for the child module.
+  - `blueprintName` (String, Required): The identifier of the child blueprint.
+  - `blueprintVersion` (String, Required): The target release version of the child blueprint.
+  - `parameterMapping` (Object, Optional): Maps **child** parameter keys to values supplied at instantiation. Every
+    entry **must** be an object with **exactly one** discriminant:
+    - `{ $param: <parentKey> }` — dynamic reference resolved from the parent parameter set (request value, else parent
+      default; fail if the parent key is undeclared or has neither value nor default). Extra properties besides
+      `$param` are ignored.
+    - `{ value: <actualValue> }` — fixed literal copied from the manifest (`actualValue` may be string, number,
+      boolean, object, or array). Extra properties besides `value` are ignored; the literal is **not** looked up on
+      the parent.
+      Bare scalars, arrays, or objects with both/neither discriminants are **invalid**. This is the manifest analogue of
+      Terraform’s explicit `module "x" { ... }` variable passing: only declared inputs are passed—there is no implicit
+      global scope. Nested expressions (e.g., string concatenation) are out of scope; if a value must be derived, expose
+      it as a parent parameter.
+  - `targets` (Array of Objects, Required): Routes subdirectories of the **child blueprint repository** to destination
+    repositories. Same shape as `instantiation.root.targets[]`. May contain multiple entries for path splitting.
+    - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the child blueprint repository
+      root.
+    - `repository` (String, Required): Must match an entry in `instantiation.repositories[].key`.
+    - `path` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
+- `instantiation` (Object, Required): Defines logical repository keys and routes parent blueprint contents to mapped
+  destinations.
+  - `repositories` (Array of Objects, Required): Abstract repository keys the client must resolve at instantiation time.
+    - `key` (String, Required): Unique logical alias referenced by `root.targets` and `composition[].targets` (e.g.,
+      `main`, `infra-repo`).
+    - `description` (String, Optional): Human-readable guidance for UI selection.
+  - `root` (Object, Required): Routes subdirectories of the **parent blueprint repository** to destination repositories
+    and designates the data-product root repository key.
+    - `repository` (String, Required): Declared `instantiation.repositories[].key` that is the data-product root
+      (lineage, descriptor enrichment, registry primary pointer). Applies **only** to parent `instantiation.root`—
+      never on `composition[].targets`. Not inferred from target order or a reserved key name.
+    - `targets` (Array of Objects, Required): **Must be non-empty** and must reference at least one declared repository
+      key. Empty `root.targets` (pure-orchestration parents) is **invalid**. Same shape as `composition[].targets[]`.
+      - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the parent blueprint repository
+        root.
+      - `repository` (String, Required): Must match an entry in `instantiation.repositories[].key`.
+      - `path` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
+        Destinations on the **same** repository key must be **siblings** (not nested path-prefixes of each other).
+
+#### Validation constraints
+
+The orchestrator must enforce the following rules when validating a manifest:
+
+- `instantiation.repositories[].key` values must be **unique**.
+- `composition[].module` values must be **unique** (when `composition` is present).
+- `instantiation.root.repository` is **required** and must match a declared `instantiation.repositories[].key`.
+- `instantiation.root.targets` must be **non-empty**.
+- When `BlueprintRepo.descriptorTemplatePath` is configured, the platform **always** renders that template onto the designated root target (`instantiation.root.repository`) at the path derived from the template (same relative path with `.vm` stripped). Authors do **not** declare a `root.targets` route for the descriptor.
+- Every declared `instantiation.repositories[].key` must appear on at least one route (`root.targets` or
+  `composition[].targets`); unused keys are rejected.
+- Every `repository` reference in `instantiation.root.targets[]` and `composition[].targets[]` must match an existing
+  `instantiation.repositories[].key`.
+- Exact duplicate `(repository, normalized path)` destinations across all routes are rejected.
+- Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
+  rejected; use sibling destinations.
+- `parameterMapping` entries must be `{ $param: key }` or `{ value: actualValue }` objects; bare scalars are invalid.
+- At parent **publish**, `parameterMapping` must include an entry for every parameter declared by the referenced
+  published module that has **no default**. Module parameters that declare a default may be omitted.
+- Composition modules must be published versions that are themselves **monorepo with no composition**.
+- When a `targets` array contains **more than one** entry, each entry must declare an explicit `sourcePath` (the `./`
+  default must not be relied upon implicitly, to avoid accidental duplication of the entire source repository).
+- Repository paths must be **relative** to the repository root; absolute paths and path traversal segments (`..`) are
+  rejected.
+- Path normalization (leading `./`, trailing slashes) is implementation-defined but must be applied consistently.
+- Validation reports **all** problems found, each with a short how-to-fix hint.
 
 #### UI metadata (`parameters[].ui`)
 
@@ -245,12 +284,12 @@ when the tool reads and writes manifests; drop or ignore extra properties only i
 
 ##### Fields
 
-| Field | Purpose |
-| --- | --- |
-| `group` | **Authors:** Split the form into sections with a `/`-separated path (trim segments; ignore extra spaces around `/`). Example: `Networking / Firewall`. Leave empty or omit to mark the parameter as ungrouped. **Clients:** List ungrouped parameters after every grouped section. |
-| `label` | **Authors:** Set a short title for the field. **Clients:** Show `label` when present; display `key` when `label` is absent. |
-| `description` | **Authors:** Add helper text for the field. **Clients:** Show it as tooltip, caption, or inline help next to the control. |
-| `formType` | **Authors:** Suggest a control style; combine with `type` and `validation` (see below). **Clients:** Interpret `formType` together with `type` and `validation` when picking a control. |
+| Field         | Purpose                                                                                                                                                                                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `group`       | **Authors:** Split the form into sections with a `/`-separated path (trim segments; ignore extra spaces around `/`). Example: `Networking / Firewall`. Leave empty or omit to mark the parameter as ungrouped. **Clients:** List ungrouped parameters after every grouped section. |
+| `label`       | **Authors:** Set a short title for the field. **Clients:** Show `label` when present; display `key` when `label` is absent.                                                                                                                                                        |
+| `description` | **Authors:** Add helper text for the field. **Clients:** Show it as tooltip, caption, or inline help next to the control.                                                                                                                                                          |
+| `formType`    | **Authors:** Suggest a control style; combine with `type` and `validation` (see below). **Clients:** Interpret `formType` together with `type` and `validation` when picking a control.                                                                                            |
 
 ##### Grouping
 
@@ -267,13 +306,13 @@ fixed platform order—and apply it to sibling groups and to fields inside each 
 **Authors:** Set `type` first, add `validation` constraints, then set `ui.formType` to one of the supported values for
 that `type` (or omit it and rely on defaults described below).
 
-| Parameter `type` | Supported `formType` values | Use `validation` for |
-| --- | --- | --- |
-| `string` | `text` — single-line input (default when omitting `formType`). `textarea` — multi-line input. `dropdown` — fixed choices; omit `formType` when `validation.allowedValues` is set and a choice control is intended. | `allowedValues` (enforce choice list), `pattern` (regex), `format` (e.g. `textarea` / `multiline` with `textarea`-style `formType`), `min` / `max` (string length) |
-| `integer` | `number` — numeric input (default when omitting `formType`). `text` — free-form field; still coerce to integer before submit. | `min`, `max` |
-| `boolean` | `checkbox`, `switch` — two-state controls (omit `formType` to use the same semantics with a default style). | — |
-| `array` | `json` — structured editor or JSON text for arbitrary array content (default when omitting `formType`). `stringList` — row or line-based editor for an array of strings. | `min` / `max` (item count or length per product rules) |
-| `object` | `json` — structured editor or JSON text (default when omitting `formType`). | `min` / `max` (property count per product rules, if used) |
+| Parameter `type` | Supported `formType` values                                                                                                                                                                                        | Use `validation` for                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `string`         | `text` — single-line input (default when omitting `formType`). `textarea` — multi-line input. `dropdown` — fixed choices; omit `formType` when `validation.allowedValues` is set and a choice control is intended. | `allowedValues` (enforce choice list), `pattern` (regex), `format` (e.g. `textarea` / `multiline` with `textarea`-style `formType`), `min` / `max` (string length) |
+| `integer`        | `number` — numeric input (default when omitting `formType`). `text` — free-form field; still coerce to integer before submit.                                                                                      | `min`, `max`                                                                                                                                                       |
+| `boolean`        | `checkbox`, `switch` — two-state controls (omit `formType` to use the same semantics with a default style).                                                                                                        | —                                                                                                                                                                  |
+| `array`          | `json` — structured editor or JSON text for arbitrary array content (default when omitting `formType`). `stringList` — row or line-based editor for an array of strings.                                           | `min` / `max` (item count or length per product rules)                                                                                                             |
+| `object`         | `json` — structured editor or JSON text (default when omitting `formType`).                                                                                                                                        | `min` / `max` (property count per product rules, if used)                                                                                                          |
 
 **Authors:** Avoid contradictory combinations (for example `type: boolean` with `formType: dropdown` unless
 `validation.allowedValues` defines the choices). **Clients:** Reject ambiguous manifests at validation time or apply a
@@ -292,7 +331,7 @@ noted. Parameter lists are abbreviated; real manifests would declare every input
 
 #### 2.1. Monorepo, no composition
 
-Single repository; parent output only. No `composition` section and no extra `instantiation` keys beyond `strategy`.
+Single target repository; single root directory mapping.
 
 ```yaml
 spec: odm-blueprint-manifest
@@ -307,7 +346,7 @@ parameters:
     type: string
     required: true
     validation:
-      allowedValues: [ dev, staging, prod ]
+      allowedValues: [dev, staging, prod]
     ui:
       group: General Configuration
       label: Environment
@@ -330,14 +369,20 @@ protectedResources:
   - path: docs/architecture.md
 
 instantiation:
-  strategy: monorepo
-
+  repositories:
+    - key: main
+      description: Target repository for all data product assets
+  root:
+    repository: main
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: ./
 ```
 
 #### 2.2. Monorepo + composition
 
-Child modules are merged into **one** target repo using `compositionLayout`. Parent name is chosen at runtime; only
-directory layout is fixed in the manifest.
+Single target repository (`main`). Child modules write into subdirectories within `main`.
 
 ```yaml
 spec: odm-blueprint-manifest
@@ -364,36 +409,46 @@ parameters:
       group: Security
       label: Enable PII masking
 
+instantiation:
+  repositories:
+    - key: main
+      description: Single repository containing application and infrastructure
+
+  root:
+    repository: main
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: core/
+
 composition:
   - module: storage
     blueprintName: odm-blueprint-s3-lake
     blueprintVersion: 3.0.1
     parameterMapping:
-      bucketPrefix: projectSlug
-      encryptAtRest: enablePiiMasking
+      bucketPrefix: { $param: projectSlug }
+      encryptAtRest: { $param: enablePiiMasking }
+      region: { value: eu-west-1 }
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: data-plane/storage
 
   - module: serving
     blueprintName: odm-blueprint-api-skeleton
     blueprintVersion: 1.4.0
     parameterMapping:
-      serviceName: projectSlug
-
-instantiation:
-  strategy: monorepo
-  compositionLayout:
-    - module: storage
-      targetPath: data-plane/storage
-    - module: serving
-      targetPath: app/serving
+      serviceName: { $param: projectSlug }
+    targets:
+      - sourcePath: ./
+        repository: main
+        path: app/serving
 ```
 
 #### 2.3. Polyrepo, no composition
 
-Multiple repositories derived from **runtime parent name + `repositoryNamePostfix`**. Each `targets` row uses
-`sourcePath` / `targetPath` (no `module`).
-
-Suppose the user instantiates with runtime parent repository name `acme-customer-360`. The platform derives
-`acme-customer-360-infra` and `acme-customer-360-apps` from the postfixes below.
+A single source blueprint splits subdirectories across multiple abstract target repositories (`infra-repo` and
+`app-repo`).
 
 ```yaml
 spec: odm-blueprint-manifest
@@ -406,36 +461,35 @@ parameters:
     type: string
     required: true
     validation:
-      allowedValues: [ eu-west-1, eu-central-1, us-east-1 ]
+      allowedValues: [eu-west-1, eu-central-1, us-east-1]
     ui:
       label: AWS region
       formType: dropdown
 
 instantiation:
-  strategy: polyrepo
-  targets:
-    - repositoryNamePostfix: "-infra"
-      createPolicy: create_if_missing
-      sourcePath: terraform/
-      targetPath: ./
+  repositories:
+    - key: infra-repo
+      description: Target repository for infrastructure code and policies
+    - key: app-repo
+      description: Target repository for application code
 
-    - repositoryNamePostfix: "-apps"
-      createPolicy: create_if_missing
-      sourcePath: application/
-      targetPath: ./
-
-    - repositoryNamePostfix: "-infra"
-      sourcePath: policies/
-      targetPath: policies/
+  root:
+    repository: app-repo
+    targets:
+      - sourcePath: terraform/
+        repository: infra-repo
+        path: terraform/
+      - sourcePath: policies/
+        repository: infra-repo
+        path: governance/policies
+      - sourcePath: application/
+        repository: app-repo
+        path: ./
 ```
-
-The first and third entries share the `-infra` postfix to show multiple `sourcePath` / `targetPath` slices landing in
-the same derived repository (per the schema note).
 
 #### 2.4. Polyrepo + composition
 
-Each composed module is deployed to a repository identified by **parent name (runtime) + postfix**. Each `targets` row
-sets `module` (no `sourcePath` / `targetPath` on that row).
+Composed child modules and root files are mapped across distinct target repository aliases.
 
 ```yaml
 spec: odm-blueprint-manifest
@@ -452,30 +506,45 @@ parameters:
       label: Data domain
       formType: text
 
+instantiation:
+  repositories:
+    - key: pipeline-repo
+      description: Target repository for data pipeline components
+    - key: api-repo
+      description: Target repository for API serving components
+
+  root:
+    repository: pipeline-repo
+    targets:
+      - sourcePath: ./core
+        repository: pipeline-repo
+        path: ./core
+
 composition:
   - module: ingest
     blueprintName: odm-blueprint-ingest-batch
     blueprintVersion: 2.0.0
     parameterMapping:
-      domain: dataDomain
+      domain: { $param: dataDomain }
+    targets:
+      - sourcePath: ./
+        repository: pipeline-repo
+        path: pipelines/batch
 
   - module: consume
     blueprintName: odm-blueprint-consumer-api
     blueprintVersion: 1.1.0
     parameterMapping:
-      domain: dataDomain
-
-instantiation:
-  strategy: polyrepo
-  targets:
-    - repositoryNamePostfix: "-pipeline"
-      createPolicy: must_exist
-      module: ingest
-
-    - repositoryNamePostfix: "-api"
-      createPolicy: create_if_missing
-      module: consume
+      domain: { $param: dataDomain }
+    targets:
+      - sourcePath: ./
+        repository: api-repo
+        path: services/consumer
 ```
+
+`instantiation.root.repository` must name a declared repository key (the data-product root).
+`instantiation.root.targets` must always contain at least one entry. Pure-orchestration parents with
+`root.targets: []` are **not** supported.
 
 ## Java API
 
@@ -490,10 +559,10 @@ The Blueprint Server ships a Jackson-based parser for the manifest model (
 
 2. **Load the document to a `JsonNode`** — The parser API is **tree in, tree out** (`deserialize` / `serialize`). You
    choose the format when reading:
-    - **JSON:** `new ObjectMapper().readTree(inputStream)` or `readTree(jsonString)`.
-    - **YAML:** use `new ObjectMapper(new YAMLFactory())` from `jackson-dataformat-yaml` and call `readTree` on the
-      manifest file or string. Ensure that artifact is on your **runtime** classpath if the service loads YAML
-      manifests (it is not always pulled in transitively).
+   - **JSON:** `new ObjectMapper().readTree(inputStream)` or `readTree(jsonString)`.
+   - **YAML:** use `new ObjectMapper(new YAMLFactory())` from `jackson-dataformat-yaml` and call `readTree` on the
+     manifest file or string. Ensure that artifact is on your **runtime** classpath if the service loads YAML
+     manifests (it is not always pulled in transitively).
 
 3. **Parse and emit:**
 
@@ -518,11 +587,11 @@ To give a **vendor- or platform-specific** key a typed representation:
 
 2. **Implement `ManifestComponentBaseExtendedConverter<T>`** (
    `org.opendatamesh.platform.pp.blueprint.manifest.extensions`):
-    - `supports(String key, Class<? extends ManifestComponentBase> parentClass)` — return `true` for the extension
-      property name and the parent node type (for example root manifest: `Manifest.class` and your top-level key).
-    - `deserialize(ObjectMapper, JsonNode)` — produce your subtype (typically
-      `mapper.treeToValue(jsonNode, MyExtension.class)`).
-    - `serialize(ObjectMapper, T)` — produce a `JsonNode` for that property (typically `mapper.valueToTree(value)`).
+   - `supports(String key, Class<? extends ManifestComponentBase> parentClass)` — return `true` for the extension
+     property name and the parent node type (for example root manifest: `Manifest.class` and your top-level key).
+   - `deserialize(ObjectMapper, JsonNode)` — produce your subtype (typically
+     `mapper.treeToValue(jsonNode, MyExtension.class)`).
+   - `serialize(ObjectMapper, T)` — produce a `JsonNode` for that property (typically `mapper.valueToTree(value)`).
 
 3. **Register the converter on the parser** (fluent), then deserialize or serialize as usual:
 
