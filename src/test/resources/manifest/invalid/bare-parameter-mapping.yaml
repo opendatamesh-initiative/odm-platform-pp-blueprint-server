@@ -8,15 +8,9 @@ parameters:
     type: string
     required: true
 
-instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: main
-    targets:
-      - sourcePath: ./
-        repository: main
-        path: core/
+targetRepositories:
+  - key: main-repository
+    isRoot: true
 
 composition:
   - module: storage
@@ -24,7 +18,16 @@ composition:
     blueprintVersion: 3.0.1
     parameterMapping:
       bucketPrefix: projectSlug
+
+instantiation:
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: data-plane/storage
+        repo: main-repository
+        destinationPath: core/
+  - type: module
+    moduleName: storage
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: data-plane/storage

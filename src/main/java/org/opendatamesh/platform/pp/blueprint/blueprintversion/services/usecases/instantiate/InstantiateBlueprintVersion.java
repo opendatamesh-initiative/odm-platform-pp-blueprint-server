@@ -192,7 +192,7 @@ class InstantiateBlueprintVersion implements UseCase {
                         "Source workspace missing for sourceId '%s' when instantiating repository key '%s'"
                                 .formatted(route.sourceId(), targetRepositoryKey));
             }
-            Map<String, JsonNode> params = route.fromParent()
+            Map<String, JsonNode> params = isParentRoute(route)
                     ? parentParameters
                     : modulesParameters.getOrDefault(route.sourceId(), Map.of());
             templatingPort.applyRoute(sourceRoot, route.sourcePath(), targetPath, route.destinationPath(), params);
@@ -206,7 +206,7 @@ class InstantiateBlueprintVersion implements UseCase {
             Map<String, BlueprintVersion> modulesByAlias) {
         Set<String> relocatedAliases = new LinkedHashSet<>();
         for (InstantiationRoute route : routes) {
-            if (route.fromParent() || !relocatedAliases.add(route.sourceId())) {
+            if (isParentRoute(route) || !relocatedAliases.add(route.sourceId())) {
                 continue;
             }
             BlueprintVersion moduleVersion = modulesByAlias.get(route.sourceId());
@@ -254,6 +254,10 @@ class InstantiateBlueprintVersion implements UseCase {
         templatingPort.renderDescriptorToRoot(parentSourceRoot, parentRepo.getDescriptorTemplatePath(), targetPath,
                 parentParameters);
         templatingPort.recordParentLineage(targetPath, parentBlueprintVersion, parentParameters);
+    }
+
+    private boolean isParentRoute(InstantiationRoute route) {
+        return PARENT_SOURCE_ID.equals(route.sourceId());
     }
 
     private String commitAndTagCheckpoint(Path targetPath, String checkpointBranch) {

@@ -431,7 +431,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     void whenNextRepositoryKeysDifferThenReturn400WithoutGit() throws Exception {
         JsonNode currentManifest = manifestMonorepoNoComposition();
         ObjectNode nextManifest = (ObjectNode) currentManifest.deepCopy();
-        ArrayNode repositories = (ArrayNode) nextManifest.at("/instantiation/repositories");
+        ArrayNode repositories = (ArrayNode) nextManifest.get("targetRepositories");
         ObjectNode extra = repositories.addObject();
         extra.put("key", "extra");
         extra.put("description", "extra repository");
@@ -742,8 +742,8 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     void whenRoutesOrCompositionSlotsDifferThenReturn400() throws Exception {
         JsonNode currentManifest = manifestMonorepoNoComposition();
         ObjectNode nextManifest = (ObjectNode) currentManifest.deepCopy();
-        ObjectNode rootTarget = (ObjectNode) nextManifest.at("/instantiation/root/targets/0");
-        rootTarget.put("path", "renamed/");
+        ObjectNode rootTarget = (ObjectNode) nextManifest.at("/instantiation/0/targets/0");
+        rootTarget.put("destinationPath", "renamed/");
 
         BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0", currentManifest, nextManifest);
 

@@ -4,7 +4,7 @@
 
 Enable orchestrators to roll a published parent blueprint **forward** from a current checkpoint to a **next** version on every valid Git topology: **1→1** (monorepo, no composition), **N→1** (monorepo + composition), **1→N** (polyrepo, no composition), and **N→N** (polyrepo + composition).
 
-Keep one **update** pipeline that re-renders **next** content through a **frozen** layout (same repository keys, `instantiation.root.repository`, routes, composition slots), applying `root.targets` and `composition[].targets` per mapped remote that already holds `blueprint-v{current}`. Record **parent-only** lineage on the designated root key. Preserve tag-based 3-way merge: clean working tree, commit a pure next tree on `update/blueprint-v{next}`, tag `blueprint-v{next}`, optional global PR.
+Keep one **update** pipeline that re-renders **next** content through a **frozen** layout (same `targetRepositories` keys, `isRoot` designation, typed `instantiation[]` routes, composition slots), applying `instantiation[]` routes per mapped remote that already holds `blueprint-v{current}`. Record **parent-only** lineage on the designated root key (`isRoot: true`). Preserve tag-based 3-way merge: clean working tree, commit a pure next tree on `update/blueprint-v{next}`, tag `blueprint-v{next}`, optional global PR.
 
 Support **content-only** deltas (source files, request parameter values, next `parameterMapping`, same-slot module `blueprintVersion`). Reject **structural** current→next deltas with collect-all 400 and a fix hint. Do not implement UI, do not call the instantiate use case, and do not read or write the data-product registry.
 
@@ -18,24 +18,26 @@ classDiagram
 
   class Manifest {
     +List~ManifestParameter~ parameters
-    +ManifestInstantiation instantiation
+    +List~ManifestTargetRepository~ targetRepositories
+    +List~ManifestInstantiationEntry~ instantiation
     +List~ManifestComposition~ composition
   }
 
-  class ManifestInstantiation {
-    +List~ManifestInstantiationRepository~ repositories
-    +ManifestInstantiationRoot root
+  class ManifestTargetRepository {
+    +String key
+    +Boolean isRoot
   }
 
-  class ManifestInstantiationRoot {
-    +String repository
+  class ManifestInstantiationEntry {
+    +ManifestInstantiationType type
+    +String moduleName
     +List~ManifestTarget~ targets
   }
 
   class ManifestTarget {
     +String sourcePath
-    +String repository
-    +String path
+    +String repo
+    +String destinationPath
   }
 
   class ManifestComposition {
@@ -43,7 +45,6 @@ classDiagram
     +String blueprintName
     +String blueprintVersion
     +Map~String,JsonNode~ parameterMapping
-    +List~ManifestTarget~ targets
   }
 
   class InstantiationScenario {
@@ -82,7 +83,6 @@ classDiagram
     +String sourcePath
     +String repositoryKey
     +String destinationPath
-    +boolean fromParent
   }
 
   class UpdateValidationIssue {
@@ -103,7 +103,7 @@ classDiagram
     +Set~String~ repositoryKeys
     +String rootRepositoryKey
     +InstantiationScenario topology
-    +List~NormalizedRoute~ rootTargets
+    +List~NormalizedRoute~ rootInstantiationTargets
     +List~CompositionSlot~ compositionSlots
   }
 
@@ -115,8 +115,8 @@ classDiagram
 
   class NormalizedRoute {
     +String sourcePath
-    +String repository
-    +String path
+    +String repo
+    +String destinationPath
   }
 
   class BlueprintVersion {
@@ -142,9 +142,10 @@ classDiagram
   }
 
   UpdateDataProductCommand --> UpdateDataProductTargetRepositoryDto : maps remotes
-  Manifest --> ManifestInstantiation
+  Manifest --> ManifestTargetRepository
+  Manifest --> ManifestInstantiationEntry
   Manifest --> ManifestComposition
-  ManifestInstantiation --> ManifestInstantiationRoot : root.repository
+  ManifestTargetRepository --> ManifestTarget : isRoot designates lineage key
   UpdateRoute --> SourceRepositoryDto : sourceId
   UpdateRoute --> UpdateDataProductTargetRepositoryDto : repositoryKey = targetId
   BlueprintLayoutFingerprint --> CompositionSlot : slots without parameterMapping
@@ -171,11 +172,11 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
    - No registry client. No new REST path: still `POST /api/v2/pp/blueprint/blueprints-versions/update-data-product`.
 
 3. Business logic:
-   - Command: same blueprint, current ≠ next, parameters required, complete unique `targetId` map matching **next** `instantiation.repositories[].key`.
-   - Next manifest: non-empty `root.targets`, explicit `instantiation.root.repository` (declared key), unused keys rejected, exact and nested destination conflicts rejected, modules 1→1, `{ $param }` / `{ value }` only (bare scalars invalid).
-   - Structure freeze: current and next share repository keys, root key, topology, normalized `root.targets`, composition slots (`alias` + `blueprintName` + composition `targets`). Allowed: files, request parameter values, `parameterMapping` rewires, same-slot `blueprintVersion` bump, parent parameter key set growth/shrink (next `$param` must still resolve).
-   - Lineage: next parent version + next parent resolved parameters only, only on `instantiation.root.repository`. Descriptor rendered there when `descriptorTemplatePath` is set (platform-owned; not a manifest route). README/manifest sidecar relocate only on that root target after routes.
-   - After applying a module’s next `composition[].targets` into a target, relocate that module’s `readmePath` / `manifestRootPath` under `.odm/<module alias>/` on that target (same as instantiate). Do not write module sidecars under `.odm/blueprint/`.
+   - Command: same blueprint, current ≠ next, parameters required, complete unique `targetId` map matching **next** `targetRepositories[].key`.
+   - Next manifest: non-empty `instantiation[]` with exactly one `type: root`, non-empty entry `targets`, exactly one `isRoot: true`, unused keys rejected, exact and nested destination conflicts rejected, composition/instantiation module alignment, modules 1→1, `{ $param }` / `{ value }` only (bare scalars invalid).
+   - Structure freeze: current and next share repository keys, root key (`isRoot`), topology, normalized root `instantiation[]` targets, composition slots (`alias` + `blueprintName` + module `instantiation[]` targets). Allowed: files, request parameter values, `parameterMapping` rewires, same-slot `blueprintVersion` bump, parent parameter key set growth/shrink (next `$param` must still resolve).
+   - Lineage: next parent version + next parent resolved parameters only, only on the `targetRepositories[]` entry with `isRoot: true`. Descriptor rendered there when `descriptorTemplatePath` is set (platform-owned; not a manifest route). README/manifest sidecar relocate only on that root target after routes.
+   - After applying a module’s next `instantiation[]` module entry routes into a target, relocate that module’s `readmePath` / `manifestRootPath` under `.odm/<module alias>/` on that target (same as instantiate). Do not write module sidecars under `.odm/blueprint/`.
    - A composition module with non-blank `BlueprintRepo.descriptorTemplatePath` is 400 (only the parent may own a descriptor).
    - Module parameters: resolve **next** `parameterMapping`; do **not** copy instantiate's current shortcut of reusing the parent map as the module map.
    - Child Git provider type and base URL must match the parent.
@@ -217,8 +218,8 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
 
 ### Update REST resources — `UpdateDataProductCommandRes`
 
-1. Responsibility: keep list `targetRepositories`; stop documenting phase-1 "exactly one root".
-2. Attributes: unchanged fields; update `@Schema` on `targetRepositories` to "one entry per `instantiation.repositories[].key` of the **next** version".
+1. Responsibility: keep list `targetRepositories`; document one entry per `targetRepositories[].key` of the next version.
+2. Attributes: unchanged fields; update `@Schema` on `targetRepositories` to "one entry per `targetRepositories[].key` of the **next** version".
 3. Constraints: no breaking JSON shape change.
 
 ### Update use case class — `UpdateDataProductFromBlueprintVersion`
@@ -235,7 +236,7 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
        - `manifestPort.collectProviderMismatchIssues(next, modulesByAlias)` — stop if any.
        - `manifestPort.collectModuleParameterResolutionIssues(next.content, nextParentParameters)` — stop if any.
        - `manifestPort.resolveModuleParameters(next.content, nextParentParameters)` for render contexts.
-       - Derive next routes grouped by target key; designated root key from next `instantiation.root.repository`.
+       - Derive next routes grouped by target key; designated root key from next `targetRepositories[]` entry with `isRoot: true`.
        - Filter `retrieveAllSourceRepositories` to sources referenced by routes (parent id `__parent__`, module alias ids).
        - `gitPort.openSources(nextVersion.blueprint, sources, sourcePaths -> { for each target key with routes: updateTargetRepository(...) })`.
        - Inside each target: `gitPort.openTargetAtCheckpoint(target, blueprint-v{current}, targetPath -> { create update branch; clean; applyRoute for each route; relocate each module’s BlueprintRepo file pointers under .odm/<module alias>; if root + descriptorTemplatePath, renderDescriptorToRoot + recordParentLineage; commit; tag; push branch + tag })`.
@@ -260,23 +261,22 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
      - Next spec/specVersion support (same VERSION regex as instantiate).
      - Deserialize current and next; parse failures are issues.
      - Next structural rules (separate implementation, same meaning as instantiate):
-       - `instantiation.repositories` required, unique non-empty keys.
-       - `instantiation.root.repository` required and a declared key.
-       - `instantiation.root.targets` non-empty.
-       - All `root.targets` / `composition[].targets` keys declared; unused declared keys rejected.
+       - `targetRepositories` required, unique non-empty keys; exactly one `isRoot: true`.
+       - `instantiation` non-empty with exactly one `type: root`; every entry `targets` non-empty.
+       - Composition/instantiation module alignment; all route `repo` keys declared; unused declared keys rejected.
        - Relative paths (no `..`, no leading `/`).
-       - Duplicate destination (repository, normalized path) and nested path-prefix on the same key rejected.
+       - Duplicate destination (repo, normalized destinationPath) and nested path-prefix on the same key rejected.
        - Next `parameterMapping` shape `{ $param }` xor `{ value }`; `$param` must be a declared **next** parent parameter key. Do **not** compare mappings to current.
        - Next parent parameter types/constraints vs request (required without default, type, allowedValues, pattern, format, min/max) — collect all.
        - Complete unique `targetId` map vs next keys (missing, unknown, duplicate `targetId`).
      - Structure freeze vs current (layout fingerprint; **exclude** `parameterMapping` and composition `blueprintVersion`):
        - Same set of repository keys.
-       - Same `instantiation.root.repository`.
+       - Same root key (`isRoot` designation).
        - Same topology (`InstantiationScenarioResolver.resolve`).
-       - Same normalized `root.targets` as ordered identity of (`sourcePath`, `repository`, `path`) with the same path normalization as structural path checks (`./` vs `""`).
-       - Same composition **slots** compared **by alias**: same `blueprintName`, same composition `targets` identities. Extra/missing alias, different `blueprintName`, or different composition targets → issue. Hint: update is content-only; keep keys/root/routes/slots stable or instantiate new remotes.
-     - Do **not** validate descriptor placement against `root.targets`.
-   - `flattenRoutes(JsonNode nextContent): List<UpdateRoute>` — parent `root.targets` (`fromParent=true`, parent source id) plus `composition[].targets` (`sourceId` = module alias).
+       - Same normalized root `instantiation[]` targets as ordered identity of (`sourcePath`, `repo`, `destinationPath`) with the same path normalization as structural path checks (`./` vs `""`).
+       - Same composition **slots** compared **by alias**: same `blueprintName`, same module `instantiation[]` target identities. Extra/missing alias, different `blueprintName`, or different module targets → issue. Hint: update is content-only; keep keys/root/routes/slots stable or instantiate new remotes.
+     - Do **not** validate descriptor placement against routes.
+   - `flattenRoutes(JsonNode nextContent): List<UpdateRoute>` — flatten `instantiation[]` (`type: root` → parent source id `__parent__`; `type: module` → `moduleName`).
    - `retrieveRootTargetRepositoryKey(JsonNode nextContent): String`
    - `enrichRequestParametersWithDefaultsIfNeeded(JsonNode nextContent, Map<String, JsonNode> requestParameters): Map<String, JsonNode>`
    - `listCompositionIdentities(JsonNode nextContent): List<UpdateCompositionIdentity>`
@@ -304,7 +304,7 @@ Existing list-shaped REST DTOs (`UpdateDataProductCommandRes.targetRepositories`
    - `relocateModuleReferencedFiles(targetRoot, moduleAlias, moduleVersion, moduleSourceRoot, destinationPaths)` → `blueprintRenderService.relocateModuleReferencedFiles` (module `readmePath` / `manifestRootPath` under `.odm/<moduleAlias>/`).
    - `renderDescriptorToRoot(parentSourceRoot, descriptorTemplatePath, rootTarget, parameters)` → `renderDescriptorTemplate`.
    - `recordParentLineage(rootTarget, nextParentVersion, nextParentResolvedParameters)` → enrich descriptor + `relocateParentLineageSidecar`.
-3. Use case invokes descriptor + lineage **only** when the processed key equals next `instantiation.root.repository` **and** `descriptorTemplatePath` is non-blank (both conditions required — if template path is blank, skip descriptor render and lineage even on root key). After routes, relocate module pointer files for every module that routed into that target.
+3. Use case invokes descriptor + lineage **only** when the processed key equals the next `targetRepositories[]` entry with `isRoot: true` **and** `descriptorTemplatePath` is non-blank (both conditions required — if template path is blank, skip descriptor render and lineage even on root key). After routes, relocate module pointer files for every module that routed into that target.
 
 ### Factory — `UpdateDataProductFromBlueprintVersionFactory`
 
@@ -320,7 +320,7 @@ Feature: Content-only blueprint update across Git topologies
     Given a published parent with one repository key and no composition
     And the mapped remote already has checkpoint tag blueprint-v{current}
     When the client posts update-data-product with that key and next version content
-    Then the server creates update/blueprint-v{next} from the current checkpoint, cleans, applies next root.targets, tags blueprint-v{next}, and returns one result
+    Then the server creates update/blueprint-v{next} from the current checkpoint, cleans, applies next instantiation[] routes, tags blueprint-v{next}, and returns one result
 
   Scenario: Monorepo with composition updates one target from parent and modules
     Given a next parent composing published 1→1 modules into one key at non-nested paths
@@ -339,7 +339,7 @@ Feature: Content-only blueprint update across Git topologies
     And each mapped remote has blueprint-v{current}
     When update-data-product supplies a complete targetId map
     Then each remote gets its own update branch and next checkpoint tag of the same name
-    And lineage and descriptor exist only on instantiation.root.repository
+    And lineage and descriptor exist only on the targetRepositories entry with isRoot: true
 
   Scenario: Polyrepo with composition routes parent and modules across remotes
     Given next composition targets pointing at different declared keys
@@ -350,17 +350,17 @@ Feature: Content-only blueprint update across Git topologies
 Feature: Structure freeze and content-only policy
   Scenario: Next version with extra or renamed repository key is rejected
     Given current and next parent versions of the same blueprint
-    When next instantiation.repositories keys differ from current
+    When next targetRepositories keys differ from current
     Then the API returns 400 listing the structural delta with a hint to keep keys stable or instantiate new remotes
     And no Git mutation occurs
 
   Scenario: Root key or topology change is rejected
-    Given current 1→1 and next N→1 or a different instantiation.root.repository
+    Given current 1→1 and next N→1 or a different isRoot designation
     When update-data-product is called
     Then validation fails with a structure-change hint before Git
 
   Scenario: Route or composition slot change is rejected
-    Given next root.targets or composition alias/blueprintName/targets differ from current
+    Given next root instantiation[] targets or composition alias/blueprintName/module instantiation targets differ from current
     When update-data-product is called
     Then 400 collect-all includes those layout mismatches
 
@@ -378,7 +378,7 @@ Feature: Structure freeze and content-only policy
 
 Feature: Validation collect-all and Git policy
   Scenario: Next structural problems are all reported with hints
-    Given a next manifest missing root.repository, with empty root.targets, unused keys, and overlapping destinations
+    Given a next manifest missing isRoot, with empty instantiation entry targets, unused keys, and overlapping destinations
     When update-data-product is called
     Then the 400 body lists every problem and a hint for each
     And Git is not invoked
@@ -435,11 +435,11 @@ Add unit test class `UpdateDataProductOdmBlueprintManifestOutboundPortTest` for 
 
 ## Safeguards
 
-1. Functional constraints: all four topologies must succeed for content-only next versions when every next key is mapped to a remote that already has `blueprint-v{current}`. Structural current→next deltas (keys, root key, topology, `root.targets`, composition slots) are 400. `parameterMapping` and same-slot module version are content.
+1. Functional constraints: all four topologies must succeed for content-only next versions when every next key is mapped to a remote that already has `blueprint-v{current}`. Structural current→next deltas (keys, isRoot designation, topology, root `instantiation[]` targets, composition slots) are 400. `parameterMapping` and same-slot module version are content.
 2. Performance constraints: sequential per-target loop; no new parallelism. Temp clone directories always cleaned after each target callback.
 3. Security constraints: Git provider bound from parent blueprint credentials/headers as today; do not log tokens. PR title/body contain blueprint name/version only.
 4. Integration constraints: update does **not** read/write the registry. Clients may still assemble `targetRepositories` from keyed additional repos. Instantiate contracts unchanged. UI out of scope. Nested composition / polyrepo modules out of scope. First apply of a new remote is instantiate only.
-5. Business rule constraints: parent-only lineage on `instantiation.root.repository`. Modules must be monorepo no composition and must not set `descriptorTemplatePath`. Child `composition[].targets` win for placement. Module `readmePath` / `manifestRootPath` relocate to `.odm/<module alias>/` on the receiving target. Parent parameter bag is the request contract. Version adjacency/semver order is **not** checked beyond existence and current ≠ next.
+5. Business rule constraints: parent-only lineage on the `targetRepositories[]` entry with `isRoot: true`. Modules must be monorepo no composition and must not set `descriptorTemplatePath`. Parent `instantiation[]` module entries win for placement. Module `readmePath` / `manifestRootPath` relocate to `.odm/<module alias>/` on the receiving target. Parent parameter bag is the request contract. Version adjacency/semver order is **not** checked beyond existence and current ≠ next.
 6. Exception handling constraints: validation messages include hints and must not dump stack traces or credentials. Collect-all only for the validation gate; Git fail-fast after that.
 7. Technical constraints: no shared validator class with publish/instantiate. No `monorepoNoCompositionRenderAndCopy` on the update path. No `gitPort.init` as a business step. No key suffix on checkpoint tags. No default-branch fallback when the current checkpoint is missing. Same physical URL mapped to two keys remains unsupported.
 8. Data constraints: next `parameterMapping` entries are objects with exactly one of `$param` or `value`. Fingerprint comparison uses normalized paths and composition compared **by alias**. Parent parameter keys may grow/shrink; unresolved `$param` is 400.

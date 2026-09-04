@@ -35,13 +35,14 @@ protectedResources:
   - path: infrastructure/core/**
   - path: README.md
 
+targetRepositories:
+  - key: main
+    description: Target repository for all data product assets
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-      description: Target repository for all data product assets
-  root:
-    repository: main
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main
+        destinationPath: ./

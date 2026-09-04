@@ -2,6 +2,7 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -19,7 +20,6 @@ import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.*;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
-import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.manifest.ManifestYamlTestSupport;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
@@ -849,17 +849,17 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             @TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
         writePathSplitSourceFiles(sourceDir);
         ObjectNode manifest = (ObjectNode) manifestMonorepoNoComposition();
-        ObjectNode instantiation = (ObjectNode) manifest.get("instantiation");
-        ObjectNode root = (ObjectNode) instantiation.get("root");
-        root.set("targets", OBJECT_MAPPER.createArrayNode()
+        ArrayNode instantiation = (ArrayNode) manifest.get("instantiation");
+        ObjectNode rootInstantiation = (ObjectNode) instantiation.get(0);
+        rootInstantiation.set("targets", OBJECT_MAPPER.createArrayNode()
                 .add(OBJECT_MAPPER.createObjectNode()
                         .put("sourcePath", "core-src/")
-                        .put("repository", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
-                        .put("path", "core/"))
+                        .put("repo", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+                        .put("destinationPath", "core/"))
                 .add(OBJECT_MAPPER.createObjectNode()
                         .put("sourcePath", "docs-src/")
-                        .put("repository", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
-                        .put("path", "docs/")));
+                        .put("repo", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+                        .put("destinationPath", "docs/")));
 
         BlueprintContext context = createBlueprintAndVersion(
                 "analytics-lakehouse",
@@ -1234,12 +1234,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         Files.writeString(sourceDir.resolve("module-only-marker.txt"), "module");
 
         ObjectNode moduleManifest = (ObjectNode) manifestMonorepoNoComposition();
-        ObjectNode moduleRoot = (ObjectNode) moduleManifest.at("/instantiation/root");
+        ArrayNode moduleInstantiation = (ArrayNode) moduleManifest.get("instantiation");
+        ObjectNode moduleRoot = (ObjectNode) moduleInstantiation.get(0);
         moduleRoot.set("targets", OBJECT_MAPPER.createArrayNode()
                 .add(OBJECT_MAPPER.createObjectNode()
                         .put("sourcePath", "./")
-                        .put("repository", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
-                        .put("path", "./")));
+                        .put("repo", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+                        .put("destinationPath", "./")));
 
         ModuleBlueprint storage = createPublishedModule(
                 "odm-blueprint-s3-lake", "3.0.1", moduleManifest, buildModuleBlueprintRepo());
@@ -1289,7 +1290,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateEmptyRootTargetsThenReturn400WithHint() throws Exception {
         assertInstantiateInvalidManifestReturns400WithHint(
-                "/manifest/invalid/empty-root-targets.yaml", "root.targets", "non-empty");
+                "/manifest/invalid/empty-root-targets.yaml", "targets", "required");
     }
 
     /*
@@ -1303,7 +1304,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateMissingRootRepositoryThenReturn400WithHint() throws Exception {
         assertInstantiateInvalidManifestReturns400WithHint(
-                "/manifest/invalid/missing-root-repository.yaml", "root.repository", "required");
+                "/manifest/invalid/missing-root-repository.yaml", "targetRepositories", "isRoot");
     }
 
     /*
@@ -1316,7 +1317,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateUnknownRootRepositoryThenReturn400WithHint() throws Exception {
         assertInstantiateInvalidManifestReturns400WithHint(
-                "/manifest/invalid/unknown-root-repository.yaml", "root.repository", "match");
+                "/manifest/invalid/unknown-root-repository.yaml", "unknown-repo", "declared in targetRepositories[].key");
     }
 
     /*

@@ -24,15 +24,15 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortTest {
         JsonNode currentContent = ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 "/manifest/example-2.1-monorepo-no-composition.yaml");
         ObjectNode nextContent = currentContent.deepCopy();
-        ArrayNode targets = (ArrayNode) nextContent.at("/instantiation/root/targets");
+        ArrayNode targets = (ArrayNode) nextContent.at("/instantiation/0/targets");
         ObjectNode target = (ObjectNode) targets.get(0);
         target.put("sourcePath", "");
-        target.put("path", "");
+        target.put("destinationPath", "");
 
         List<UpdateValidationIssue> issues = collect(currentContent, nextContent);
 
         assertThat(issues.stream().map(UpdateValidationIssue::fieldPath))
-                .noneMatch(path -> path.contains("root.targets"));
+                .noneMatch(path -> path.contains("instantiation"));
     }
 
     @Test
@@ -56,7 +56,7 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortTest {
         JsonNode currentContent = ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 "/manifest/example-2.1-monorepo-no-composition.yaml");
         ObjectNode nextContent = currentContent.deepCopy();
-        ArrayNode repositories = (ArrayNode) nextContent.at("/instantiation/repositories");
+        ArrayNode repositories = (ArrayNode) nextContent.get("targetRepositories");
         ObjectNode extra = repositories.addObject();
         extra.put("key", "extra");
         extra.put("description", "extra repo");

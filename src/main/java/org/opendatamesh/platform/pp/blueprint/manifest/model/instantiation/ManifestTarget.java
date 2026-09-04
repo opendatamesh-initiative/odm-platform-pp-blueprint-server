@@ -1,19 +1,16 @@
 package org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation;
 
 import org.opendatamesh.platform.pp.blueprint.manifest.model.core.ManifestComponentBase;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestCompositionVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationRootVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 
 /**
- * Shared route entry used by {@code instantiation.root.targets[]} and {@code composition[].targets[]}.
- * Explored via {@link ManifestCompositionVisitor} or {@link ManifestInstantiationRootVisitor}
- * depending on parent context.
+ * Route entry used by {@code instantiation[].targets[]}.
  */
 public class ManifestTarget extends ManifestComponentBase {
 
     private String sourcePath;
-    private String repository;
-    private String path;
+    private String repo;
+    private String destinationPath;
 
     public String getSourcePath() {
         return sourcePath;
@@ -23,27 +20,23 @@ public class ManifestTarget extends ManifestComponentBase {
         this.sourcePath = sourcePath;
     }
 
-    public String getRepository() {
-        return repository;
+    public String getRepo() {
+        return repo;
     }
 
-    public void setRepository(String repository) {
-        this.repository = repository;
+    public void setRepo(String repo) {
+        this.repo = repo;
     }
 
-    public String getPath() {
-        return path;
+    public String getDestinationPath() {
+        return destinationPath;
     }
 
-    public void setPath(String path) {
-        this.path = path;
+    public void setDestinationPath(String destinationPath) {
+        this.destinationPath = destinationPath;
     }
 
-    public void accept(ManifestCompositionVisitor visitor) {
-        visitor.visit(this);
-    }
-
-    public void accept(ManifestInstantiationRootVisitor visitor) {
+    public void accept(ManifestInstantiationEntryVisitor visitor) {
         visitor.visit(this);
     }
 }

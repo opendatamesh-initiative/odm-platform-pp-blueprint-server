@@ -26,9 +26,15 @@ class OdmBlueprintManifestValidatorState {
 
     String currentCompositionFieldPath;
 
+    String currentTargetRepositoryFieldPath;
     String currentInstantiationFieldPath;
+    String currentInstantiationEntryFieldPath;
     String currentTargetFieldPath;
 
-    record RouteDestination(String repositoryKey, String normalizedPath, String fieldPath) {
+    int rootInstantiationEntryCount;
+    int rootTargetRepositoryCount;
+    final Set<String> instantiatedModules = new HashSet<>();
+
+    record RouteDestination(String repositoryKey, String normalizedPath, String fieldPath, String instantiationEntryPath) {
     }
 }

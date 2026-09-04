@@ -3,18 +3,16 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestComposition;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRepository;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRoot;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationEntry;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationType;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.protectedresource.ManifestProtectedResourceIntegrity;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestCompositionVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationRootVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
@@ -40,12 +38,11 @@ import java.util.regex.Pattern;
  *   <li><b>Validate globally</b> cross-node invariants after the walk: collect facts on
  *       {@link OdmBlueprintManifestValidatorState} during visits, then run post-pass checks at the
  *       end of {@link #visit(Manifest)} (unused repository keys, duplicate destinations, nested
- *       path prefixes).</li>
+ *       path prefixes, composition/instantiation module alignment).</li>
  * </ul>
  */
 class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParameterVisitor,
-        ManifestProtectedResourceVisitor, ManifestInstantiationVisitor, ManifestInstantiationRootVisitor,
-        ManifestCompositionVisitor {
+        ManifestProtectedResourceVisitor, ManifestInstantiationEntryVisitor {
 
     private final OdmBlueprintManifestValidatorContext context;
     private final OdmBlueprintManifestValidatorState state;
@@ -62,29 +59,9 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
 
     @Override
     public void visit(Manifest manifest) {
-        state.hasComposition = manifest.getComposition() != null && !manifest.getComposition().isEmpty();
-        state.compositionModules.clear();
-        state.repositoryKeys.clear();
-        state.usedRepositoryKeys.clear();
-        state.routeDestinations.clear();
+        resetState(manifest);
 
-        if (!Manifest.SPEC_NAME.equals(manifest.getSpec())) {
-            context.addError("spec", "Manifest spec must be 'odm-blueprint-manifest'");
-        }
-
-        if (!hasText(manifest.getSpecVersion())) {
-            context.addError("specVersion", "Manifest specVersion is required");
-        } else if (!SEMVER.matcher(manifest.getSpecVersion().trim()).matches()) {
-            context.addError("specVersion", "Manifest specVersion must follow semantic versioning");
-        }
-
-        validateRequiredString(manifest.getName(), "name", "Manifest name is required");
-
-        if (!hasText(manifest.getVersion())) {
-            context.addError("version", "Manifest version is required");
-        } else if (!SEMVER.matcher(manifest.getVersion().trim()).matches()) {
-            context.addError("version", "Manifest version must follow semantic versioning");
-        }
+        validateManifestSpecAndVersions(manifest);
 
         List<ManifestParameter> parameters = manifest.getParameters();
         if (parameters != null) {
@@ -114,11 +91,38 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
             }
         }
 
-        if (manifest.getInstantiation() == null) {
-            context.addError("instantiation", "Manifest instantiation is required");
+        List<ManifestTargetRepository> targetRepositories = manifest.getTargetRepositories();
+        if (targetRepositories == null || targetRepositories.isEmpty()) {
+            context.addError("targetRepositories", "Manifest targetRepositories is required");
         } else {
-            state.currentInstantiationFieldPath = "instantiation";
-            manifest.getInstantiation().accept(this);
+            Set<String> seenKeys = new HashSet<>();
+            for (int i = 0; i < targetRepositories.size(); i++) {
+                ManifestTargetRepository repository = targetRepositories.get(i);
+                String repoPath = "targetRepositories[" + i + "]";
+                if (repository == null) {
+                    context.addError(repoPath, "Target repository entry is required");
+                    continue;
+                }
+                state.currentTargetRepositoryFieldPath = repoPath;
+                repository.accept(this);
+                if (hasText(repository.getKey())) {
+                    String key = repository.getKey().trim();
+                    if (!seenKeys.add(key)) {
+                        context.addError(repoPath + ".key", "Target repository keys must be unique");
+                    } else {
+                        state.repositoryKeys.add(key);
+                    }
+                }
+                if (Boolean.TRUE.equals(repository.getIsRoot())) {
+                    state.rootTargetRepositoryCount++;
+                }
+            }
+        }
+
+        if (state.rootTargetRepositoryCount != 1) {
+            context.addError("targetRepositories",
+                    "Exactly one targetRepositories[] entry must set isRoot: true",
+                    "Set isRoot: true on exactly one targetRepositories entry.");
         }
 
         if (manifest.getComposition() != null) {
@@ -139,6 +143,26 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
             }
         }
 
+        List<ManifestInstantiationEntry> instantiation = manifest.getInstantiation();
+        if (instantiation == null || instantiation.isEmpty()) {
+            context.addError("instantiation", "Manifest instantiation is required");
+        } else {
+            for (int i = 0; i < instantiation.size(); i++) {
+                ManifestInstantiationEntry entry = instantiation.get(i);
+                if (entry != null) {
+                    state.currentInstantiationFieldPath = "instantiation[" + i + "]";
+                    entry.accept(this);
+                }
+            }
+        }
+
+        if (state.rootInstantiationEntryCount != 1) {
+            context.addError("instantiation",
+                    "Exactly one instantiation[] entry must have type: root",
+                    "Add exactly one instantiation entry with type: root.");
+        }
+
+        validateCompositionInstantiationAlignment();
         validateUnusedRepositoryKeys();
         validateDuplicateDestinations();
         validateNestedPathPrefixes();
@@ -207,107 +231,57 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         }
 
         validateParameterMapping(manifestComposition.getParameterMapping(), fieldPath);
-
-        List<ManifestTarget> targets = manifestComposition.getTargets();
-        if (targets == null || targets.isEmpty()) {
-            context.addError(fieldPath + ".targets", "Composition targets are required");
-            return;
-        }
-        String targetsPath = fieldPath + ".targets";
-        boolean requireExplicitSourcePath = targets.size() > 1;
-        ManifestCompositionVisitor compositionVisitor = this;
-        for (int i = 0; i < targets.size(); i++) {
-            ManifestTarget target = targets.get(i);
-            String targetPath = targetsPath + "[" + i + "]";
-            if (target == null) {
-                context.addError(targetPath, "Target entry is required");
-                continue;
-            }
-            if (requireExplicitSourcePath && !hasText(target.getSourcePath())) {
-                context.addError(targetPath + ".sourcePath",
-                        "sourcePath is required when targets contains more than one entry");
-            }
-            state.currentTargetFieldPath = targetPath;
-            target.accept(compositionVisitor);
-        }
     }
 
     @Override
-    public void visit(ManifestInstantiation manifestInstantiation) {
+    public void visit(ManifestTargetRepository repository) {
+        String fieldPath = state.currentTargetRepositoryFieldPath != null
+                ? state.currentTargetRepositoryFieldPath
+                : "targetRepositories[]";
+        validateRequiredString(repository.getKey(), fieldPath + ".key",
+                "Target repository key is required");
+    }
+
+    @Override
+    public void visit(ManifestInstantiationEntry instantiationEntry) {
         String fieldPath = state.currentInstantiationFieldPath != null
                 ? state.currentInstantiationFieldPath
-                : "instantiation";
+                : "instantiation[]";
 
-        List<ManifestInstantiationRepository> repositories = manifestInstantiation.getRepositories();
-        if (repositories == null || repositories.isEmpty()) {
-            context.addError(fieldPath + ".repositories", "Instantiation repositories are required");
-        } else {
-            Set<String> seenKeys = new HashSet<>();
-            for (int i = 0; i < repositories.size(); i++) {
-                ManifestInstantiationRepository repository = repositories.get(i);
-                String repoPath = fieldPath + ".repositories[" + i + "]";
-                if (repository == null) {
-                    context.addError(repoPath, "Instantiation repository entry is required");
-                    continue;
-                }
-                state.currentTargetFieldPath = repoPath;
-                repository.accept(this);
-                if (hasText(repository.getKey())) {
-                    String key = repository.getKey().trim();
-                    if (!seenKeys.add(key)) {
-                        context.addError(repoPath + ".key", "Instantiation repository keys must be unique");
-                    } else {
-                        state.repositoryKeys.add(key);
-                    }
-                }
-            }
-        }
-
-        if (manifestInstantiation.getRoot() == null) {
-            context.addError(fieldPath + ".root", "Instantiation root is required");
-        } else {
-            state.currentTargetFieldPath = fieldPath + ".root";
-            manifestInstantiation.getRoot().accept(this);
-        }
-    }
-
-    @Override
-    public void visit(ManifestInstantiationRepository repository) {
-        String fieldPath = state.currentTargetFieldPath != null
-                ? state.currentTargetFieldPath
-                : "instantiation.repositories[]";
-        validateRequiredString(repository.getKey(), fieldPath + ".key",
-                "Instantiation repository key is required");
-    }
-
-    @Override
-    public void visit(ManifestInstantiationRoot root) {
-        String fieldPath = state.currentTargetFieldPath != null
-                ? state.currentTargetFieldPath
-                : "instantiation.root";
-
-        if (!hasText(root.getRepository())) {
-            context.addError(fieldPath + ".repository",
-                    "instantiation.root.repository is required",
-                    "Set instantiation.root.repository to a declared instantiation.repositories[].key.");
-        } else {
-            String rootKey = root.getRepository().trim();
-            if (!state.repositoryKeys.contains(rootKey)) {
-                context.addError(fieldPath + ".repository",
-                        "instantiation.root.repository must match an instantiation.repositories[].key",
-                        "Use a key declared in instantiation.repositories[].key.");
-            }
-        }
-
-        List<ManifestTarget> targets = root.getTargets();
-        if (targets == null || targets.isEmpty()) {
-            context.addError(fieldPath + ".targets", "instantiation.root.targets must be non-empty",
-                    "Add at least one instantiation.root.targets entry that references a declared repository key.");
+        if (instantiationEntry.getType() == null) {
+            context.addError(fieldPath + ".type", "Instantiation type is required",
+                    "Set type to 'root' or 'module'.");
             return;
         }
+
+        if (instantiationEntry.getType() == ManifestInstantiationType.ROOT) {
+            state.rootInstantiationEntryCount++;
+            if (hasText(instantiationEntry.getModuleName())) {
+                context.addError(fieldPath + ".moduleName",
+                        "moduleName must be omitted when type is root",
+                        "Remove moduleName from root instantiation entries.");
+            }
+        } else if (instantiationEntry.getType() == ManifestInstantiationType.MODULE) {
+            if (!hasText(instantiationEntry.getModuleName())) {
+                context.addError(fieldPath + ".moduleName",
+                        "moduleName is required when type is module",
+                        "Set moduleName to a composition[].module value.");
+            } else {
+                state.instantiatedModules.add(instantiationEntry.getModuleName().trim());
+            }
+        }
+
+        List<ManifestTarget> targets = instantiationEntry.getTargets();
+        if (targets == null || targets.isEmpty()) {
+            context.addError(fieldPath + ".targets", "Instantiation targets are required",
+                    "Add at least one instantiation[].targets entry.");
+            return;
+        }
+
         String targetsPath = fieldPath + ".targets";
         boolean requireExplicitSourcePath = targets.size() > 1;
-        ManifestInstantiationRootVisitor rootVisitor = this;
+        state.currentInstantiationEntryFieldPath = fieldPath;
+        ManifestInstantiationEntryVisitor entryVisitor = this;
         for (int i = 0; i < targets.size(); i++) {
             ManifestTarget target = targets.get(i);
             String targetPath = targetsPath + "[" + i + "]";
@@ -320,7 +294,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                         "sourcePath is required when targets contains more than one entry");
             }
             state.currentTargetFieldPath = targetPath;
-            target.accept(rootVisitor);
+            target.accept(entryVisitor);
         }
     }
 
@@ -330,24 +304,25 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                 ? state.currentTargetFieldPath
                 : "targets[]";
 
-        validateRequiredString(target.getRepository(), fieldPath + ".repository",
-                "Target repository is required");
-        if (hasText(target.getRepository())) {
-            String repositoryKey = target.getRepository().trim();
+        validateRequiredString(target.getRepo(), fieldPath + ".repo",
+                "Target repo is required");
+        if (hasText(target.getRepo())) {
+            String repositoryKey = target.getRepo().trim();
             if (!state.repositoryKeys.contains(repositoryKey)) {
-                context.addError(fieldPath + ".repository",
-                        "Target repository must match an instantiation.repositories[].key",
-                        "Use a key declared in instantiation.repositories[].key.");
+                context.addError(fieldPath + ".repo",
+                        "Target repo '%s' must match a targetRepositories[].key".formatted(repositoryKey),
+                        "Use a key declared in targetRepositories[].key.");
             } else {
                 state.usedRepositoryKeys.add(repositoryKey);
                 state.routeDestinations.add(new OdmBlueprintManifestValidatorState.RouteDestination(
                         repositoryKey,
-                        normalizePath(target.getPath()),
-                        fieldPath));
+                        normalizePath(target.getDestinationPath()),
+                        fieldPath,
+                        state.currentInstantiationEntryFieldPath));
             }
         }
         validateRelativePath(target.getSourcePath(), fieldPath + ".sourcePath");
-        validateRelativePath(target.getPath(), fieldPath + ".path");
+        validateRelativePath(target.getDestinationPath(), fieldPath + ".destinationPath");
     }
 
     @Override
@@ -372,10 +347,23 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                 "Protected resource integrity value must be a non-empty string");
     }
 
-    /**
-     * Local shape check for non-visitable {@code parameterMapping} entries (JsonNode values).
-     * Not tree navigation — do not treat this as a substitute for {@code accept}/{@code visit}.
-     */
+    private void validateCompositionInstantiationAlignment() {
+        for (String module : state.compositionModules) {
+            if (!state.instantiatedModules.contains(module)) {
+                context.addError("composition",
+                        "Composition module '" + module + "' has no matching instantiation[] entry with type: module",
+                        "Add an instantiation entry with type: module and moduleName: " + module + ".");
+            }
+        }
+        for (String module : state.instantiatedModules) {
+            if (!state.compositionModules.contains(module)) {
+                context.addError("instantiation",
+                        "Instantiation moduleName '" + module + "' does not match any composition[].module",
+                        "Declare the module in composition[] or remove the instantiation entry.");
+            }
+        }
+    }
+
     private void validateParameterMapping(Map<String, JsonNode> parameterMapping, String fieldPath) {
         if (parameterMapping == null || parameterMapping.isEmpty()) {
             return;
@@ -418,18 +406,15 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                             "Fix the mapping or declare the parameter on the parent manifest.");
                 }
             }
-            // value: any JsonNode (including null) is accepted; extra keys are ignored
         }
     }
-
-    // --- Post-pass global invariants (after accept/visit walk; operate on collected state only) ---
 
     private void validateUnusedRepositoryKeys() {
         for (String key : state.repositoryKeys) {
             if (!state.usedRepositoryKeys.contains(key)) {
-                context.addError("instantiation.repositories",
+                context.addError("targetRepositories",
                         "Repository key '" + key + "' is not referenced by any target",
-                        "Declare a route in instantiation.root.targets or composition[].targets that uses this key, or remove the unused key.");
+                        "Declare a route in instantiation[].targets that uses this key, or remove the unused key.");
             }
         }
     }
@@ -440,8 +425,8 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
             String signature = destination.repositoryKey() + '\0' + destination.normalizedPath();
             if (!seen.add(signature)) {
                 context.addError(destination.fieldPath(),
-                        "Duplicate destination (repository, path) pair",
-                        "Make destination (repository, path) pairs unique.");
+                        "Duplicate destination (repo, destinationPath) pair",
+                        "Make destination (repo, destinationPath) pairs unique.");
             }
         }
     }
@@ -454,6 +439,9 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
             for (int j = i + 1; j < destinations.size(); j++) {
                 OdmBlueprintManifestValidatorState.RouteDestination right = destinations.get(j);
                 if (!left.repositoryKey().equals(right.repositoryKey())) {
+                    continue;
+                }
+                if (!left.instantiationEntryPath().equals(right.instantiationEntryPath())) {
                     continue;
                 }
                 String rightCompare = pathForPrefixCompare(right.normalizedPath());
@@ -553,5 +541,36 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private void resetState(Manifest manifest) {
+        state.hasComposition = manifest.getComposition() != null && !manifest.getComposition().isEmpty();
+        state.compositionModules.clear();
+        state.repositoryKeys.clear();
+        state.usedRepositoryKeys.clear();
+        state.routeDestinations.clear();
+        state.instantiatedModules.clear();
+        state.rootInstantiationEntryCount = 0;
+        state.rootTargetRepositoryCount = 0;
+    }
+
+    private void validateManifestSpecAndVersions(Manifest manifest) {
+        if (!Manifest.SPEC_NAME.equals(manifest.getSpec())) {
+            context.addError("spec", "Manifest spec must be 'odm-blueprint-manifest'");
+        }
+
+        if (!hasText(manifest.getSpecVersion())) {
+            context.addError("specVersion", "Manifest specVersion is required");
+        } else if (!SEMVER.matcher(manifest.getSpecVersion().trim()).matches()) {
+            context.addError("specVersion", "Manifest specVersion must follow semantic versioning");
+        }
+
+        validateRequiredString(manifest.getName(), "name", "Manifest name is required");
+
+        if (!hasText(manifest.getVersion())) {
+            context.addError("version", "Manifest version is required");
+        } else if (!SEMVER.matcher(manifest.getVersion().trim()).matches()) {
+            context.addError("version", "Manifest version must follow semantic versioning");
+        }
     }
 }

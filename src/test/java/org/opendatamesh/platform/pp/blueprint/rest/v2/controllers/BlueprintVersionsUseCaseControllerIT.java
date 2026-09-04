@@ -2,6 +2,7 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.junit.jupiter.api.Test;
@@ -534,8 +535,8 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     public void whenPublishEmptyRootTargetsThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
                 "/manifest/invalid/empty-root-targets.yaml",
-                "root.targets",
-                "non-empty");
+                "targets",
+                "required");
     }
 
     /*
@@ -553,8 +554,8 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     public void whenPublishMissingRootRepositoryThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
                 "/manifest/invalid/missing-root-repository.yaml",
-                "root.repository",
-                "required");
+                "targetRepositories",
+                "isRoot");
     }
 
     /*
@@ -568,8 +569,8 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     public void whenPublishUnknownRootRepositoryThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
                 "/manifest/invalid/unknown-root-repository.yaml",
-                "root.repository",
-                "match");
+                "unknown-repo",
+                "declared in targetRepositories[].key");
     }
 
     /*
@@ -724,22 +725,26 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
 
         ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 MONOREPO_MANIFEST_RESOURCE);
-        ObjectNode root = (ObjectNode) parentManifest.at("/instantiation/root");
-        root.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+        ObjectNode rootInstantiation = (ObjectNode) parentManifest.at("/instantiation/0");
+        rootInstantiation.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
                 .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "core/")));
+                .put("repo", "main-repository")
+                .put("destinationPath", "core/")));
         ObjectNode compositionEntry = OBJECT_MAPPER.createObjectNode()
                 .put("module", "storage")
                 .put("blueprintName", composedModule.blueprintName())
                 .put("blueprintVersion", composedModule.versionNumber());
         compositionEntry.set("parameterMapping", OBJECT_MAPPER.createObjectNode()
                 .set("bucketPrefix", OBJECT_MAPPER.createObjectNode().put("$param", "environment")));
-        compositionEntry.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
-                .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "data-plane/storage")));
         parentManifest.set("composition", OBJECT_MAPPER.createArrayNode().add(compositionEntry));
+        ArrayNode instantiation = (ArrayNode) parentManifest.get("instantiation");
+        instantiation.add(OBJECT_MAPPER.createObjectNode()
+                .put("type", "module")
+                .put("moduleName", "storage")
+                .set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                        .put("sourcePath", "./")
+                        .put("repo", "main-repository")
+                        .put("destinationPath", "data-plane/storage"))));
 
         assertPublishParentWithModuleReturns400(parentManifest, composedModule, "monorepo with no composition");
         deleteStoredModule(composedModule);
@@ -794,22 +799,26 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
 
         ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 MONOREPO_MANIFEST_RESOURCE);
-        ObjectNode root = (ObjectNode) parentManifest.at("/instantiation/root");
-        root.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+        ObjectNode rootInstantiation = (ObjectNode) parentManifest.at("/instantiation/0");
+        rootInstantiation.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
                 .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "core/")));
+                .put("repo", "main-repository")
+                .put("destinationPath", "core/")));
         ObjectNode compositionEntry = OBJECT_MAPPER.createObjectNode()
                 .put("module", "storage")
                 .put("blueprintName", module.blueprintName())
                 .put("blueprintVersion", module.versionNumber());
         compositionEntry.set("parameterMapping", OBJECT_MAPPER.createObjectNode()
                 .set("retentionDays", OBJECT_MAPPER.createObjectNode().put("value", 90)));
-        compositionEntry.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
-                .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "data-plane/storage")));
         parentManifest.set("composition", OBJECT_MAPPER.createArrayNode().add(compositionEntry));
+        ArrayNode instantiation = (ArrayNode) parentManifest.get("instantiation");
+        instantiation.add(OBJECT_MAPPER.createObjectNode()
+                .put("type", "module")
+                .put("moduleName", "storage")
+                .set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                        .put("sourcePath", "./")
+                        .put("repo", "main-repository")
+                        .put("destinationPath", "data-plane/storage"))));
 
         String prefix = "parentMissingModuleParam-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         BlueprintRes parentBlueprint = new BlueprintRes();

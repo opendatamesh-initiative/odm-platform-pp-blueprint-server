@@ -23,17 +23,10 @@ parameters:
       group: Security
       label: Enable PII masking
 
-instantiation:
-  repositories:
-    - key: main
-      description: Single repository containing application and infrastructure
-
-  root:
-    repository: main
-    targets:
-      - sourcePath: ./
-        repository: main
-        path: core/
+targetRepositories:
+  - key: main-repository
+    description: Single repository containing application and infrastructure
+    isRoot: true
 
 composition:
   - module: storage
@@ -43,17 +36,30 @@ composition:
       bucketPrefix: { $param: projectSlug }
       encryptAtRest: { $param: enablePiiMasking }
       region: { value: eu-west-1 }
-    targets:
-      - sourcePath: ./
-        repository: main
-        path: data-plane/storage
 
   - module: serving
     blueprintName: odm-blueprint-api-skeleton
     blueprintVersion: 1.4.0
     parameterMapping:
       serviceName: { $param: projectSlug }
+
+instantiation:
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: app/serving
+        repo: main-repository
+        destinationPath: core/
+
+  - type: module
+    moduleName: storage
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: data-plane/storage
+
+  - type: module
+    moduleName: serving
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: app/serving

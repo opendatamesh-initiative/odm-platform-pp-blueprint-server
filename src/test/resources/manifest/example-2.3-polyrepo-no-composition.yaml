@@ -14,22 +14,22 @@ parameters:
       label: AWS region
       formType: dropdown
 
-instantiation:
-  repositories:
-    - key: infra-repo
-      description: Target repository for infrastructure code and policies
-    - key: app-repo
-      description: Target repository for application code
+targetRepositories:
+  - key: infra-repo
+    description: Target repository for infrastructure code and policies
+  - key: app-repo
+    description: Target repository for application code
+    isRoot: true
 
-  root:
-    repository: app-repo
+instantiation:
+  - type: root
     targets:
       - sourcePath: terraform/
-        repository: infra-repo
-        path: terraform/
+        repo: infra-repo
+        destinationPath: terraform/
       - sourcePath: policies/
-        repository: infra-repo
-        path: governance/policies
+        repo: infra-repo
+        destinationPath: governance/policies
       - sourcePath: application/
-        repository: app-repo
-        path: ./
+        repo: app-repo
+        destinationPath: ./

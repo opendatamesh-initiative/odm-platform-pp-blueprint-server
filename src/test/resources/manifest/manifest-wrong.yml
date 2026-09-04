@@ -1,5 +1,5 @@
-# Section 2.1 — README: Monorepo, no composition - wrong manifest
-# This manifest is wrong because it has spec wrong and version wrong (must follow semantic versioning) 
+# Section 2.1 — README: Monorepo, no composition - wrong manifesto
+# This manifesto is wrong because it has spec wrong and version wrong (must follow semantic versioning)
 spec: spec-wrong
 specVersion: 1.0.0
 name: name
@@ -34,12 +34,13 @@ protectedResources:
   - path: infrastructure/core/**
   - path: README.md
 
+targetRepositories:
+  - key: main
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: main
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main
+        destinationPath: ./

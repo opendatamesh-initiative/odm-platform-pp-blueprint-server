@@ -3,11 +3,12 @@ specVersion: 1.0.0
 name: missing-root-repository
 version: 1.0.0
 
+targetRepositories:
+  - key: main-repository
+
 instantiation:
-  repositories:
-    - key: main
-  root:
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main-repository
+        destinationPath: ./

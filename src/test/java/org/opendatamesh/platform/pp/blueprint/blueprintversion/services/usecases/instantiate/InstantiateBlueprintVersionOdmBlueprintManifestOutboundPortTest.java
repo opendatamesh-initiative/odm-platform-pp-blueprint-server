@@ -68,8 +68,8 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
     void whenEmptyRootTargetsThenIssueWithHint() throws IOException {
         List<InstantiationValidationIssue> issues = collect("/manifest/invalid/empty-root-targets.yaml");
         assertThat(issues).anySatisfy(issue -> {
-            assertThat(issue.fieldPath()).contains("root.targets");
-            assertThat(issue.problem()).containsIgnoringCase("non-empty");
+            assertThat(issue.fieldPath()).contains("targets");
+            assertThat(issue.problem()).containsIgnoringCase("required");
             assertThat(issue.hint()).isNotBlank();
         });
     }
@@ -178,8 +178,8 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
     void whenMissingRootRepositoryThenIssueWithHint() throws IOException {
         List<InstantiationValidationIssue> issues = collect("/manifest/invalid/missing-root-repository.yaml");
         assertThat(issues).anySatisfy(issue -> {
-            assertThat(issue.fieldPath()).contains("root.repository");
-            assertThat(issue.problem()).containsIgnoringCase("required");
+            assertThat(issue.fieldPath()).contains("targetRepositories");
+            assertThat(issue.problem()).containsIgnoringCase("isRoot");
             assertThat(issue.hint()).isNotBlank();
         });
     }
@@ -192,8 +192,7 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
     void whenUnknownRootRepositoryThenIssueWithHint() throws IOException {
         List<InstantiationValidationIssue> issues = collect("/manifest/invalid/unknown-root-repository.yaml");
         assertThat(issues).anySatisfy(issue -> {
-            assertThat(issue.fieldPath()).contains("root.repository");
-            assertThat(issue.problem()).containsIgnoringCase("match");
+            assertThat(issue.problem()).contains("unknown-repo");
             assertThat(issue.hint()).isNotBlank();
         });
     }

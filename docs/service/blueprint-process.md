@@ -5,7 +5,7 @@ How the Blueprint Server applies a blueprint to a data-product repository the fi
 Related:
 
 - [Multi-repository & composition](repositories-and-composition.md) — multiple remotes, modules, layouts, and current support
-- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, repositories/root routing, composition schema
+- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, targetRepositories, typed instantiation routing, composition schema
 - [Git providers](git-providers.md) — auth and provider APIs
 - API: `POST /api/v2/pp/blueprint/blueprints-versions/instantiate`  
   and `POST /api/v2/pp/blueprint/blueprints-versions/update-data-product`
@@ -21,8 +21,8 @@ Related:
 | **Checkpoint tag** | Tag on the **data-product** repo marking a **pure** blueprint render: `blueprint-v{version}` |
 | **Update branch** | Temporary branch for the next pure render: `update/blueprint-v{version}` |
 | **Integration branch** | Usually `main` (or the target’s default / override branch) where users work |
-| **Logical repository key** | Manifest alias under `instantiation.repositories[].key`, mapped at runtime via `targetRepositories[].targetId` |
-| **Root repository** | The key named by `instantiation.root.repository` — lineage / descriptor live here |
+| **Logical repository key** | Manifest alias under `targetRepositories[].key`, mapped at runtime via request `targetRepositories[].targetId` |
+| **Root repository** | The key with `targetRepositories[].isRoot: true` — lineage / descriptor live here |
 
 Checkpoint tags and update-branch names are domain policy (`BlueprintGitNamingConventions`). They are **not** the same as the blueprint source release tag.
 

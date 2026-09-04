@@ -204,7 +204,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
                         "Source workspace missing for sourceId '%s' when updating repository key '%s'"
                                 .formatted(route.sourceId(), targetRepositoryKey));
             }
-            Map<String, JsonNode> params = route.fromParent()
+            Map<String, JsonNode> params = isParentRoute(route)
                     ? nextParentParameters
                     : modulesParameters.getOrDefault(route.sourceId(), Map.of());
             templatingPort.applyRoute(sourceRoot, route.sourcePath(), targetPath, route.destinationPath(), params);
@@ -218,7 +218,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             Map<String, BlueprintVersion> modulesByAlias) {
         Set<String> relocatedAliases = new LinkedHashSet<>();
         for (UpdateRoute route : routes) {
-            if (route.fromParent() || !relocatedAliases.add(route.sourceId())) {
+            if (isParentRoute(route) || !relocatedAliases.add(route.sourceId())) {
                 continue;
             }
             BlueprintVersion moduleVersion = modulesByAlias.get(route.sourceId());
@@ -259,6 +259,10 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
         }
         templatingPort.renderDescriptorToRoot(parentSourceRoot, parentRepo.getDescriptorTemplatePath(), targetPath, nextParentParameters);
         templatingPort.recordParentLineage(targetPath, nextVersion, nextParentParameters);
+    }
+
+    private boolean isParentRoute(UpdateRoute route) {
+        return PARENT_SOURCE_ID.equals(route.sourceId());
     }
 
     private Map<String, BlueprintVersion> retrieveModulesBlueprintVersions(BlueprintVersion nextVersion) {

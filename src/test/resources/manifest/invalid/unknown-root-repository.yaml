@@ -3,12 +3,13 @@ specVersion: 1.0.0
 name: unknown-root-repository
 version: 1.0.0
 
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: unknown-repo
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: unknown-repo
+        destinationPath: ./

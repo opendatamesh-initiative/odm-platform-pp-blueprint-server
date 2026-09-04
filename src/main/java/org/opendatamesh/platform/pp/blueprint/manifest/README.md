@@ -47,7 +47,7 @@ parameters, protecting specific resources, managing blueprint composition, and d
 
 > **Architectural Note**: Target repository creation, physical Git URLs, and repository creation policies are handled
 > dynamically at runtime by the client orchestrator. The manifest abstracts target locations using logical repository
-> keys (`instantiation.repositories[].key`). Created or pre-existing repositories are supplied to the instantiate endpoint,
+> keys (`targetRepositories[].key`). Created or pre-existing repositories are supplied to the instantiate endpoint,
 > each mapped to a repository key.
 
 A copy of this manifest is retained in the **root target repository** (the primary data product repository designated
@@ -99,21 +99,24 @@ To support DRY (Don't Repeat Yourself) principles, the manifest must support Blu
   repositories ("Children" or "Modules").
 - **Parameter Passing:** Similar to Terraform modules, the manifest must explicitly map and pass the required parameters
   down to the referenced child Blueprints to ensure successful downstream instantiation.
-- **Co-located Routing & Mapping:** Child modules explicitly define their blueprint source, parameter mappings, and
-  routing rules (`targets[]` with `sourcePath`, `repository`, and `path`) in a single `composition[]` entry.
+- **Separation of concerns:** `composition[]` declares **what** child blueprints to include and how parent parameters
+  map to child inputs. `instantiation[]` declares **where** generated output lands
 
 #### 3.4. Instantiation Strategy
 
-The manifest abstracts target destinations using logical repository identifiers declared in
-`instantiation.repositories`.
+The manifest abstracts target destinations using logical repository identifiers declared in `targetRepositories`.
 
 - **Monorepo Topology:** All generated output maps to a single repository key.
 - **Polyrepo Topology:** Root contents and composed child modules are distributed across multiple repository keys.
-- **Uniform routing:** Both `instantiation.root.targets[]` and `composition[].targets[]` use the same route shape
-  (`sourcePath` → `repository` + `path`). Root `sourcePath` is relative to the parent blueprint repository; module
+- **Root designation:** Exactly one `targetRepositories[]` entry must set `isRoot: true`. That key is the data-product
+  root repository (lineage, descriptor enrichment, registry primary pointer).
+- **Typed instantiation entries:** `instantiation[]` is a list of routing directives, each with `type: root` (parent
+  blueprint contents) or `type: module` (a composed child blueprint, referenced by `moduleName`).
+- **Uniform routing:** Every `instantiation[].targets[]` entry uses the same route shape (`sourcePath` → `repo` +
+  `destinationPath`). For `type: root`, `sourcePath` is relative to the parent blueprint repository; for `type: module`,
   `sourcePath` is relative to the child blueprint repository.
 - **Path Splitting:** Multiple entries in a `targets[]` list route different source subdirectories to separate
-  repository keys and paths.
+  repository keys and destinations.
 
 #### 3.5. Versioning Control
 
@@ -133,15 +136,16 @@ levels:
 The system orchestrating the Blueprint must support the following lifecycle:
 
 1. **Selection:** The user selects a specific Blueprint and version for their Data Product.
-2. **Target Resolution:** The client orchestrator resolves each logical repository key declared in
-   `instantiation.repositories` to an actual Git repository. Repository creation policies (`create_if_missing`,
-   `must_exist`, and so on) are enforced **outside** the manifest; the orchestrator creates or selects repositories and
-   passes them to the instantiate endpoint, each entry mapped to a repository key (`targetId`).
+2. **Target Resolution:** The client orchestrator resolves each logical repository key declared in `targetRepositories`
+   to an actual Git repository. Repository creation policies (`create_if_missing`, `must_exist`, and so on) are
+   enforced **outside** the manifest; the orchestrator creates or selects repositories and passes them to the
+   instantiate endpoint, each entry mapped to a repository key (`targetId`).
 3. **Configuration:** The user provides values for all parameters declared in the Blueprint Manifest (facilitated by the
    UI/UX metadata).
-4. **Generation & Copy:** The system parses `instantiation.root.targets` and `composition[].targets`, extracts files from
-   the declared source directories, resolves parameter variables, and writes generated code into the mapped target
-   repositories and paths.
+4. **Generation & Copy:** The system resolves `composition[]` (child blueprint references and parameter mappings),
+   then processes each `instantiation[]` entry: for `type: root`, routes parent blueprint files; for `type: module`,
+   instantiates the referenced child and routes its output. Files are extracted from declared source directories,
+   parameter variables are resolved, and generated code is written into the mapped target repositories and destinations.
 5. **Lineage Preservation:** A version of the manifest, complete with the resolved parameter values and versioning
    metadata, is copied **only into the root target repository** designated at instantiation time—not into module or
    secondary target repositories.
@@ -193,9 +197,9 @@ integrations.
     files, or per platform rules for globs/directories). When present:
     - `algorithm` (String, Required): Hash algorithm identifier (e.g., `sha256`).
     - `value` (String, Required): Lowercase hex-encoded digest of the protected content at instantiation time.
-- `composition` (Array of Objects, Optional): Defines child blueprints (modules) to be instantiated alongside the
+- `composition` (Array of Objects, Optional): Declares child blueprints (modules) to be instantiated alongside the
   parent.
-  - `module` (String, Required): A logical alias for the child module.
+  - `module` (String, Required): A logical alias for the child module. Must be unique within the manifest.
   - `blueprintName` (String, Required): The identifier of the child blueprint.
   - `blueprintVersion` (String, Required): The target release version of the child blueprint.
   - `parameterMapping` (Object, Optional): Maps **child** parameter keys to values supplied at instantiation. Every
@@ -210,45 +214,47 @@ integrations.
       Terraform’s explicit `module "x" { ... }` variable passing: only declared inputs are passed—there is no implicit
       global scope. Nested expressions (e.g., string concatenation) are out of scope; if a value must be derived, expose
       it as a parent parameter.
-  - `targets` (Array of Objects, Required): Routes subdirectories of the **child blueprint repository** to destination
-    repositories. Same shape as `instantiation.root.targets[]`. May contain multiple entries for path splitting.
-    - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the child blueprint repository
-      root.
-    - `repository` (String, Required): Must match an entry in `instantiation.repositories[].key`.
-    - `path` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
-- `instantiation` (Object, Required): Defines logical repository keys and routes parent blueprint contents to mapped
-  destinations.
-  - `repositories` (Array of Objects, Required): Abstract repository keys the client must resolve at instantiation time.
-    - `key` (String, Required): Unique logical alias referenced by `root.targets` and `composition[].targets` (e.g.,
-      `main`, `infra-repo`).
-    - `description` (String, Optional): Human-readable guidance for UI selection.
-  - `root` (Object, Required): Routes subdirectories of the **parent blueprint repository** to destination repositories
-    and designates the data-product root repository key.
-    - `repository` (String, Required): Declared `instantiation.repositories[].key` that is the data-product root
-      (lineage, descriptor enrichment, registry primary pointer). Applies **only** to parent `instantiation.root`—
-      never on `composition[].targets`. Not inferred from target order or a reserved key name.
-    - `targets` (Array of Objects, Required): **Must be non-empty** and must reference at least one declared repository
-      key. Empty `root.targets` (pure-orchestration parents) is **invalid**. Same shape as `composition[].targets[]`.
-      - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the parent blueprint repository
-        root.
-      - `repository` (String, Required): Must match an entry in `instantiation.repositories[].key`.
-      - `path` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
-        Destinations on the **same** repository key must be **siblings** (not nested path-prefixes of each other).
+- `targetRepositories` (Array of Objects, Required): Abstract repository keys the client must resolve at instantiation
+  time.
+  - `key` (String, Required): Unique logical alias referenced by `instantiation[].targets[].repo` (e.g.,
+    `main-repository`, `pipeline-repo`).
+  - `description` (String, Optional): Human-readable guidance for UI selection.
+  - `isRoot` (Boolean, Optional — defaults to `false`): When `true`, designates this key as the data-product root
+    repository (lineage, descriptor enrichment, registry primary pointer). Exactly one entry must set `isRoot: true`.
+- `instantiation` (Array of Objects, Required): Routes blueprint contents to destination repositories. Each entry
+  targets either the parent blueprint (`type: root`) or a composed child module (`type: module`).
+  - `type` (Enum: `root`, `module`, Required): Discriminant for the instantiation entry.
+    - `root` — routes files from the **parent** blueprint repository.
+    - `module` — instantiates and routes files from a **child** blueprint declared in `composition[]`.
+  - `moduleName` (String, Required when `type: module`): Must match a `composition[].module` value. **Omitted** when
+    `type: root`.
+  - `targets` (Array of Objects, Required): **Must be non-empty**. Routes subdirectories of the relevant blueprint
+    repository (parent for `type: root`, child for `type: module`) to destination repositories.
+    - `sourcePath` (String, Optional — defaults to `./`): Directory path relative to the blueprint repository root
+      (parent or child, depending on `type`).
+    - `repo` (String, Required): Must match a `targetRepositories[].key`.
+    - `destinationPath` (String, Optional — defaults to `./`): Directory path relative to the destination repository root.
+      Destinations on the **same** repository key must be **siblings** (not nested path-prefixes of each other).
 
 #### Validation constraints
 
 The orchestrator must enforce the following rules when validating a manifest:
 
-- `instantiation.repositories[].key` values must be **unique**.
+- `targetRepositories[].key` values must be **unique**.
+- Exactly one `targetRepositories[]` entry must set `isRoot: true`.
 - `composition[].module` values must be **unique** (when `composition` is present).
-- `instantiation.root.repository` is **required** and must match a declared `instantiation.repositories[].key`.
-- `instantiation.root.targets` must be **non-empty**.
-- When `BlueprintRepo.descriptorTemplatePath` is configured, the platform **always** renders that template onto the designated root target (`instantiation.root.repository`) at the path derived from the template (same relative path with `.vm` stripped). Authors do **not** declare a `root.targets` route for the descriptor.
-- Every declared `instantiation.repositories[].key` must appear on at least one route (`root.targets` or
-  `composition[].targets`); unused keys are rejected.
-- Every `repository` reference in `instantiation.root.targets[]` and `composition[].targets[]` must match an existing
-  `instantiation.repositories[].key`.
-- Exact duplicate `(repository, normalized path)` destinations across all routes are rejected.
+- `instantiation` must be **non-empty** and contain exactly one entry with `type: root`.
+- Every `instantiation[]` entry with `type: module` must declare `moduleName` matching an existing
+  `composition[].module`. Every `composition[].module` must have a corresponding `instantiation[]` entry with
+  `type: module`.
+- Every `instantiation[].targets` array must be **non-empty**.
+- When `BlueprintRepo.descriptorTemplatePath` is configured, the platform **always** renders that template onto the
+  designated root target (`targetRepositories[]` entry with `isRoot: true`) at the path derived from the template
+  (same relative path with `.vm` stripped). Authors do **not** declare an `instantiation` route for the descriptor.
+- Every declared `targetRepositories[].key` must appear on at least one route (`instantiation[].targets[].repo`);
+  unused keys are rejected.
+- Every `repo` reference in `instantiation[].targets[]` must match an existing `targetRepositories[].key`.
+- Exact duplicate `(repo, normalized destinationPath)` destinations across all routes are rejected.
 - Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
   rejected; use sibling destinations.
 - `parameterMapping` entries must be `{ $param: key }` or `{ value: actualValue }` objects; bare scalars are invalid.
@@ -359,21 +365,22 @@ protectedResources:
   - path: infrastructure/core/**
   - path: README.md
 
+targetRepositories:
+  - key: main-repository
+    description: Target repository for all data product assets
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-      description: Target repository for all data product assets
-  root:
-    repository: main
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main-repository
+        destinationPath: ./
 ```
 
 #### 2.2. Monorepo + composition
 
-Single target repository (`main`). Child modules write into subdirectories within `main`.
+Single target repository (`main-repository`). Child modules write into subdirectories within `main-repository`.
 
 ```yaml
 spec: odm-blueprint-manifest
@@ -400,17 +407,10 @@ parameters:
       group: Security
       label: Enable PII masking
 
-instantiation:
-  repositories:
-    - key: main
-      description: Single repository containing application and infrastructure
-
-  root:
-    repository: main
-    targets:
-      - sourcePath: ./
-        repository: main
-        path: core/
+targetRepositories:
+  - key: main-repository
+    description: Single repository containing application and infrastructure
+    isRoot: true
 
 composition:
   - module: storage
@@ -420,20 +420,33 @@ composition:
       bucketPrefix: { $param: projectSlug }
       encryptAtRest: { $param: enablePiiMasking }
       region: { value: eu-west-1 }
-    targets:
-      - sourcePath: ./
-        repository: main
-        path: data-plane/storage
 
   - module: serving
     blueprintName: odm-blueprint-api-skeleton
     blueprintVersion: 1.4.0
     parameterMapping:
       serviceName: { $param: projectSlug }
+
+instantiation:
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: app/serving
+        repo: main-repository
+        destinationPath: core/
+
+  - type: module
+    moduleName: storage
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: data-plane/storage
+
+  - type: module
+    moduleName: serving
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: app/serving
 ```
 
 #### 2.3. Polyrepo, no composition
@@ -457,25 +470,25 @@ parameters:
       label: AWS region
       formType: dropdown
 
-instantiation:
-  repositories:
-    - key: infra-repo
-      description: Target repository for infrastructure code and policies
-    - key: app-repo
-      description: Target repository for application code
+targetRepositories:
+  - key: infra-repo
+    description: Target repository for infrastructure code and policies
+  - key: app-repo
+    description: Target repository for application code
+    isRoot: true
 
-  root:
-    repository: app-repo
+instantiation:
+  - type: root
     targets:
       - sourcePath: terraform/
-        repository: infra-repo
-        path: terraform/
+        repo: infra-repo
+        destinationPath: terraform/
       - sourcePath: policies/
-        repository: infra-repo
-        path: governance/policies
+        repo: infra-repo
+        destinationPath: governance/policies
       - sourcePath: application/
-        repository: app-repo
-        path: ./
+        repo: app-repo
+        destinationPath: ./
 ```
 
 #### 2.4. Polyrepo + composition
@@ -497,19 +510,12 @@ parameters:
       label: Data domain
       formType: text
 
-instantiation:
-  repositories:
-    - key: pipeline-repo
-      description: Target repository for data pipeline components
-    - key: api-repo
-      description: Target repository for API serving components
-
-  root:
-    repository: pipeline-repo
-    targets:
-      - sourcePath: ./core
-        repository: pipeline-repo
-        path: ./core
+targetRepositories:
+  - key: pipeline-repo
+    description: Target repository for data pipeline components
+    isRoot: true
+  - key: api-repo
+    description: Target repository for API serving components
 
 composition:
   - module: ingest
@@ -517,25 +523,38 @@ composition:
     blueprintVersion: 2.0.0
     parameterMapping:
       domain: { $param: dataDomain }
-    targets:
-      - sourcePath: ./
-        repository: pipeline-repo
-        path: pipelines/batch
 
   - module: consume
     blueprintName: odm-blueprint-consumer-api
     blueprintVersion: 1.1.0
     parameterMapping:
       domain: { $param: dataDomain }
+
+instantiation:
+  - type: module
+    moduleName: ingest
     targets:
       - sourcePath: ./
-        repository: api-repo
-        path: services/consumer
+        repo: pipeline-repo
+        destinationPath: ./
+
+  - type: module
+    moduleName: consume
+    targets:
+      - sourcePath: ./
+        repo: api-repo
+        destinationPath: ./
+
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: pipeline-repo
+        destinationPath: ./core
 ```
 
-`instantiation.root.repository` must name a declared repository key (the data-product root).
-`instantiation.root.targets` must always contain at least one entry. Pure-orchestration parents with
-`root.targets: []` are **not** supported.
+Exactly one `targetRepositories[]` entry must set `isRoot: true` (the data-product root).
+`instantiation` must contain exactly one entry with `type: root`. Every `composition[].module` must have a
+corresponding `instantiation[]` entry with `type: module`.
 
 ## Java API
 
