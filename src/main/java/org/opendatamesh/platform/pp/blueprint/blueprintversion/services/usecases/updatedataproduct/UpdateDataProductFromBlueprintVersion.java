@@ -37,8 +37,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             UpdateDataProductPersistencyOutboundPort persistencyPort,
             UpdateDataProductManifestOutboundPort manifestPort,
             UpdateDataProductTemplatingOutboundPort templatingPort,
-            UpdateDataProductGitOutboundPort gitPort
-    ) {
+            UpdateDataProductGitOutboundPort gitPort) {
         this.command = command;
         this.presenter = presenter;
         this.persistencyPort = persistencyPort;
@@ -81,7 +80,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
         gitPort.openSources(nextVersion.getBlueprint(), sourceRepositories, sourcePaths -> {
             for (Map.Entry<String, List<UpdateRoute>> entry : routesByTargetKey.entrySet()) {
                 UpdateDataProductTargetRepositoryDto targetRepository = requireTargetRepository(targetsByKey, entry.getKey());
-                results.add(updateTargetRepository(
+                var result = updateTargetRepository(
                         nextVersion,
                         nextParentParameters,
                         modulesParameters,
@@ -89,7 +88,8 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
                         rootTargetRepositoryKey,
                         sourcePaths,
                         targetRepository,
-                        entry.getValue()));
+                        entry.getValue());
+                results.add(result);
             }
         });
 
@@ -133,37 +133,77 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
         String nextCheckpointTag = BlueprintGitNamingConventions.checkpointTag(command.nextVersionNumber());
         String updateBranchName = BlueprintGitNamingConventions.updateBranchName(command.nextVersionNumber());
         String commitMessage = "Update data product from blueprint %s@%s -> %s".formatted(command.blueprintName(), command.currentVersionNumber(), command.nextVersionNumber());
-        AtomicReference<String> createdCommitHash = new AtomicReference<>();
+        AtomicReference<UpdateTargetGitResult> gitResultHolder = new AtomicReference<>();
 
         gitPort.openTargetAtCheckpoint(
                 targetRepository,
                 currentCheckpointTag,
                 targetPath -> {
-                    gitPort.createAndCheckoutBranch(targetPath, updateBranchName);
                     gitPort.cleanWorkingTreePreservingGit(targetPath);
                     renderRoutedSources(targetRepositoryKey, routes, sourcePaths, targetPath, nextParentParameters, modulesParameters);
                     relocateModuleReferencedFiles(targetPath, routes, sourcePaths, modulesByAlias);
                     renderDescriptorAndLineageOnRootRepository(nextVersion, nextParentParameters, rootTargetRepositoryKey, targetRepositoryKey, sourcePaths, targetPath);
 
-                    String commitHash = gitPort.commitAll(targetPath, updateBranchName, commitMessage, command.commitAuthorName(), command.commitAuthorEmail());
-                    gitPort.createCheckpointTag(targetPath, nextCheckpointTag, commitHash, command.commitAuthorName(), command.commitAuthorEmail());
-                    gitPort.pushBranch(targetPath, updateBranchName);
-                    gitPort.pushTag(targetPath, nextCheckpointTag);
-                    createdCommitHash.set(commitHash);
+                    if (gitPort.hasWorkingTreeChanges(targetPath)) {
+                        var publishResult = publishChangedTarget(targetPath, updateBranchName, nextCheckpointTag, commitMessage);
+                        gitResultHolder.set(publishResult);
+                    } else {
+                        var publishResult = publishUnchangedTarget(targetRepositoryKey, targetPath, nextCheckpointTag);
+                        gitResultHolder.set(publishResult);
+                    }
                 });
 
-        String commitHash = createdCommitHash.get();
-        if (commitHash == null) {
-            throw new InternalException("Update from checkpoint completed without producing a commit hash");
+        UpdateTargetGitResult updateGitResult = gitResultHolder.get();
+        if (updateGitResult == null) {
+            throw new InternalException("Update from checkpoint completed without producing a Git result");
         }
 
-        UpdateTargetGitResult updateGitResult = new UpdateTargetGitResult(updateBranchName, nextCheckpointTag, commitHash);
         String pullRequestWebUrl = null;
-        if (command.createPullRequest()) {
+        if (command.createPullRequest() && !updateGitResult.contentUnchanged()) {
             pullRequestWebUrl = tryOpenPullRequest(targetRepository, updateGitResult, currentCheckpointTag, nextCheckpointTag);
         }
 
-        return new UpdateDataProductTargetResult(targetRepository.targetId(), targetRepository.repository(), updateGitResult.updateBranchName(), updateGitResult.checkpointTag(), updateGitResult.commitHash(), pullRequestWebUrl);
+        return new UpdateDataProductTargetResult(
+                targetRepository.targetId(),
+                targetRepository.repository(),
+                updateGitResult.updateBranchName(),
+                updateGitResult.checkpointTag(),
+                updateGitResult.commitHash(),
+                pullRequestWebUrl,
+                updateGitResult.contentUnchanged());
+    }
+
+    private UpdateTargetGitResult publishChangedTarget(
+            Path targetPath,
+            String updateBranchName,
+            String nextCheckpointTag,
+            String commitMessage) {
+        gitPort.createAndCheckoutBranch(targetPath, updateBranchName);
+        String commitHash = gitPort.commitAll(targetPath, updateBranchName, commitMessage, command.commitAuthorName(), command.commitAuthorEmail());
+        gitPort.createCheckpointTag(targetPath, nextCheckpointTag, commitHash, command.commitAuthorName(), command.commitAuthorEmail());
+        gitPort.pushBranch(targetPath, updateBranchName);
+        gitPort.pushTag(targetPath, nextCheckpointTag);
+        return new UpdateTargetGitResult(updateBranchName, nextCheckpointTag, commitHash, false);
+    }
+
+    private UpdateTargetGitResult publishUnchangedTarget(
+            String targetRepositoryKey,
+            Path targetPath,
+            String nextCheckpointTag) {
+        String existingSha = gitPort.resolveCheckedOutCommitSha(targetPath);
+        gitPort.createCheckpointTag(targetPath, nextCheckpointTag, existingSha, command.commitAuthorName(), command.commitAuthorEmail());
+        gitPort.pushTag(targetPath, nextCheckpointTag);
+        warnings.add(buildContentUnchangedWarning(targetRepositoryKey, nextCheckpointTag, existingSha));
+        return new UpdateTargetGitResult(null, nextCheckpointTag, existingSha, true);
+    }
+
+    private String buildContentUnchangedWarning(
+            String targetRepositoryKey,
+            String nextCheckpointTag,
+            String existingSha) {
+        return ("Target repository '%s' content was identical to the current checkpoint; "
+                + "checkpoint tag '%s' reuses commit '%s' (no update branch or pull request).")
+                .formatted(targetRepositoryKey, nextCheckpointTag, existingSha);
     }
 
     private UpdateDataProductTargetRepositoryDto requireTargetRepository(
@@ -335,8 +375,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             UpdateDataProductTargetRepositoryDto target,
             UpdateTargetGitResult gitResult,
             String currentTag,
-            String nextTag
-    ) {
+            String nextTag) {
         String prTarget = StringUtils.hasText(target.pullRequestTargetBranch())
                 ? target.pullRequestTargetBranch()
                 : target.repository().getDefaultBranch();
@@ -358,7 +397,8 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
     private String buildPullRequestWarning(Repository repository, UpdateTargetGitResult gitResult, RuntimeException e) {
         String repoIdentity = StringUtils.hasText(repository.getName())
                 ? repository.getName()
-                : (StringUtils.hasText(repository.getCloneUrlHttp()) ? repository.getCloneUrlHttp() : repository.getId());
+                : (StringUtils.hasText(repository.getCloneUrlHttp()) ? repository.getCloneUrlHttp()
+                : repository.getId());
         String cause = StringUtils.hasText(e.getMessage()) ? e.getMessage() : e.getClass().getSimpleName();
         return ("Pull request creation failed for repository '%s' after update branch '%s' and checkpoint tag '%s' were already pushed: %s")
                 .formatted(repoIdentity, gitResult.updateBranchName(), gitResult.checkpointTag(), cause);

@@ -124,6 +124,16 @@ class UpdateDataProductGitOutboundPortImpl implements UpdateDataProductGitOutbou
     }
 
     @Override
+    public boolean hasWorkingTreeChanges(Path targetRepository) {
+        return !gitProvider.gitOperation().isWorkingTreeClean(targetRepository.toFile());
+    }
+
+    @Override
+    public String resolveCheckedOutCommitSha(Path targetRepository) {
+        return gitProvider.gitOperation().getCheckedOutCommitSha(targetRepository.toFile());
+    }
+
+    @Override
     public String commitAll(
             Path targetRepository,
             String branchName,
