@@ -1,13 +1,17 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParser;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
-import java.io.IOException;
-import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 
-class OdmBlueprintManifestAutoFiller implements ManifestAutoFiller {
+import java.io.IOException;
+
+public class OdmBlueprintManifestAutoFiller implements ManifestAutoFiller {
+
+    /** Default logical repository key seeded when {@code targetRepositories} is empty. */
+    public static final String DEFAULT_REPOSITORY_KEY = "main-repository";
 
     private final ManifestParser parser = ManifestParserFactory.getParser();
 

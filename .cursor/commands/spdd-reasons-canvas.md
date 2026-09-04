@@ -294,6 +294,19 @@ Input can be provided in two ways:
       - errorMessage: String - Detailed error description
    3. Constructors: Multiple constructors for different scenarios
    4. Usage Scenarios: [When to throw this exception]
+
+   ### High-level tests (Gherkin)
+   (only when the input included an analysis file)
+   Cover: main requirement/feature paths, important edge cases, important user decisions/clarifications.
+   Feature: [capability]
+     Scenario: [one behavior]
+       Given [precondition]
+       When [action]
+       Then [observable outcome]
+
+   | Feature / Scenario | Test class | Method |
+   | --- | --- | --- |
+   | [Feature] / [Scenario] | [*IT or *Test] | [when...Then...] |
    ```
 
    **Construction Guidance**:
@@ -304,6 +317,7 @@ Input can be provided in two ways:
    - **Single Responsibility**: Each task has clear responsibilities and boundaries
    - **Verifiability**: Each task has clear completion criteria
    - **Logical Rigor**: Ensure task orchestration is based on business models, avoid logical loopholes
+   - **Gherkin scenarios (analysis input)**: When the input included an analysis file, add a **High-level tests (Gherkin)** subsection. Derive N `Feature:` / `Scenario:` blocks in business language covering (1) **main requirement/feature paths**, (2) **important edge cases**, (3) **important user decisions/clarifications** recorded in the analysis. Include a 1:1 Feature/Scenario → test class/method table. Add the task of implementing them; each test method’s Javadoc copies its Scenario verbatim.
 
    **Quality Standards**:
    - Tasks can be executed directly

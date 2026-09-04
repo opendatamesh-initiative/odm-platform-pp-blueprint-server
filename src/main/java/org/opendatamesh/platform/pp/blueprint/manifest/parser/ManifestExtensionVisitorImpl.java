@@ -2,15 +2,15 @@ package org.opendatamesh.platform.pp.blueprint.manifest.parser;
 
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestComposition;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationCompositionLayout;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationTarget;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationEntry;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.protectedresource.ManifestProtectedResourceIntegrity;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
@@ -18,8 +18,8 @@ import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 /**
  * Walks the manifest object graph and applies {@link ManifestExtensionHandler} at each {@code ManifestComponentBase} node.
  */
-class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameterVisitor, ManifestInstantiationVisitor,
-        ManifestProtectedResourceVisitor {
+class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameterVisitor,
+        ManifestInstantiationEntryVisitor, ManifestProtectedResourceVisitor {
 
     private final ManifestExtensionHandler extensionHandler;
 
@@ -39,8 +39,11 @@ class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameter
         if (manifest.getComposition() != null) {
             manifest.getComposition().forEach(c -> c.accept(this));
         }
+        if (manifest.getTargetRepositories() != null) {
+            manifest.getTargetRepositories().forEach(r -> r.accept(this));
+        }
         if (manifest.getInstantiation() != null) {
-            manifest.getInstantiation().accept(this);
+            manifest.getInstantiation().forEach(e -> e.accept(this));
         }
     }
 
@@ -69,13 +72,16 @@ class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameter
     }
 
     @Override
-    public void visit(ManifestInstantiation manifestInstantiation) {
-        extensionHandler.handleComponentBaseExtension(manifestInstantiation, ManifestInstantiation.class);
-        if (manifestInstantiation.getCompositionLayout() != null) {
-            manifestInstantiation.getCompositionLayout().forEach(l -> l.accept(this));
-        }
-        if (manifestInstantiation.getTargets() != null) {
-            manifestInstantiation.getTargets().forEach(t -> t.accept(this));
+    public void visit(ManifestTargetRepository targetRepository) {
+        extensionHandler.handleComponentBaseExtension(targetRepository, ManifestTargetRepository.class);
+    }
+
+    @Override
+    public void visit(ManifestInstantiationEntry instantiationEntry) {
+        extensionHandler.handleComponentBaseExtension(instantiationEntry, ManifestInstantiationEntry.class);
+        if (instantiationEntry.getTargets() != null) {
+            ManifestInstantiationEntryVisitor entryVisitor = this;
+            instantiationEntry.getTargets().forEach(t -> t.accept(entryVisitor));
         }
     }
 
@@ -90,13 +96,8 @@ class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameter
     }
 
     @Override
-    public void visit(ManifestInstantiationCompositionLayout compositionLayout) {
-        extensionHandler.handleComponentBaseExtension(compositionLayout, ManifestInstantiationCompositionLayout.class);
-    }
-
-    @Override
-    public void visit(ManifestInstantiationTarget target) {
-        extensionHandler.handleComponentBaseExtension(target, ManifestInstantiationTarget.class);
+    public void visit(ManifestTarget target) {
+        extensionHandler.handleComponentBaseExtension(target, ManifestTarget.class);
     }
 
     @Override

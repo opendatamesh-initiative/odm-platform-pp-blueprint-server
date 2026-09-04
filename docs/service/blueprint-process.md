@@ -4,7 +4,8 @@ How the Blueprint Server applies a blueprint to a data-product repository the fi
 
 Related:
 
-- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, strategy, composition
+- [Multi-repository & composition](repositories-and-composition.md) — multiple remotes, modules, layouts, and current support
+- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, targetRepositories, typed instantiation routing, composition schema
 - [Git providers](git-providers.md) — auth and provider APIs
 - API: `POST /api/v2/pp/blueprint/blueprints-versions/instantiate`  
   and `POST /api/v2/pp/blueprint/blueprints-versions/update-data-product`
@@ -20,10 +21,12 @@ Related:
 | **Checkpoint tag** | Tag on the **data-product** repo marking a **pure** blueprint render: `blueprint-v{version}` |
 | **Update branch** | Temporary branch for the next pure render: `update/blueprint-v{version}` |
 | **Integration branch** | Usually `main` (or the target’s default / override branch) where users work |
+| **Logical repository key** | Manifest alias under `targetRepositories[].key`, mapped at runtime via request `targetRepositories[].targetId` |
+| **Root repository** | The key with `targetRepositories[].isRoot: true` — lineage / descriptor live here |
 
 Checkpoint tags and update-branch names are domain policy (`BlueprintGitNamingConventions`). They are **not** the same as the blueprint source release tag.
 
-Phase 1 supports **monorepo, no composition** (exactly one `root` target). Request/response shapes stay **list-based** (`targetRepositories` / `results`) so polyrepo and composition can be enabled later without breaking the API.
+Instantiate and update both support **all four layouts**: monorepo or polyrepo, with or without composition. The request stays **list-based** (`targetRepositories` / `results`) — one entry per logical key that receives files. For how keys, routes, and modules fit together, see [Multi-repository & composition](repositories-and-composition.md).
 
 ---
 
@@ -35,13 +38,15 @@ Instantiate creates the **first pure checkpoint** and integrates it into the tar
 
 ### What the service does
 
-1. Resolve the blueprint version and validate parameters against the manifest.
-2. Clone the blueprint **source** at the version’s release tag and the **target** at the integration branch.
-3. Create an **orphan** branch (empty tree — no user files).
-4. Render Velocity templates and copy files into that orphan working tree (plus lineage under `.odm/blueprint/`).
-5. Commit the pure render and tag it as **`blueprint-v{version}`**.
-6. **Merge** the orphan branch into the integration branch (e.g. `main`).
-7. Push the integration branch and the checkpoint tag.
+1. Resolve the blueprint version, validate parameters against the manifest, and load any composed modules.
+2. Flatten parent and module **routes**, grouped by logical repository key.
+3. For **each** mapped target that receives files:
+   - Clone the relevant blueprint **source(s)** at their release tags and the **target** at the integration branch.
+   - Create an **orphan** branch (empty tree — no user files).
+   - Render Velocity templates and copy files along the routes for that key (plus parent lineage under `.odm/blueprint/` on the **root** target only).
+   - Commit the pure render, tag it as **`blueprint-v{version}`**, merge into the integration branch, and push branch + tag.
+
+Polyrepo runs that Git policy **independently per target**. Composition only adds extra source repositories and routes; it does not change the orphan-checkpoint idea.
 
 ```text
        [blueprint-v1.0.0]  pure orphan commit C1
@@ -73,11 +78,14 @@ Update moves a data-product repository from the **current** checkpoint to the **
 
 ### What the service does (per target)
 
-1. Clone the target at the **current** checkpoint tag (`blueprint-v{current}`) and the blueprint source at the **next** release tag.
-2. Create branch **`update/blueprint-v{next}`** from that checkpoint (not from `main`).
-3. Clean the working tree (preserve `.git`), re-render the next version, enrich descriptor lineage.
-4. Commit, tag **`blueprint-v{next}`**, push branch + tag.
-5. Optionally open a same-repo Pull Request (`createPullRequest`): update branch → `pullRequestTargetBranch` or repo default branch.
+1. Validate that the **next** version keeps the same layout as the **current** one (repository keys, root key, routes, composition slots). Content, parameter values, `parameterMapping`, and same-slot module version bumps may change; layout may not.
+2. Clone the target at the **current** checkpoint tag (`blueprint-v{current}`) and the blueprint source(s) at the **next** release tag(s).
+3. Create branch **`update/blueprint-v{next}`** from that checkpoint (not from `main`).
+4. Clean the working tree (preserve `.git`), re-render the next version along the routes for that key, enrich descriptor lineage on the **root** target.
+5. Commit, tag **`blueprint-v{next}`**, push branch + tag.
+6. Optionally open a same-repo Pull Request (`createPullRequest`): update branch → `pullRequestTargetBranch` or repo default branch.
+
+As with instantiate, polyrepo updates each mapped remote independently. A first-time remote still requires **instantiate**, not update.
 
 ```text
 (v1 checkpoint)                 (v2 checkpoint)

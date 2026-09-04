@@ -147,7 +147,7 @@ public class BlueprintVersionsController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Instantiation completed successfully",
                     content = @Content(schema = @Schema(implementation = InstantiateBlueprintVersionResponseRes.class))),
-            @ApiResponse(responseCode = "400", description = "Validation failed for request or manifest parameters; unsupported manifest for this phase; or Git operation failure (see global exception handling)",
+            @ApiResponse(responseCode = "400", description = "Validation failed for request or manifest (parameters, routes, composition, targetRepositories mapping); or Git operation failure (see global exception handling)",
                     content = @Content(schema = @Schema(implementation = ErrorRes.class))),
             @ApiResponse(responseCode = "500", description = "Internal server error",
                     content = @Content(schema = @Schema(implementation = ErrorRes.class)))

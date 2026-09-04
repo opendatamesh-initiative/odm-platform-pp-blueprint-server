@@ -1,16 +1,16 @@
 package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedataproduct;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.RepositoryRes;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
 
 import static io.swagger.v3.oas.annotations.media.Schema.RequiredMode.NOT_REQUIRED;
 
 @Schema(name = "update_data_product_target_result")
 public class UpdateDataProductTargetResultRes {
 
-    @Schema(description = "Target repository logical type", example = "root")
-    private BlueprintRepositoryLogicalType type;
+    @Schema(description = "The repository Id specified in the blueprint manifest. The default repository id is " + OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY + ".", example = OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+    private String targetId;
 
     @Schema(description = "Target repository reference")
     private RepositoryRes repository;
@@ -27,12 +27,12 @@ public class UpdateDataProductTargetResultRes {
     @Schema(description = "Provider web URL of the opened pull request, when createPullRequest succeeded", requiredMode = NOT_REQUIRED)
     private String pullRequestWebUrl;
 
-    public BlueprintRepositoryLogicalType getType() {
-        return type;
+    public String getTargetId() {
+        return targetId;
     }
 
-    public void setType(BlueprintRepositoryLogicalType type) {
-        this.type = type;
+    public void setTargetId(String targetId) {
+        this.targetId = targetId;
     }
 
     public RepositoryRes getRepository() {

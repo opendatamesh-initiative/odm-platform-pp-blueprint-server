@@ -1,0 +1,37 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: multiple-structural-errors
+version: 1.0.0
+
+parameters:
+  - key: projectSlug
+    type: string
+    required: true
+
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+  - key: orphan
+
+composition:
+  - module: storage
+    blueprintName: odm-blueprint-s3-lake
+    blueprintVersion: 3.0.1
+    parameterMapping:
+      bucketPrefix: projectSlug
+
+instantiation:
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: ./
+      - sourcePath: docs/
+        repo: main-repository
+        destinationPath: nested/under-root
+  - type: module
+    moduleName: storage
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: data-plane/storage

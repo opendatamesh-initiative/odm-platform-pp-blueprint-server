@@ -1,0 +1,16 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: unused-key
+version: 1.0.0
+
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+  - key: orphan
+
+instantiation:
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: ./

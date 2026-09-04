@@ -12,6 +12,11 @@ public class ManifestComposition extends ManifestComponentBase {
     private String module;
     private String blueprintName;
     private String blueprintVersion;
+    /**
+     * Child parameter keys mapped to objects with exactly one discriminant:
+     * {@code { "$param": "&lt;parentKey&gt;" }} (dynamic from the parent set) or
+     * {@code { "value": &lt;actualValue&gt; }} (fixed literal; any JSON type). Bare scalars are invalid.
+     */
     private Map<String, JsonNode> parameterMapping = new LinkedHashMap<>();
 
     public String getModule() {

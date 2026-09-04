@@ -6,5 +6,12 @@ dumb_extension:
   fieldA: valueA
   fieldB: valueB
 x-prop: x-prop-value
+targetRepositories:
+  - key: main-repository
+    isRoot: true
 instantiation:
-  strategy: monorepo
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: ./

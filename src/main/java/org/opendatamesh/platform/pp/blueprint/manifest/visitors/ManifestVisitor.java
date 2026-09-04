@@ -2,9 +2,10 @@ package org.opendatamesh.platform.pp.blueprint.manifest.visitors;
 
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestComposition;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationEntry;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 
 public interface ManifestVisitor {
 
@@ -16,5 +17,7 @@ public interface ManifestVisitor {
 
     void visit(ManifestComposition manifestComposition);
 
-    void visit(ManifestInstantiation manifestInstantiation);
+    void visit(ManifestTargetRepository targetRepository);
+
+    void visit(ManifestInstantiationEntry instantiationEntry);
 }

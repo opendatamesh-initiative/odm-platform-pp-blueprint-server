@@ -1,14 +1,14 @@
 package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.RepositoryRes;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
 
 @Schema(name = "instantiate_blueprint_version_target_repository_result")
 public class InstantiateBlueprintVersionTargetRepositoryResultRes {
 
-    @Schema(description = "Target repository logical type", example = "root")
-    private BlueprintRepositoryLogicalType type;
+    @Schema(description = "The repository Id specified in the blueprint manifest. The default repository id is " + OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY + ".", example = OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+    private String targetId;
 
     @Schema(description = "Target repository reference")
     private RepositoryRes repository;
@@ -19,12 +19,12 @@ public class InstantiateBlueprintVersionTargetRepositoryResultRes {
     @Schema(description = "Number of changed files produced by instantiation", example = "12")
     private Integer changedFiles;
 
-    public BlueprintRepositoryLogicalType getType() {
-        return type;
+    public String getTargetId() {
+        return targetId;
     }
 
-    public void setType(BlueprintRepositoryLogicalType type) {
-        this.type = type;
+    public void setTargetId(String targetId) {
+        this.targetId = targetId;
     }
 
     public RepositoryRes getRepository() {

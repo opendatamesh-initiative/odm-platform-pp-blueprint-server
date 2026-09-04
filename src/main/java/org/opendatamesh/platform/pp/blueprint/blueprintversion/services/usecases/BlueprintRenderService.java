@@ -1,9 +1,22 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.VelocityEngine;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
@@ -13,20 +26,15 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
-import java.io.IOException;
-import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
-
-import static org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation.InstantiationStrategy.MONOREPO;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 
 /**
- * Shared monorepo-no-composition Velocity render-and-copy utility used by
- * instantiate and update
+ * Shared Velocity render-and-copy utility used by instantiate and update
  * templating outbound ports.
  */
 @Service
@@ -38,15 +46,26 @@ public class BlueprintRenderService {
     private static final String MANIFEST_DEFAULT_FILENAME = "blueprint-manifest.yaml";
     private static final Set<String> COPY_TREE_SKIP_NAMES = Set.of(".git");
 
+    /**
+     * Whole-tree 1→1 render used by update (and retained for backward
+     * compatibility).
+     * Includes parent lineage sidecar relocate into the rendered tree.
+     * <p>
+     * Renders an entire blueprint source tree into a target workspace.
+     * Resolves parameters from the version's manifest, evaluates Velocity
+     * templates,
+     * records the blueprint lineage sidecar, and copies the result to
+     * {@code targetRoot}.
+     * Used by the update flow for the monorepo, no-composition case.
+     */
     public void monorepoNoCompositionRenderAndCopy(
             BlueprintVersion blueprintVersion,
             Map<String, JsonNode> parameters,
             Path sourceRoot,
             Path targetRoot) {
         Manifest manifest = parseManifest(blueprintVersion);
-        BlueprintRepo repo = blueprintVersion.getBlueprint().getBlueprintRepo();
         Map<String, JsonNode> fullParameters = retrieveFullListOfParametersAndValues(
-                manifest, parameters == null ? Map.of() : parameters);
+                manifest, emptyIfNull(parameters));
         VelocityEngine velocityEngine = createVelocityEngine();
         VelocityContext velocityContext = buildVelocityContext(fullParameters);
 
@@ -54,7 +73,7 @@ public class BlueprintRenderService {
         try {
             copyTree(sourceRoot, tempRoot);
             renderVelocityTemplates(tempRoot, velocityEngine, velocityContext);
-            relocateBlueprintReadme(tempRoot, repo);
+            relocateBlueprintReadme(tempRoot, blueprintVersion);
             relocateManifestFile(tempRoot, blueprintVersion);
             copyTree(tempRoot, targetRoot);
         } catch (IOException e) {
@@ -67,7 +86,166 @@ public class BlueprintRenderService {
         }
     }
 
-    private static Path initTemporaryDirectory() {
+    /**
+     * Renders the data-product descriptor template from the parent blueprint source
+     * into the
+     * root target workspace. The output is written at the same repository-relative
+     * path, with
+     * a {@code .vm} suffix stripped when present. Does nothing if
+     * {@code descriptorTemplatePath}
+     * is blank.
+     */
+    public void renderDescriptorTemplate(
+            Path sourceRoot,
+            String descriptorTemplatePath,
+            Path targetRoot,
+            Map<String, JsonNode> parameters) {
+        if (descriptorTemplatePath == null || descriptorTemplatePath.isBlank()) {
+            return;
+        }
+        String templatePath = normalizeRepoPath(descriptorTemplatePath);
+        Path templateFile = loadExistingTemplate(sourceRoot, templatePath);
+        String renderedPath = stripVmSuffix(templatePath);
+        Path destinationFile = targetRoot.resolve(renderedPath);
+        VelocityEngine velocityEngine = createVelocityEngine();
+        VelocityContext velocityContext = buildVelocityContext(emptyIfNull(parameters));
+
+        Path tempRoot = initTemporaryDirectory();
+        try {
+            copyFile(templateFile, tempRoot.resolve(templatePath));
+            renderVelocityTemplates(tempRoot, velocityEngine, velocityContext);
+            Path renderedFile = requireRenderedDescriptor(tempRoot.resolve(renderedPath), destinationFile);
+            copyFile(renderedFile, destinationFile);
+        } catch (IOException e) {
+            throw new InternalException(
+                    "Failed while rendering descriptor template from '%s' to '%s': %s"
+                            .formatted(templateFile, destinationFile, e.getMessage()),
+                    e);
+        } finally {
+            deleteRecursively(tempRoot);
+        }
+    }
+
+    /**
+     * Renders a source file or directory and copies the result into a destination
+     * path
+     * under the target workspace. Velocity templates in the subtree are evaluated
+     * with
+     * the given parameters. Does not record lineage; callers that need parent
+     * provenance
+     * use {@link #relocateParentLineageSidecar(Path, BlueprintVersion)}.
+     */
+    public void renderAndCopySubtree(
+            Path sourceRoot,
+            String sourcePath,
+            Path targetRoot,
+            String destinationPath,
+            Map<String, JsonNode> parameters) {
+        Path sourceSubtree = requireExistingSubtree(sourceRoot, sourcePath);
+        Path destinationSubtree = resolveSubtree(targetRoot, destinationPath);
+        VelocityEngine velocityEngine = createVelocityEngine();
+        VelocityContext velocityContext = buildVelocityContext(emptyIfNull(parameters));
+
+        Path tempRoot = initTemporaryDirectory();
+        try {
+            stageSubtree(sourceSubtree, tempRoot);
+            renderVelocityTemplates(tempRoot, velocityEngine, velocityContext);
+            Files.createDirectories(destinationSubtree);
+            copyTree(tempRoot, destinationSubtree);
+        } catch (IOException e) {
+            throw new InternalException(
+                    "Failed while rendering blueprint templates or copying files from '%s' to '%s': %s"
+                            .formatted(sourceSubtree, destinationSubtree, e.getMessage()),
+                    e);
+        } finally {
+            deleteRecursively(tempRoot);
+        }
+    }
+
+    /**
+     * Moves a composition module's {@code BlueprintRepo} file pointers
+     * ({@code readmePath}, {@code manifestRootPath}) under
+     * {@code .odm/<moduleAlias>} on the target. Prefers files already rendered at
+     * the composition destinations; otherwise copies from the module source.
+     * Does not relocate {@code descriptorTemplatePath}.
+     */
+    public void relocateModuleReferencedFiles(
+            Path targetRoot,
+            String moduleAlias,
+            BlueprintVersion moduleVersion,
+            Path moduleSourceRoot,
+            List<String> destinationPaths) {
+        BlueprintRepo repo = moduleRepo(moduleVersion);
+        if (repo == null || !StringUtils.hasText(moduleAlias)) {
+            return;
+        }
+        try {
+            Path moduleOdmDir = moduleOdmDirectory(targetRoot, moduleAlias);
+            relocatePointerFile(
+                    targetRoot, moduleOdmDir, moduleSourceRoot, destinationPaths, repo.getReadmePath());
+            relocatePointerFile(
+                    targetRoot, moduleOdmDir, moduleSourceRoot, destinationPaths, repo.getManifestRootPath());
+        } catch (IOException e) {
+            throw new InternalException(
+                    "Failed while relocating module '%s' referenced files under '%s': %s"
+                            .formatted(moduleAlias, targetRoot, e.getMessage()),
+                    e);
+        }
+    }
+
+    /**
+     * Records parent blueprint lineage on the designated root target: moves the
+     * README
+     * (when present) and writes a manifest snapshot under {@code .odm/blueprint/}.
+     */
+    public void relocateParentLineageSidecar(Path rootTarget, BlueprintVersion parentVersion) {
+        try {
+            relocateBlueprintReadme(rootTarget, parentVersion);
+            relocateManifestFile(rootTarget, parentVersion);
+        } catch (IOException e) {
+            throw new InternalException(
+                    "Failed while recording parent lineage sidecar under '%s': %s"
+                            .formatted(rootTarget, e.getMessage()),
+                    e);
+        }
+    }
+
+    private Path requireExistingSubtree(Path root, String relativePath) {
+        Path subtree = resolveSubtree(root, relativePath);
+        if (!Files.exists(subtree)) {
+            throw new InternalException(
+                    "Source path '%s' does not exist under '%s'".formatted(relativePath, root));
+        }
+        return subtree;
+    }
+
+    private Path loadExistingTemplate(Path sourceRoot, String templatePath) {
+        Path templateFile = sourceRoot.resolve(templatePath);
+        if (!Files.isRegularFile(templateFile)) {
+            throw new InternalException(
+                    "Descriptor template '%s' does not exist under '%s'".formatted(templatePath, sourceRoot));
+        }
+        return templateFile;
+    }
+
+    private Path requireRenderedDescriptor(Path renderedFile, Path destinationFile) {
+        if (!Files.isRegularFile(renderedFile)) {
+            throw new InternalException(
+                    "Expected rendered data product descriptor at '%s' after templating; file missing"
+                            .formatted(destinationFile));
+        }
+        return renderedFile;
+    }
+
+    private Path resolveSubtree(Path root, String relativePath) {
+        String normalized = normalizeRepoPath(relativePath);
+        if (normalized.isEmpty() || ".".equals(normalized) || "./".equals(normalized)) {
+            return root;
+        }
+        return root.resolve(normalized);
+    }
+
+    private Path initTemporaryDirectory() {
         try {
             return Files.createTempDirectory("odm-blueprint-render-");
         } catch (IOException e) {
@@ -75,30 +253,128 @@ public class BlueprintRenderService {
         }
     }
 
-    private void relocateBlueprintReadme(Path tempRoot, BlueprintRepo repo) throws IOException {
-        String readmeRel = normalizeRepoPath(repo.getReadmePath());
-        if (!readmeRel.isEmpty()) {
-            Path readmeSrc = tempRoot.resolve(readmeRel);
-            if (Files.isRegularFile(readmeSrc)) {
-                Path lineageDir = tempRoot.resolve(ODM_BLUEPRINT_DIR);
-                Files.createDirectories(lineageDir);
-                Path dest = lineageDir.resolve(readmeSrc.getFileName().toString());
-                Files.move(readmeSrc, dest, StandardCopyOption.REPLACE_EXISTING);
-            }
+    private void stageSubtree(Path sourceSubtree, Path tempRoot) throws IOException {
+        if (Files.isDirectory(sourceSubtree)) {
+            copyTree(sourceSubtree, tempRoot);
+            return;
         }
+        copyFile(sourceSubtree, tempRoot.resolve(sourceSubtree.getFileName().toString()));
     }
 
-    private void relocateManifestFile(Path tempRoot, BlueprintVersion blueprintVersion) throws IOException {
+    private void relocateBlueprintReadme(Path gitRoot, BlueprintVersion blueprintVersion) throws IOException {
         BlueprintRepo repo = blueprintVersion.getBlueprint().getBlueprintRepo();
-        String manifestRel = normalizeRepoPath(repo.getManifestRootPath());
-        Path manifestFile = tempRoot.resolve(manifestRel);
+        String readmePath = normalizeRepoPath(repo.getReadmePath());
+        if (readmePath.isEmpty()) {
+            return;
+        }
+        Path readmeFile = gitRoot.resolve(readmePath);
+        if (!Files.isRegularFile(readmeFile)) {
+            return;
+        }
+        Path lineageDir = odmBlueprintDirectory(gitRoot);
+        Files.move(
+                readmeFile,
+                lineageDir.resolve(readmeFile.getFileName().toString()),
+                StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private void relocateManifestFile(Path gitRoot, BlueprintVersion blueprintVersion) throws IOException {
+        BlueprintRepo repo = blueprintVersion.getBlueprint().getBlueprintRepo();
+        Path manifestFile = gitRoot.resolve(normalizeRepoPath(repo.getManifestRootPath()));
         if (Files.isRegularFile(manifestFile)) {
             Files.delete(manifestFile);
         }
-        Path odmBlueprintDir = tempRoot.resolve(ODM_BLUEPRINT_DIR);
-        Files.createDirectories(odmBlueprintDir);
-        Path dest = odmBlueprintDir.resolve(MANIFEST_DEFAULT_FILENAME);
-        YAML_OBJECT_MAPPER.writeValue(dest.toFile(), blueprintVersion.getContent());
+        Path manifestSnapshot = odmBlueprintDirectory(gitRoot).resolve(MANIFEST_DEFAULT_FILENAME);
+        YAML_OBJECT_MAPPER.writeValue(manifestSnapshot.toFile(), blueprintVersion.getContent());
+    }
+
+    private Path odmBlueprintDirectory(Path gitRoot) throws IOException {
+        return Files.createDirectories(gitRoot.resolve(ODM_BLUEPRINT_DIR));
+    }
+
+    private Path moduleOdmDirectory(Path targetRoot, String moduleAlias) throws IOException {
+        Path odmRoot = targetRoot.resolve(".odm").toAbsolutePath().normalize();
+        Path moduleDir = odmRoot.resolve(moduleAlias).toAbsolutePath().normalize();
+        if (!moduleDir.startsWith(odmRoot)) {
+            throw new InternalException(
+                    "Invalid composition module alias '%s' for .odm sidecar path".formatted(moduleAlias));
+        }
+        return Files.createDirectories(moduleDir);
+    }
+
+    private BlueprintRepo moduleRepo(BlueprintVersion moduleVersion) {
+        if (moduleVersion == null || moduleVersion.getBlueprint() == null) {
+            return null;
+        }
+        return moduleVersion.getBlueprint().getBlueprintRepo();
+    }
+
+    private void relocatePointerFile(
+            Path targetRoot,
+            Path moduleOdmDir,
+            Path moduleSourceRoot,
+            List<String> destinationPaths,
+            String pointerPath) throws IOException {
+        String normalized = normalizeRepoPath(pointerPath);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        Path destinationFile = moduleOdmDir.resolve(fileName(normalized));
+        Path renderedOnTarget = findPointerOnTarget(targetRoot, destinationPaths, normalized);
+        if (renderedOnTarget != null) {
+            Files.move(renderedOnTarget, destinationFile, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+        Path sourceFile = findPointerOnSource(moduleSourceRoot, normalized);
+        if (sourceFile != null) {
+            copyFile(sourceFile, destinationFile);
+        }
+    }
+
+    private Path findPointerOnTarget(Path targetRoot, List<String> destinationPaths, String normalizedPointer) {
+        if (destinationPaths == null) {
+            return null;
+        }
+        for (String destinationPath : destinationPaths) {
+            Path destRoot = resolveSubtree(targetRoot, destinationPath);
+            Path atPointer = destRoot.resolve(normalizedPointer);
+            if (Files.isRegularFile(atPointer)) {
+                return atPointer;
+            }
+            Path stripped = destRoot.resolve(stripVmSuffix(normalizedPointer));
+            if (Files.isRegularFile(stripped)) {
+                return stripped;
+            }
+            Path byFileName = destRoot.resolve(fileName(normalizedPointer));
+            if (Files.isRegularFile(byFileName)) {
+                return byFileName;
+            }
+        }
+        return null;
+    }
+
+    private Path findPointerOnSource(Path moduleSourceRoot, String normalizedPointer) {
+        if (moduleSourceRoot == null) {
+            return null;
+        }
+        Path atPointer = moduleSourceRoot.resolve(normalizedPointer);
+        if (Files.isRegularFile(atPointer)) {
+            return atPointer;
+        }
+        Path stripped = moduleSourceRoot.resolve(stripVmSuffix(normalizedPointer));
+        if (Files.isRegularFile(stripped)) {
+            return stripped;
+        }
+        return null;
+    }
+
+    private String fileName(String normalizedPath) {
+        int slash = normalizedPath.lastIndexOf('/');
+        return slash < 0 ? normalizedPath : normalizedPath.substring(slash + 1);
+    }
+
+    private Map<String, JsonNode> emptyIfNull(Map<String, JsonNode> parameters) {
+        return parameters == null ? Map.of() : parameters;
     }
 
     private Map<String, JsonNode> retrieveFullListOfParametersAndValues(
@@ -212,7 +488,12 @@ public class BlueprintRenderService {
         });
     }
 
-    private static boolean isCopyTreeSkippedName(Path pathName) {
+    private void copyFile(Path from, Path to) throws IOException {
+        Files.createDirectories(Objects.requireNonNull(to.getParent()));
+        Files.copy(from, to, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private boolean isCopyTreeSkippedName(Path pathName) {
         return pathName != null && COPY_TREE_SKIP_NAMES.contains(pathName.toString());
     }
 
@@ -246,9 +527,11 @@ public class BlueprintRenderService {
         return path.replace('\\', '/').replaceFirst("^/+", "");
     }
 
-    private boolean isMonorepoNoComposition(Manifest manifest) {
-        return MONOREPO.equals(manifest.getInstantiation().getStrategy())
-                && CollectionUtils.isEmpty(manifest.getComposition());
+    private String stripVmSuffix(String path) {
+        if (path.endsWith(".vm")) {
+            return path.substring(0, path.length() - 3);
+        }
+        return path;
     }
 
     private Manifest parseManifest(BlueprintVersion blueprintVersion) {
