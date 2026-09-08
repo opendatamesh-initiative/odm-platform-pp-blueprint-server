@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionShortRes;
@@ -44,7 +47,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class
@@ -106,7 +126,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class
@@ -196,7 +233,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class
@@ -263,7 +317,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class
@@ -353,7 +424,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class
@@ -461,7 +549,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class
@@ -548,7 +653,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class
@@ -661,7 +783,24 @@ public class BlueprintVersionsControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             apiUrl(RoutesV2.BLUEPRINTS),
             new HttpEntity<>(blueprint),
             BlueprintRes.class

@@ -3,6 +3,7 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.git.exceptions.GitException;
 import org.opendatamesh.platform.git.model.Repository;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
@@ -57,6 +58,8 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             throw new BadRequestException(
                     "Current and next blueprint versions must belong to the same blueprint");
         }
+
+        validateParentIsUpdatableBlueprint(nextVersion);
 
         collectAndThrowIfAnyIssues(manifestPort.collectValidationIssues(currentVersion, nextVersion, command.parameters(), command.targetRepositories()));
 
@@ -326,6 +329,19 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
         return modulesByAlias;
     }
 
+    private void validateParentIsUpdatableBlueprint(BlueprintVersion nextVersion) {
+        BlueprintType blueprintType = nextVersion.getBlueprint().getBlueprintType();
+        if (blueprintType == BlueprintType.MODULE) {
+            throw new BadRequestException(
+                    "A Blueprint module cannot be used alone to update a data product. "
+                            + "Hint: It can only be used when composed by a Blueprint.");
+        }
+        BlueprintRepo parentRepo = nextVersion.getBlueprint().getBlueprintRepo();
+        if (parentRepo == null || !StringUtils.hasText(parentRepo.getDescriptorTemplatePath())) {
+            throw new BadRequestException("Descriptor template path is required for a Blueprint");
+        }
+    }
+
     private void validateModulesBlueprintVersions(
             BlueprintVersion nextVersion,
             Map<String, BlueprintVersion> modulesByAlias) {
@@ -337,14 +353,20 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             if (moduleBlueprintVersion == null) {
                 continue;
             }
-            if (!manifestPort.isMonorepoNoComposition(moduleBlueprintVersion.getContent())) {
+            if (!isBlueprintModule(moduleBlueprintVersion)) {
+                validationIssues.add(new UpdateValidationIssue(
+                        composition.fieldPath(),
+                        "Composition entry '%s' (%s@%s) references a Blueprint (root), not a Blueprint module"
+                                .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
+                        "Only a Blueprint module may be composed; register and publish the child as blueprintType MODULE."));
+            } else if (!manifestPort.isMonorepoNoComposition(moduleBlueprintVersion.getContent())) {
                 validationIssues.add(new UpdateValidationIssue(
                         composition.fieldPath(),
                         "Composition module '%s' (%s@%s) is not a monorepo with no composition"
                                 .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
                         "Composition modules must be monorepo with no composition (one repository key, empty composition)."));
             }
-            if (hasDescriptorTemplatePath(moduleBlueprintVersion)) {
+            if (isBlueprintModule(moduleBlueprintVersion) && hasDescriptorTemplatePath(moduleBlueprintVersion)) {
                 validationIssues.add(new UpdateValidationIssue(
                         composition.fieldPath(),
                         "Composition module '%s' (%s@%s) declares descriptorTemplatePath"
@@ -360,6 +382,12 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             return false;
         }
         return StringUtils.hasText(version.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath());
+    }
+
+    private boolean isBlueprintModule(BlueprintVersion version) {
+        return version != null
+                && version.getBlueprint() != null
+                && version.getBlueprint().getBlueprintType() == BlueprintType.MODULE;
     }
 
     private void collectAndThrowIfAnyIssues(List<UpdateValidationIssue> issues) {

@@ -24,6 +24,7 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMo
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.ErrorRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedataproduct.UpdateDataProductCommandRes;
@@ -623,21 +624,20 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     }
 
     /**
-     * Scenario: Composition module with descriptorTemplatePath is rejected
-     * Given a next parent composing a published 1→1 module whose BlueprintRepo.descriptorTemplatePath is set
+     * Scenario: Composition child that is a catalog Blueprint is rejected
+     * Given a next parent composing a published Blueprint (root), not a MODULE
      * When update-data-product is called
-     * Then validation fails before Git with a hint that only the root blueprint may have descriptorTemplatePath
+     * Then validation fails before Git with a hint that only a Blueprint module may be composed
      */
     @Test
-    void whenCompositionModuleHasDescriptorTemplatePathThenReturn400() throws Exception {
-        ModuleBlueprint storage = createPublishedModule(
+    void whenCompositionChildIsCatalogBlueprintThenReturn400() throws Exception {
+        ModuleBlueprint composedBlueprint = createPublishedCatalogBlueprint(
                 "odm-blueprint-s3-lake",
                 "3.0.1",
-                manifestMonorepoNoComposition(),
-                buildBlueprintRepo());
+                manifestMonorepoNoComposition());
         ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
         ObjectNode manifest = (ObjectNode) manifestMonorepoWithComposition();
-        rewriteCompositionRefs(manifest, storage, serving);
+        rewriteCompositionRefs(manifest, composedBlueprint, serving);
 
         BlueprintPair context = createBlueprintWithVersions("full-stack-dp", "1.0.0", "2.0.0", manifest, manifest);
 
@@ -652,13 +652,43 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
                 ErrorRes.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody().getMessage()).contains("declares descriptorTemplatePath");
-        assertThat(response.getBody().getMessage()).contains("Only the parent (root) blueprint may have descriptorTemplatePath");
+        assertThat(response.getBody().getMessage()).contains("not a Blueprint module");
+        assertThat(response.getBody().getMessage()).contains("Only a Blueprint module may be composed");
         verify(mockGitOperation, never()).readRepository(any(), any(), any());
 
         deleteCreatedBlueprint(context.blueprintUuid);
-        deleteCreatedBlueprint(storage.blueprintUuid());
+        deleteCreatedBlueprint(composedBlueprint.blueprintUuid());
         deleteCreatedBlueprint(serving.blueprintUuid());
+    }
+
+    /*
+     * Feature: Composition and instantiate by blueprintType
+     * Scenario: Updating a data product from a Blueprint module alone returns 400
+     *   Given a published MODULE with two versions
+     *   When the client calls update-data-product with that MODULE as the parent
+     *   Then the response status is 400
+     *   And the message states that a Blueprint module cannot be used alone to update a data product
+     */
+    @Test
+    void whenUpdateDataProductFromBlueprintModuleThenReturn400() throws Exception {
+        ModuleBlueprint module = createPublishedModule("module-alone-update", "1.0.0");
+        publishModuleVersion(module, "2.0.0");
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        ResponseEntity<ErrorRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildUpdateRequest(module.blueprintName(), false, null), jsonHeaders()),
+                ErrorRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMessage()).contains("cannot be used alone to update a data product");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+
+        deleteCreatedBlueprint(module.blueprintUuid());
     }
 
     /**
@@ -1332,6 +1362,30 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         return createPublishedModule(blueprintName, version, manifestMonorepoNoComposition(), buildModuleBlueprintRepo());
     }
 
+    private ModuleBlueprint createPublishedCatalogBlueprint(
+            String blueprintName,
+            String version,
+            JsonNode manifestContent) throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String uniqueBlueprintName = blueprintName + "-" + suffix;
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(uniqueBlueprintName);
+        blueprint.setDisplayName(uniqueBlueprintName + "-display");
+        blueprint.setDescription(uniqueBlueprintName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(buildBlueprintRepo());
+
+        ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class);
+        assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createdBlueprint.getBody()).isNotNull();
+
+        createVersion(createdBlueprint.getBody(), uniqueBlueprintName, version, manifestContent);
+        return new ModuleBlueprint(createdBlueprint.getBody().getUuid(), uniqueBlueprintName, version);
+    }
+
     private ModuleBlueprint createPublishedModule(
             String blueprintName,
             String version,
@@ -1343,6 +1397,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(uniqueBlueprintName + "-display");
         blueprint.setDescription(uniqueBlueprintName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
         blueprint.setBlueprintRepo(blueprintRepo);
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
@@ -1468,6 +1523,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(uniqueBlueprintName + "-display");
         blueprint.setDescription(uniqueBlueprintName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
         blueprint.setBlueprintRepo(buildBlueprintRepo());
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(

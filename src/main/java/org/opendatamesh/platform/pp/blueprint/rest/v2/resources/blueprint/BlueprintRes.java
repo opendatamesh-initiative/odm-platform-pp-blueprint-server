@@ -18,6 +18,13 @@ public class BlueprintRes extends VersionedRes {
     @Schema(description = "The description of the blueprint", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private String description;
 
+    @Schema(
+            description = "Catalog blueprint type: BLUEPRINT is the root Blueprint; MODULE is the Blueprint module (component)",
+            requiredMode = Schema.RequiredMode.REQUIRED,
+            allowableValues = {"BLUEPRINT", "MODULE"}
+    )
+    private BlueprintTypeRes blueprintType;
+
     private BlueprintRepoRes blueprintRepo;
 
     public String getUuid() {
@@ -50,6 +57,14 @@ public class BlueprintRes extends VersionedRes {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public BlueprintTypeRes getBlueprintType() {
+        return blueprintType;
+    }
+
+    public void setBlueprintType(BlueprintTypeRes blueprintType) {
+        this.blueprintType = blueprintType;
     }
 
     public BlueprintRepoRes getBlueprintRepo() {

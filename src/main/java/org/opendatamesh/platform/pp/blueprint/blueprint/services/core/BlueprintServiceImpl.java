@@ -1,12 +1,14 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.services.core;
 
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepoOwnerType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepoProviderType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.repositories.BlueprintsRepository;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.exceptions.ResourceConflictException;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintSearchOptions;
@@ -42,8 +44,14 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
     protected Specification<Blueprint> getSpecFromFilters(BlueprintSearchOptions filters) {
         List<Specification<Blueprint>> specs = new ArrayList<>();
         if (filters != null) {
-            if (StringUtils.hasText(filters.getName())){
+            if (StringUtils.hasText(filters.getUuid())) {
+                specs.add(BlueprintsRepository.Specs.hasUuid(filters.getUuid()));
+            }
+            if (StringUtils.hasText(filters.getName())) {
                 specs.add(BlueprintsRepository.Specs.hasName(filters.getName()));
+            }
+            if (filters.getBlueprintType() != null) {
+                specs.add(BlueprintsRepository.Specs.hasBlueprintType(BlueprintType.valueOf(filters.getBlueprintType().name())));
             }
         }
         return SpecsUtils.combineWithAnd(specs);
@@ -66,6 +74,7 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
         }
         validateRequiredFields(objectToValidate);
         validateFieldConstraints(objectToValidate);
+        validateBlueprintTypeAndDescriptorPath(objectToValidate);
         if (objectToValidate.getBlueprintRepo() != null) {
             validateBlueprintRepo(objectToValidate.getBlueprintRepo());
         }
@@ -74,6 +83,9 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
     private void validateRequiredFields(Blueprint blueprint) {
         validateRequired("Name", blueprint.getName());
         validateRequired("Display name", blueprint.getDisplayName());
+        if (blueprint.getBlueprintType() == null) {
+            throw new BadRequestException("Blueprint type is required");
+        }
     }
 
     private void validateFieldConstraints(Blueprint blueprint) {
@@ -81,10 +93,28 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
         validateLength("Display name", blueprint.getDisplayName(), 255);
     }
 
-    private void validateBlueprintRepo(BlueprintRepo blueprintRepo) {
-        if (blueprintRepo == null) return;
+    private void validateBlueprintTypeAndDescriptorPath(Blueprint blueprint) {
+        if (blueprint.getBlueprintType() == null) {
+            return;
+        }
+        if (blueprint.getBlueprintRepo() == null) {
+            throw new BadRequestException("Blueprint repository is required");
+        }
+        boolean hasDescriptorPath = StringUtils.hasText(blueprint.getBlueprintRepo().getDescriptorTemplatePath());
+        if (blueprint.getBlueprintType() == BlueprintType.BLUEPRINT && !hasDescriptorPath) {
+            throw new BadRequestException("Descriptor template path is required for a Blueprint");
+        }
+        if (blueprint.getBlueprintType() == BlueprintType.MODULE && hasDescriptorPath) {
+            throw new BadRequestException(
+                    "A Blueprint module must not have descriptorTemplatePath; remove it from the module.");
+        }
+    }
 
-        // Required fields (except description)
+    private void validateBlueprintRepo(BlueprintRepo blueprintRepo) {
+        if (blueprintRepo == null) {
+            return;
+        }
+
         validateRequired("Repository name", blueprintRepo.getName());
         validateRequired("External identifier", blueprintRepo.getExternalIdentifier());
         validateRequired("Manifest root path", blueprintRepo.getManifestRootPath());
@@ -112,7 +142,6 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
             throw new BadRequestException("Invalid owner type: " + blueprintRepo.getOwnerType());
         }
 
-        // Length constraints
         validateLength("Repository name", blueprintRepo.getName(), 255);
         validateLength("External identifier", blueprintRepo.getExternalIdentifier(), 255);
         validateLength("Default branch", blueprintRepo.getDefaultBranch(), 255);
@@ -152,9 +181,7 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
     }
 
     private void reconcileBlueprintRepo(BlueprintRepo blueprintRepo, Blueprint parentBlueprint) {
-        // Set the parent Blueprint reference
         blueprintRepo.setBlueprint(parentBlueprint);
-        // Set the blueprintUuid to maintain consistency
         if (parentBlueprint.getUuid() != null) {
             blueprintRepo.setBlueprintUuid(parentBlueprint.getUuid());
         }
@@ -173,13 +200,18 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
     @Override
     public BlueprintRes overwriteResource(String uuid, BlueprintRes resource) {
         resource.setUuid(uuid);
+        if (resource.getBlueprintType() == null) {
+            Blueprint stored = findOne(uuid);
+            if (stored.getBlueprintType() != null) {
+                resource.setBlueprintType(BlueprintTypeRes.valueOf(stored.getBlueprintType().name()));
+            }
+        }
         return super.overwriteResource(uuid, resource);
     }
 
     private void validateNaturalKeyConstraints(Blueprint blueprint, String excludeUuid) {
-        // Validate name uniqueness
         boolean existsByName;
-        if(StringUtils.hasText(excludeUuid)) {
+        if (StringUtils.hasText(excludeUuid)) {
             existsByName = repository.existsByNameIgnoreCaseAndUuidNot(blueprint.getName(), excludeUuid);
         } else {
             existsByName = repository.existsByNameIgnoreCase(blueprint.getName());
