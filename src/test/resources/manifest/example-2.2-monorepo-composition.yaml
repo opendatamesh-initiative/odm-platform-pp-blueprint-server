@@ -22,26 +22,44 @@ parameters:
     ui:
       group: Security
       label: Enable PII masking
-      formType: toggle
+
+targetRepositories:
+  - key: main-repository
+    description: Single repository containing application and infrastructure
+    isRoot: true
 
 composition:
   - module: storage
     blueprintName: odm-blueprint-s3-lake
     blueprintVersion: 3.0.1
     parameterMapping:
-      bucketPrefix: projectSlug
-      encryptAtRest: enablePiiMasking
+      bucketPrefix: { $param: projectSlug }
+      encryptAtRest: { $param: enablePiiMasking }
+      region: { value: eu-west-1 }
 
   - module: serving
     blueprintName: odm-blueprint-api-skeleton
     blueprintVersion: 1.4.0
     parameterMapping:
-      serviceName: projectSlug
+      serviceName: { $param: projectSlug }
 
 instantiation:
-  strategy: monorepo
-  compositionLayout:
-    - module: storage
-      targetPath: data-plane/storage
-    - module: serving
-      targetPath: app/serving
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: core/
+
+  - type: module
+    moduleName: storage
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: data-plane/storage
+
+  - type: module
+    moduleName: serving
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: app/serving

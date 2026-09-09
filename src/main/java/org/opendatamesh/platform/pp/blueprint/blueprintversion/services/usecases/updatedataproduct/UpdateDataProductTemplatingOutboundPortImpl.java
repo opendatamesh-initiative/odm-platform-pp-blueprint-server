@@ -6,6 +6,7 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintRenderService;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 class UpdateDataProductTemplatingOutboundPortImpl implements UpdateDataProductTemplatingOutboundPort {
@@ -22,21 +23,50 @@ class UpdateDataProductTemplatingOutboundPortImpl implements UpdateDataProductTe
     }
 
     @Override
-    public void monorepoNoCompositionRenderAndCopy(
-            BlueprintVersion blueprintVersion,
-            Map<String, JsonNode> parameters,
+    public void applyRoute(
             Path sourceRoot,
-            Path targetRoot
+            String sourcePath,
+            Path targetRoot,
+            String destinationPath,
+            Map<String, JsonNode> parameters
     ) {
-        blueprintRenderService.monorepoNoCompositionRenderAndCopy(blueprintVersion, parameters, sourceRoot, targetRoot);
+        blueprintRenderService.renderAndCopySubtree(
+                sourceRoot, sourcePath, targetRoot, destinationPath, parameters);
     }
 
     @Override
-    public void enrichDescriptorWithBlueprintMetadata(
+    public void renderDescriptorToRoot(
+            Path parentSourceRoot,
+            String descriptorTemplatePath,
             Path rootTarget,
-            BlueprintVersion version,
             Map<String, JsonNode> parameters
     ) {
-        blueprintDataProductDescriptorService.enrichDescriptorWithBlueprintMetadata(rootTarget, version, parameters);
+        blueprintRenderService.renderDescriptorTemplate(
+                parentSourceRoot, descriptorTemplatePath, rootTarget, parameters);
+    }
+
+    @Override
+    public void recordParentLineage(
+            Path rootTarget,
+            BlueprintVersion parentVersion,
+            Map<String, JsonNode> parentResolvedParameters
+    ) {
+        blueprintDataProductDescriptorService.enrichDescriptorWithBlueprintMetadata(
+                rootTarget,
+                parentVersion,
+                parentResolvedParameters);
+        blueprintRenderService.relocateParentLineageSidecar(rootTarget, parentVersion);
+    }
+
+    @Override
+    public void relocateModuleReferencedFiles(
+            Path targetRoot,
+            String moduleAlias,
+            BlueprintVersion moduleVersion,
+            Path moduleSourceRoot,
+            List<String> destinationPaths
+    ) {
+        blueprintRenderService.relocateModuleReferencedFiles(
+                targetRoot, moduleAlias, moduleVersion, moduleSourceRoot, destinationPaths);
     }
 }

@@ -72,6 +72,7 @@ public class BlueprintController {
     }
 
     @Operation(summary = "Search blueprints", description = "Retrieves a paginated list of blueprints based on search criteria. " +
+            "Filter by name, uuid, and/or blueprintType (BLUEPRINT or MODULE). " +
             "The results can be sorted by any of the following properties: uuid, name, displayName, description, " +
             "createdAt, updatedAt. Sort direction can be specified using 'asc' or 'desc' (e.g., 'sort=name,desc').")
     @ApiResponses(value = {

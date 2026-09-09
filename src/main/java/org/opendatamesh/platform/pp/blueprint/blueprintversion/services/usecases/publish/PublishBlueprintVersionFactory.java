@@ -40,9 +40,14 @@ public class PublishBlueprintVersionFactory {
             PublishBlueprintVersionPresenter presenter
     ) {
         PublishBlueprintVersionManifestOutboundPort manifestPort =
-                new PublishBlueprintVersionManifestOutboundPortImpl(manifestValidatorFactory, manifestAutoFillerFactory);
+                new PublishBlueprintVersionManifestOutboundPortImpl(
+                        manifestValidatorFactory,
+                        manifestAutoFillerFactory);
         PublishBlueprintVersionPersistenceOutboundPort blueprintVersionPersistencePort =
-                new PublishBlueprintVersionPersistenceOutboundPortImpl(blueprintVersionQueryService, blueprintVersionCrudService);
+                new PublishBlueprintVersionPersistenceOutboundPortImpl(
+                        blueprintVersionQueryService,
+                        blueprintVersionCrudService,
+                        blueprintService);
         PublishBlueprintPersistenceOutboundPort blueprintPersistencePort =
                 new PublishBlueprintPersistenceOutboundPortImpl(blueprintService);
         return new PublishBlueprintVersion(

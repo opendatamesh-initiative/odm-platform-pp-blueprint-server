@@ -1,0 +1,14 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: missing-root-repository
+version: 1.0.0
+
+targetRepositories:
+  - key: main-repository
+
+instantiation:
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: ./

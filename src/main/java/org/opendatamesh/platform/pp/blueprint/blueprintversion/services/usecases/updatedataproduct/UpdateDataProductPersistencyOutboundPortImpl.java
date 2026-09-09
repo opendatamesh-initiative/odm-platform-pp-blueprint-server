@@ -18,6 +18,15 @@ class UpdateDataProductPersistencyOutboundPortImpl implements UpdateDataProductP
 
     @Override
     public BlueprintVersion findByBlueprintNameAndVersion(String blueprintName, String blueprintVersion) {
+        return findVersion(blueprintName, blueprintVersion);
+    }
+
+    @Override
+    public BlueprintVersion findModuleBlueprintVersion(String blueprintName, String blueprintVersion) {
+        return findVersion(blueprintName, blueprintVersion);
+    }
+
+    private BlueprintVersion findVersion(String blueprintName, String blueprintVersion) {
         BlueprintVersionSearchOptions searchOptions = new BlueprintVersionSearchOptions();
         searchOptions.setBlueprintName(blueprintName);
         searchOptions.setVersionNumber(blueprintVersion);

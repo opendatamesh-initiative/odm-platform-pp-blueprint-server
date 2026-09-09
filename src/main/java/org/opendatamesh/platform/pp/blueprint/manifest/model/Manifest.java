@@ -1,6 +1,8 @@
 package org.opendatamesh.platform.pp.blueprint.manifest.model;
 
 import org.opendatamesh.platform.pp.blueprint.manifest.model.core.ManifestComponentBase;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationEntry;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
 import java.util.ArrayList;
@@ -23,7 +25,8 @@ public class Manifest extends ManifestComponentBase {
     private List<ManifestParameter> parameters = new ArrayList<>();
     private List<ManifestProtectedResource> protectedResources = new ArrayList<>();
     private List<ManifestComposition> composition = new ArrayList<>();
-    private ManifestInstantiation instantiation;
+    private List<ManifestTargetRepository> targetRepositories = new ArrayList<>();
+    private List<ManifestInstantiationEntry> instantiation = new ArrayList<>();
 
     public String getSpec() {
         return spec;
@@ -97,11 +100,19 @@ public class Manifest extends ManifestComponentBase {
         this.composition = composition;
     }
 
-    public ManifestInstantiation getInstantiation() {
+    public List<ManifestTargetRepository> getTargetRepositories() {
+        return targetRepositories;
+    }
+
+    public void setTargetRepositories(List<ManifestTargetRepository> targetRepositories) {
+        this.targetRepositories = targetRepositories;
+    }
+
+    public List<ManifestInstantiationEntry> getInstantiation() {
         return instantiation;
     }
 
-    public void setInstantiation(ManifestInstantiation instantiation) {
+    public void setInstantiation(List<ManifestInstantiationEntry> instantiation) {
         this.instantiation = instantiation;
     }
 

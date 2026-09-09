@@ -9,24 +9,27 @@ parameters:
     type: string
     required: true
     validation:
-      allowedValues: [ eu-west-1, eu-central-1, us-east-1 ]
+      allowedValues: [eu-west-1, eu-central-1, us-east-1]
     ui:
       label: AWS region
       formType: dropdown
 
+targetRepositories:
+  - key: infra-repo
+    description: Target repository for infrastructure code and policies
+  - key: app-repo
+    description: Target repository for application code
+    isRoot: true
+
 instantiation:
-  strategy: polyrepo
-  targets:
-    - repositoryNamePostfix: "-infra"
-      createPolicy: create_if_missing
-      sourcePath: terraform/
-      targetPath: ./
-
-    - repositoryNamePostfix: "-apps"
-      createPolicy: create_if_missing
-      sourcePath: application/
-      targetPath: ./
-
-    - repositoryNamePostfix: "-infra"
-      sourcePath: policies/
-      targetPath: policies/
+  - type: root
+    targets:
+      - sourcePath: terraform/
+        repo: infra-repo
+        destinationPath: terraform/
+      - sourcePath: policies/
+        repo: infra-repo
+        destinationPath: governance/policies
+      - sourcePath: application/
+        repo: app-repo
+        destinationPath: ./

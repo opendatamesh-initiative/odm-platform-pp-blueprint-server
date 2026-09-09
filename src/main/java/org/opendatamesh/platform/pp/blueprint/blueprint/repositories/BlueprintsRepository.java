@@ -2,6 +2,7 @@ package org.opendatamesh.platform.pp.blueprint.blueprint.repositories;
 
 import jakarta.persistence.criteria.Join;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint_;
 import org.opendatamesh.platform.pp.blueprint.label.entities.Label;
 import org.opendatamesh.platform.pp.blueprint.label.entities.Label_;
@@ -34,6 +35,24 @@ public interface BlueprintsRepository extends PagingAndSortingAndSpecificationEx
                     return cb.conjunction();
                 }
                 return cb.equal(cb.lower(root.get(Blueprint_.name)), name.toLowerCase());
+            };
+        }
+
+        public static Specification<Blueprint> hasUuid(String uuid) {
+            return (root, query, cb) -> {
+                if (!StringUtils.hasText(uuid)) {
+                    return cb.conjunction();
+                }
+                return cb.equal(cb.lower(root.get(Blueprint_.uuid)), uuid.toLowerCase());
+            };
+        }
+
+        public static Specification<Blueprint> hasBlueprintType(BlueprintType blueprintType) {
+            return (root, query, cb) -> {
+                if (blueprintType == null) {
+                    return cb.conjunction();
+                }
+                return cb.equal(root.get(Blueprint_.blueprintType), blueprintType);
             };
         }
 

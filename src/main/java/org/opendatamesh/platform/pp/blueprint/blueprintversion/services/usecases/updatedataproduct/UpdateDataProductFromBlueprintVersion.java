@@ -3,28 +3,25 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.git.exceptions.GitException;
 import org.opendatamesh.platform.git.model.Repository;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenario;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.SourceRepositoryDto;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.exceptions.InternalException;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
-import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
+import org.opendatamesh.platform.pp.blueprint.exceptions.NotFoundException;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.Path;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 class UpdateDataProductFromBlueprintVersion implements UseCase {
+
+    static final String PARENT_SOURCE_ID = "__parent__";
 
     private final UpdateDataProductCommand command;
     private final UpdateDataProductPresenter presenter;
@@ -41,8 +38,7 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             UpdateDataProductPersistencyOutboundPort persistencyPort,
             UpdateDataProductManifestOutboundPort manifestPort,
             UpdateDataProductTemplatingOutboundPort templatingPort,
-            UpdateDataProductGitOutboundPort gitPort
-    ) {
+            UpdateDataProductGitOutboundPort gitPort) {
         this.command = command;
         this.presenter = presenter;
         this.persistencyPort = persistencyPort;
@@ -63,120 +59,351 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
                     "Current and next blueprint versions must belong to the same blueprint");
         }
 
-        manifestPort.validateManifestAndParameters(
-                nextVersion.getSpec(),
-                nextVersion.getSpecVersion(),
-                nextVersion.getContent(),
-                command.parameters());
+        validateParentIsUpdatableBlueprint(nextVersion);
 
-        Manifest manifest = parseManifest(nextVersion);
-        InstantiationScenario scenario = resolveScenario(manifest);
+        collectAndThrowIfAnyIssues(manifestPort.collectValidationIssues(currentVersion, nextVersion, command.parameters(), command.targetRepositories()));
 
-        List<UpdateDataProductTargetResult> results = switch (scenario) {
-            case MONOREPO_NO_COMPOSITION -> updateMonorepoNoComposition(nextVersion, manifest);
-            case MONOREPO_WITH_COMPOSITION -> throw new UnsupportedOperationException(
-                    "Monorepo with composition (N→1) update is not supported yet");
-            case POLYREPO_NO_COMPOSITION -> throw new UnsupportedOperationException(
-                    "Polyrepo without composition (1→N) update is not supported yet");
-            case POLYREPO_WITH_COMPOSITION -> throw new UnsupportedOperationException(
-                    "Polyrepo with composition (N→N) update is not supported yet");
-        };
+        Map<String, JsonNode> nextParentParameters = manifestPort.enrichRequestParametersWithDefaultsIfNeeded(nextVersion.getContent(), command.parameters());
+
+        Map<String, BlueprintVersion> modulesByAlias = retrieveModulesBlueprintVersions(nextVersion);
+        validateModulesBlueprintVersions(nextVersion, modulesByAlias);
+
+        collectAndThrowIfAnyIssues(manifestPort.collectProviderMismatchIssues(nextVersion, modulesByAlias));
+        collectAndThrowIfAnyIssues(manifestPort.collectModuleParameterResolutionIssues(nextVersion.getContent(), nextParentParameters));
+
+        Map<String, Map<String, JsonNode>> modulesParameters = manifestPort.resolveModuleParameters(nextVersion.getContent(), nextParentParameters);
+
+        Map<String, UpdateDataProductTargetRepositoryDto> targetsByKey = indexTargetRepositoriesByKey(command.targetRepositories());
+        List<UpdateRoute> routes = manifestPort.flattenRoutes(nextVersion.getContent());
+        Map<String, List<UpdateRoute>> routesByTargetKey = groupRoutesByTargetRepository(routes);
+        String rootTargetRepositoryKey = manifestPort.retrieveRootTargetRepositoryKey(nextVersion.getContent());
+        List<SourceRepositoryDto> sourceRepositories = sourceRepositoriesForRoutes(nextVersion, modulesByAlias, routes);
+
+        List<UpdateDataProductTargetResult> results = new ArrayList<>();
+        gitPort.openSources(nextVersion.getBlueprint(), sourceRepositories, sourcePaths -> {
+            for (Map.Entry<String, List<UpdateRoute>> entry : routesByTargetKey.entrySet()) {
+                UpdateDataProductTargetRepositoryDto targetRepository = requireTargetRepository(targetsByKey, entry.getKey());
+                var result = updateTargetRepository(
+                        nextVersion,
+                        nextParentParameters,
+                        modulesParameters,
+                        modulesByAlias,
+                        rootTargetRepositoryKey,
+                        sourcePaths,
+                        targetRepository,
+                        entry.getValue());
+                results.add(result);
+            }
+        });
 
         presenter.presentResult(new UpdateDataProductResult(results, warnings));
     }
 
-    private InstantiationScenario resolveScenario(Manifest manifest) {
-        if (manifest.getInstantiation() == null || manifest.getInstantiation().getStrategy() == null) {
-            throw new BadRequestException("Manifest instantiation.strategy is required");
+    private Map<String, UpdateDataProductTargetRepositoryDto> indexTargetRepositoriesByKey(
+            List<UpdateDataProductTargetRepositoryDto> targetRepositories) {
+        Map<String, UpdateDataProductTargetRepositoryDto> targetsByKey = new LinkedHashMap<>();
+        for (UpdateDataProductTargetRepositoryDto target : targetRepositories) {
+            targetsByKey.put(target.targetId(), target);
         }
-        boolean hasComposition = !CollectionUtils.isEmpty(manifest.getComposition());
-        ManifestInstantiation.InstantiationStrategy strategy = manifest.getInstantiation().getStrategy();
-        return switch (strategy) {
-            case MONOREPO -> hasComposition
-                    ? InstantiationScenario.MONOREPO_WITH_COMPOSITION
-                    : InstantiationScenario.MONOREPO_NO_COMPOSITION;
-            case POLYREPO -> hasComposition
-                    ? InstantiationScenario.POLYREPO_WITH_COMPOSITION
-                    : InstantiationScenario.POLYREPO_NO_COMPOSITION;
-        };
+        return targetsByKey;
     }
 
-    /**
-     * 1→1: one ROOT blueprint source re-rendered into one ROOT target from the current checkpoint.
-     */
-    private List<UpdateDataProductTargetResult> updateMonorepoNoComposition(
-            BlueprintVersion nextVersion,
-            Manifest manifest
-    ) {
-        // Validate the request and resolve the source, target, and rendering parameters.
-        manifestPort.validateTargetRepositories(nextVersion, command.targetRepositories());
-        gitPort.init(nextVersion.getBlueprint());
+    private Map<String, List<UpdateRoute>> groupRoutesByTargetRepository(List<UpdateRoute> routes) {
+        Map<String, List<UpdateRoute>> routesByTargetKey = new LinkedHashMap<>();
+        for (UpdateRoute route : routes) {
+            routesByTargetKey.computeIfAbsent(route.repositoryKey(), ignored -> new ArrayList<>()).add(route);
+        }
+        return routesByTargetKey;
+    }
 
-        Repository blueprintSourceRepository = manifestPort.resolveSourceRepository(nextVersion);
-        UpdateDataProductTargetRepositoryDto rootTargetRepository =
-                resolveRootTarget(command.targetRepositories());
-        Map<String, JsonNode> resolvedLineageParameters =
-                mergeParametersForLineage(manifest, command.parameters());
+    private UpdateDataProductTargetResult updateTargetRepository(
+            BlueprintVersion nextVersion,
+            Map<String, JsonNode> nextParentParameters,
+            Map<String, Map<String, JsonNode>> modulesParameters,
+            Map<String, BlueprintVersion> modulesByAlias,
+            String rootTargetRepositoryKey,
+            Map<String, Path> sourcePaths,
+            UpdateDataProductTargetRepositoryDto targetRepository,
+            List<UpdateRoute> routes) {
+        if (routes.isEmpty()) {
+            throw new InternalException(
+                    "Update target loop invoked with no routes for key '%s'".formatted(targetRepository.targetId()));
+        }
+
+        String targetRepositoryKey = targetRepository.targetId();
 
         String currentCheckpointTag = BlueprintGitNamingConventions.checkpointTag(command.currentVersionNumber());
         String nextCheckpointTag = BlueprintGitNamingConventions.checkpointTag(command.nextVersionNumber());
         String updateBranchName = BlueprintGitNamingConventions.updateBranchName(command.nextVersionNumber());
-
-        String nextBlueprintSourceTag = nextVersion.getTag();
         String commitMessage = "Update data product from blueprint %s@%s -> %s".formatted(command.blueprintName(), command.currentVersionNumber(), command.nextVersionNumber());
-        AtomicReference<String> createdCommitHash = new AtomicReference<>();
+        AtomicReference<UpdateTargetGitResult> gitResultHolder = new AtomicReference<>();
 
-        // Clone both repositories, branch from the current checkpoint, and render the next blueprint version.
-        gitPort.withClonedSourceAndTargetAtCheckpoint(
-                blueprintSourceRepository,
-                nextBlueprintSourceTag,
-                rootTargetRepository.repository(),
+        gitPort.openTargetAtCheckpoint(
+                targetRepository,
                 currentCheckpointTag,
-                (sourceRepositoryPath, targetRepositoryPath) -> {
-                    gitPort.createAndCheckoutBranch(targetRepositoryPath, updateBranchName);
-                    gitPort.cleanWorkingTreePreservingGit(targetRepositoryPath);
-                    templatingPort.monorepoNoCompositionRenderAndCopy(nextVersion, command.parameters(), sourceRepositoryPath, targetRepositoryPath);
-                    templatingPort.enrichDescriptorWithBlueprintMetadata(targetRepositoryPath, nextVersion, resolvedLineageParameters);
+                targetPath -> {
+                    gitPort.cleanWorkingTreePreservingGit(targetPath);
+                    renderRoutedSources(targetRepositoryKey, routes, sourcePaths, targetPath, nextParentParameters, modulesParameters);
+                    relocateModuleReferencedFiles(targetPath, routes, sourcePaths, modulesByAlias);
+                    renderDescriptorAndLineageOnRootRepository(nextVersion, nextParentParameters, rootTargetRepositoryKey, targetRepositoryKey, sourcePaths, targetPath);
 
-                    // Commit the rendered files, create the new checkpoint, and publish both references.
-                    String commitHash = gitPort.commitAll(targetRepositoryPath, updateBranchName, commitMessage, command.commitAuthorName(), command.commitAuthorEmail());
-                    gitPort.createCheckpointTag(targetRepositoryPath, nextCheckpointTag, commitHash, command.commitAuthorName(), command.commitAuthorEmail());
-                    gitPort.pushBranch(targetRepositoryPath, updateBranchName);
-                    gitPort.pushTag(targetRepositoryPath, nextCheckpointTag);
-                    createdCommitHash.set(commitHash);
+                    if (gitPort.hasWorkingTreeChanges(targetPath)) {
+                        var publishResult = publishChangedTarget(targetPath, updateBranchName, nextCheckpointTag, commitMessage);
+                        gitResultHolder.set(publishResult);
+                    } else {
+                        var publishResult = publishUnchangedTarget(targetRepositoryKey, targetPath, nextCheckpointTag);
+                        gitResultHolder.set(publishResult);
+                    }
                 });
 
-        String commitHash = createdCommitHash.get();
-        if (commitHash == null) {
-            throw new InternalException("Update from checkpoint completed without producing a commit hash");
+        UpdateTargetGitResult updateGitResult = gitResultHolder.get();
+        if (updateGitResult == null) {
+            throw new InternalException("Update from checkpoint completed without producing a Git result");
         }
-        UpdateTargetGitResult updateGitResult = new UpdateTargetGitResult(updateBranchName, nextCheckpointTag, commitHash);
 
-        // Open the pull request only after the branch and checkpoint tag have been published.
         String pullRequestWebUrl = null;
-        if (command.createPullRequest()) {
-            pullRequestWebUrl = tryOpenPullRequest(
-                    rootTargetRepository,
-                    updateGitResult,
-                    currentCheckpointTag,
-                    nextCheckpointTag);
+        if (command.createPullRequest() && !updateGitResult.contentUnchanged()) {
+            pullRequestWebUrl = tryOpenPullRequest(targetRepository, updateGitResult, currentCheckpointTag, nextCheckpointTag);
         }
 
-        return List.of(new UpdateDataProductTargetResult(
-                rootTargetRepository.type(),
-                rootTargetRepository.repository(),
+        return new UpdateDataProductTargetResult(
+                targetRepository.targetId(),
+                targetRepository.repository(),
                 updateGitResult.updateBranchName(),
                 updateGitResult.checkpointTag(),
                 updateGitResult.commitHash(),
-                pullRequestWebUrl));
+                pullRequestWebUrl,
+                updateGitResult.contentUnchanged());
+    }
+
+    private UpdateTargetGitResult publishChangedTarget(
+            Path targetPath,
+            String updateBranchName,
+            String nextCheckpointTag,
+            String commitMessage) {
+        gitPort.createAndCheckoutBranch(targetPath, updateBranchName);
+        String commitHash = gitPort.commitAll(targetPath, updateBranchName, commitMessage, command.commitAuthorName(), command.commitAuthorEmail());
+        gitPort.createCheckpointTag(targetPath, nextCheckpointTag, commitHash, command.commitAuthorName(), command.commitAuthorEmail());
+        gitPort.pushBranch(targetPath, updateBranchName);
+        gitPort.pushTag(targetPath, nextCheckpointTag);
+        return new UpdateTargetGitResult(updateBranchName, nextCheckpointTag, commitHash, false);
+    }
+
+    private UpdateTargetGitResult publishUnchangedTarget(
+            String targetRepositoryKey,
+            Path targetPath,
+            String nextCheckpointTag) {
+        String existingSha = gitPort.resolveCheckedOutCommitSha(targetPath);
+        gitPort.createCheckpointTag(targetPath, nextCheckpointTag, existingSha, command.commitAuthorName(), command.commitAuthorEmail());
+        gitPort.pushTag(targetPath, nextCheckpointTag);
+        warnings.add(buildContentUnchangedWarning(targetRepositoryKey, nextCheckpointTag, existingSha));
+        return new UpdateTargetGitResult(null, nextCheckpointTag, existingSha, true);
+    }
+
+    private String buildContentUnchangedWarning(
+            String targetRepositoryKey,
+            String nextCheckpointTag,
+            String existingSha) {
+        return ("Target repository '%s' content was identical to the current checkpoint; "
+                + "checkpoint tag '%s' reuses commit '%s' (no update branch or pull request).")
+                .formatted(targetRepositoryKey, nextCheckpointTag, existingSha);
+    }
+
+    private UpdateDataProductTargetRepositoryDto requireTargetRepository(
+            Map<String, UpdateDataProductTargetRepositoryDto> targetsByKey,
+            String targetRepositoryKey) {
+        UpdateDataProductTargetRepositoryDto targetRepository = targetsByKey.get(targetRepositoryKey);
+        if (targetRepository == null) {
+            throw new InternalException(
+                    "Missing target repository mapping for key '%s' after validation".formatted(targetRepositoryKey));
+        }
+        return targetRepository;
+    }
+
+    private List<SourceRepositoryDto> sourceRepositoriesForRoutes(
+            BlueprintVersion nextVersion,
+            Map<String, BlueprintVersion> modulesByAlias,
+            List<UpdateRoute> routes) {
+        Set<String> requiredSourceIds = routes.stream()
+                .map(UpdateRoute::sourceId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return manifestPort.retrieveAllSourceRepositories(nextVersion, nextVersion.getContent(), modulesByAlias)
+                .stream()
+                .filter(source -> source != null && requiredSourceIds.contains(source.id()))
+                .toList();
+    }
+
+    private void renderRoutedSources(
+            String targetRepositoryKey,
+            List<UpdateRoute> routes,
+            Map<String, Path> sourcePaths,
+            Path targetPath,
+            Map<String, JsonNode> nextParentParameters,
+            Map<String, Map<String, JsonNode>> modulesParameters) {
+        for (UpdateRoute route : routes) {
+            Path sourceRoot = sourcePaths.get(route.sourceId());
+            if (sourceRoot == null) {
+                throw new InternalException(
+                        "Source workspace missing for sourceId '%s' when updating repository key '%s'"
+                                .formatted(route.sourceId(), targetRepositoryKey));
+            }
+            Map<String, JsonNode> params = isParentRoute(route)
+                    ? nextParentParameters
+                    : modulesParameters.getOrDefault(route.sourceId(), Map.of());
+            templatingPort.applyRoute(sourceRoot, route.sourcePath(), targetPath, route.destinationPath(), params);
+        }
+    }
+
+    private void relocateModuleReferencedFiles(
+            Path targetPath,
+            List<UpdateRoute> routes,
+            Map<String, Path> sourcePaths,
+            Map<String, BlueprintVersion> modulesByAlias) {
+        Set<String> relocatedAliases = new LinkedHashSet<>();
+        for (UpdateRoute route : routes) {
+            if (isParentRoute(route) || !relocatedAliases.add(route.sourceId())) {
+                continue;
+            }
+            BlueprintVersion moduleVersion = modulesByAlias.get(route.sourceId());
+            if (moduleVersion == null) {
+                continue;
+            }
+            List<String> destinationPaths = routes.stream()
+                    .filter(candidate -> route.sourceId().equals(candidate.sourceId()))
+                    .map(UpdateRoute::destinationPath)
+                    .toList();
+            templatingPort.relocateModuleReferencedFiles(
+                    targetPath,
+                    route.sourceId(),
+                    moduleVersion,
+                    sourcePaths.get(route.sourceId()),
+                    destinationPaths);
+        }
+    }
+
+    private void renderDescriptorAndLineageOnRootRepository(
+            BlueprintVersion nextVersion,
+            Map<String, JsonNode> nextParentParameters,
+            String rootTargetRepositoryKey,
+            String targetRepositoryKey,
+            Map<String, Path> sourcePaths,
+            Path targetPath) {
+        BlueprintRepo parentRepo = nextVersion.getBlueprint().getBlueprintRepo();
+        if (!targetRepositoryKey.equals(rootTargetRepositoryKey)
+                || !StringUtils.hasText(parentRepo.getDescriptorTemplatePath())) {
+            return;
+        }
+
+        Path parentSourceRoot = sourcePaths.get(PARENT_SOURCE_ID);
+        if (parentSourceRoot == null) {
+            throw new InternalException(
+                    "Parent source workspace missing when rendering descriptor on root key '%s'"
+                            .formatted(targetRepositoryKey));
+        }
+        templatingPort.renderDescriptorToRoot(parentSourceRoot, parentRepo.getDescriptorTemplatePath(), targetPath, nextParentParameters);
+        templatingPort.recordParentLineage(targetPath, nextVersion, nextParentParameters);
+    }
+
+    private boolean isParentRoute(UpdateRoute route) {
+        return PARENT_SOURCE_ID.equals(route.sourceId());
+    }
+
+    private Map<String, BlueprintVersion> retrieveModulesBlueprintVersions(BlueprintVersion nextVersion) {
+        Map<String, BlueprintVersion> modulesByAlias = new HashMap<>();
+        List<UpdateValidationIssue> retrieveIssues = new ArrayList<>();
+
+        for (UpdateCompositionIdentity composition : manifestPort.listCompositionIdentities(nextVersion.getContent())) {
+            try {
+                modulesByAlias.put(
+                        composition.moduleAlias(),
+                        persistencyPort.findModuleBlueprintVersion(
+                                composition.blueprintName(), composition.blueprintVersion()));
+            } catch (NotFoundException e) {
+                retrieveIssues.add(new UpdateValidationIssue(
+                        composition.fieldPath(),
+                        e.getMessage(),
+                        "Publish the module version first."));
+            }
+        }
+        collectAndThrowIfAnyIssues(retrieveIssues);
+        return modulesByAlias;
+    }
+
+    private void validateParentIsUpdatableBlueprint(BlueprintVersion nextVersion) {
+        BlueprintType blueprintType = nextVersion.getBlueprint().getBlueprintType();
+        if (blueprintType == BlueprintType.MODULE) {
+            throw new BadRequestException(
+                    "A Blueprint module cannot be used alone to update a data product. "
+                            + "Hint: It can only be used when composed by a Blueprint.");
+        }
+        BlueprintRepo parentRepo = nextVersion.getBlueprint().getBlueprintRepo();
+        if (parentRepo == null || !StringUtils.hasText(parentRepo.getDescriptorTemplatePath())) {
+            throw new BadRequestException("Descriptor template path is required for a Blueprint");
+        }
+    }
+
+    private void validateModulesBlueprintVersions(
+            BlueprintVersion nextVersion,
+            Map<String, BlueprintVersion> modulesByAlias) {
+        List<UpdateValidationIssue> validationIssues = new ArrayList<>();
+
+        for (UpdateCompositionIdentity composition : manifestPort.listCompositionIdentities(nextVersion.getContent())) {
+            String alias = composition.moduleAlias();
+            BlueprintVersion moduleBlueprintVersion = modulesByAlias.get(alias);
+            if (moduleBlueprintVersion == null) {
+                continue;
+            }
+            if (!isBlueprintModule(moduleBlueprintVersion)) {
+                validationIssues.add(new UpdateValidationIssue(
+                        composition.fieldPath(),
+                        "Composition entry '%s' (%s@%s) references a Blueprint (root), not a Blueprint module"
+                                .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
+                        "Only a Blueprint module may be composed; register and publish the child as blueprintType MODULE."));
+            } else if (!manifestPort.isMonorepoNoComposition(moduleBlueprintVersion.getContent())) {
+                validationIssues.add(new UpdateValidationIssue(
+                        composition.fieldPath(),
+                        "Composition module '%s' (%s@%s) is not a monorepo with no composition"
+                                .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
+                        "Composition modules must be monorepo with no composition (one repository key, empty composition)."));
+            }
+            if (isBlueprintModule(moduleBlueprintVersion) && hasDescriptorTemplatePath(moduleBlueprintVersion)) {
+                validationIssues.add(new UpdateValidationIssue(
+                        composition.fieldPath(),
+                        "Composition module '%s' (%s@%s) declares descriptorTemplatePath"
+                                .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
+                        "Only the parent (root) blueprint may have descriptorTemplatePath; remove it from the module."));
+            }
+        }
+        collectAndThrowIfAnyIssues(validationIssues);
+    }
+
+    private boolean hasDescriptorTemplatePath(BlueprintVersion version) {
+        if (version == null || version.getBlueprint() == null || version.getBlueprint().getBlueprintRepo() == null) {
+            return false;
+        }
+        return StringUtils.hasText(version.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath());
+    }
+
+    private boolean isBlueprintModule(BlueprintVersion version) {
+        return version != null
+                && version.getBlueprint() != null
+                && version.getBlueprint().getBlueprintType() == BlueprintType.MODULE;
+    }
+
+    private void collectAndThrowIfAnyIssues(List<UpdateValidationIssue> issues) {
+        if (issues == null || issues.isEmpty()) {
+            return;
+        }
+        String message = "Blueprint update validation failed:\n  "
+                + issues.stream().map(UpdateValidationIssue::format).collect(Collectors.joining("\n  "));
+        throw new BadRequestException(message);
     }
 
     private String tryOpenPullRequest(
             UpdateDataProductTargetRepositoryDto target,
             UpdateTargetGitResult gitResult,
             String currentTag,
-            String nextTag
-    ) {
+            String nextTag) {
         String prTarget = StringUtils.hasText(target.pullRequestTargetBranch())
                 ? target.pullRequestTargetBranch()
                 : target.repository().getDefaultBranch();
@@ -195,18 +422,11 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
         }
     }
 
-    private UpdateDataProductTargetRepositoryDto resolveRootTarget(List<UpdateDataProductTargetRepositoryDto> targets) {
-        return targets.stream()
-                .filter(target -> target.type() == BlueprintRepositoryLogicalType.ROOT)
-                .findFirst()
-                .orElseThrow(() -> new InternalException(
-                        "Blueprint update requires a target repository with type 'root'; none found"));
-    }
-
     private String buildPullRequestWarning(Repository repository, UpdateTargetGitResult gitResult, RuntimeException e) {
         String repoIdentity = StringUtils.hasText(repository.getName())
                 ? repository.getName()
-                : (StringUtils.hasText(repository.getCloneUrlHttp()) ? repository.getCloneUrlHttp() : repository.getId());
+                : (StringUtils.hasText(repository.getCloneUrlHttp()) ? repository.getCloneUrlHttp()
+                : repository.getId());
         String cause = StringUtils.hasText(e.getMessage()) ? e.getMessage() : e.getClass().getSimpleName();
         return ("Pull request creation failed for repository '%s' after update branch '%s' and checkpoint tag '%s' were already pushed: %s")
                 .formatted(repoIdentity, gitResult.updateBranchName(), gitResult.checkpointTag(), cause);
@@ -239,41 +459,12 @@ class UpdateDataProductFromBlueprintVersion implements UseCase {
             if (target == null) {
                 throw new BadRequestException("Target repository at index %s is required".formatted(i));
             }
-            if (target.type() == null) {
-                throw new BadRequestException("Target repository type is required at index %s".formatted(i));
+            if (!StringUtils.hasText(target.targetId())) {
+                throw new BadRequestException("Target repository targetId is required at index %s".formatted(i));
             }
             if (target.repository() == null) {
                 throw new BadRequestException("Target repository reference is required at index %s".formatted(i));
             }
         }
-    }
-
-    private Manifest parseManifest(BlueprintVersion blueprintVersion) {
-        JsonNode raw = blueprintVersion.getContent();
-        try {
-            return ManifestParserFactory.getParser().deserialize(raw);
-        } catch (IOException e) {
-            throw new InternalException(
-                    "Could not parse manifest content for blueprint version '%s' (versionNumber=%s)"
-                            .formatted(blueprintVersion.getName(), blueprintVersion.getVersionNumber()),
-                    e);
-        }
-    }
-
-    private Map<String, JsonNode> mergeParametersForLineage(Manifest manifest, Map<String, JsonNode> requestParameters) {
-        Map<String, JsonNode> out = new LinkedHashMap<>();
-        if (manifest.getParameters() == null) {
-            return out;
-        }
-        for (ManifestParameter p : manifest.getParameters()) {
-            String key = p.getKey();
-            JsonNode fromRequest = requestParameters.get(key);
-            if (fromRequest != null && !fromRequest.isNull()) {
-                out.put(key, fromRequest);
-            } else if (p.getDefaultValue() != null && !p.getDefaultValue().isNull()) {
-                out.put(key, p.getDefaultValue());
-            }
-        }
-        return out;
     }
 }

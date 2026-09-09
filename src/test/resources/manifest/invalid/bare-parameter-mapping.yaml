@@ -1,0 +1,33 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: bare-parameter-mapping
+version: 1.0.0
+
+parameters:
+  - key: projectSlug
+    type: string
+    required: true
+
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+
+composition:
+  - module: storage
+    blueprintName: odm-blueprint-s3-lake
+    blueprintVersion: 3.0.1
+    parameterMapping:
+      bucketPrefix: projectSlug
+
+instantiation:
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: core/
+  - type: module
+    moduleName: storage
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: data-plane/storage

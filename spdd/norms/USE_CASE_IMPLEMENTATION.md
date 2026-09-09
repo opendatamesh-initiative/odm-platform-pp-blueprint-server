@@ -46,18 +46,14 @@ flowchart LR
   UC --> P
 ```
 
-
-
 ---
 
 ## 1. Shared building blocks (`utils.usecases`)
-
 
 | Artifact                    | Role                                                                                                                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `UseCase`                   | Single method: `void execute()`. Every use case class implements this interface.                                                                                                                                      |
 | `TransactionalOutboundPort` | Wraps work in a transaction (`doInTransaction`, `doInTransactionWithResults`). Injected into factories; implemented by `DefaultTransactionalOutboundPortImpl` (Spring `TransactionTemplate`, serializable isolation). |
-
 
 Use the transactional port inside the use case when the operation must be atomic (typical for persistence + side effects that belong in the same transaction).
 
@@ -91,8 +87,8 @@ Use the transactional port inside the use case when the operation must be atomic
 - **Responsibility:**
   1. Convert `*CommandRes` → domain **command** (record) using mappers (`toEntity`, etc.). This is the **only** layer that bridges `*Res` ↔ entities for the use case.
   2. Build a **presenter** implementation:
-    - Often a **private static inner class** `*ResultHolder` that implements the presenter interface and stores the last `present*` argument for later `getResult()`.
-    - For void outcomes, a **lambda** implementing the presenter is acceptable when there is nothing to return (e.g. delete).
+  - Often a **private static inner class** `*ResultHolder` that implements the presenter interface and stores the last `present*` argument for later `getResult()`.
+  - For void outcomes, a **lambda** implementing the presenter is acceptable when there is nothing to return (e.g. delete).
   3. Call `factory.build...(command, presenter).execute()`.
   4. Map domain result to `*ResultRes` when needed.
 
@@ -104,16 +100,14 @@ Keep this class as the single place that knows both REST mappers and use-case bo
 
 For one behavioral slice (e.g. “initialize data product”), colocate under `...services.usecases.<name>`:
 
-
-| File                     | Purpose                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------ |
-| `<Name>.java`            | Use case class: `class <Name> implements UseCase`, **package-private**.              |
-| `<Name>Command.java`     | Input: **Java `record`** (or equivalent) holding **entities** and/or **declared domain records**—never `*Res` types. |
-| `<Name>Presenter.java`   | Output boundary: methods use **domain types** only (e.g. `presentRegistered(Blueprint entity)`), not REST DTOs. |
+| File                     | Purpose                                                                                                                      |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `<Name>.java`            | Use case class: `class <Name> implements UseCase`, **package-private**.                                                      |
+| `<Name>Command.java`     | Input: **Java `record`** (or equivalent) holding **entities** and/or **declared domain records**—never `*Res` types.         |
+| `<Name>Presenter.java`   | Output boundary: methods use **domain types** only (e.g. `presentRegistered(Blueprint entity)`), not REST DTOs.              |
 | `<Name>Factory.java`     | **`@Component`** (sole Spring bean here); method `UseCase build...(Command, Presenter)`. Instantiates port impls with `new`. |
-| `*OutboundPort.java`     | Port interfaces (persistence, validation, notification, …). Domain-level method signatures. |
-| `*OutboundPortImpl.java` | **Plain classes** (not Spring beans): implement ports; receive collaborators via constructor only. |
-
+| `*OutboundPort.java`     | Port interfaces (persistence, validation, notification, …). Domain-level method signatures.                                  |
+| `*OutboundPortImpl.java` | **Plain classes** (not Spring beans): implement ports; receive collaborators via constructor only.                           |
 
 Optional: split ports by concern (`...PersistenceOutboundPort`, `...NotificationOutboundPort`, `...ValidationOutboundPort`, etc.).
 
@@ -124,9 +118,38 @@ Optional: split ports by concern (`...PersistenceOutboundPort`, `...Notification
 - Implements `UseCase` and implements `execute()`.
 - **Constructor** receives: command, presenter, outbound ports, and `TransactionalOutboundPort` when transactions are required.
 - **Visibility:** package-private (`class Foo implements UseCase`) so only the factory in the same package constructs it.
-- **Logic:** Validate command; orchestrate ports; call presenter methods when the business outcome is ready. Throw domain/API exceptions (`BadRequestException`, etc.) for invalid state. Must contain ONLY business logic.
+- **Logic:** The use case class must contain **all** of the business logic and **none** of the implementation-detail logic. Validate the command; orchestrate ports; call presenter methods when the business outcome is ready. Throw domain/API exceptions (`BadRequestException`, etc.) for invalid state.
 - **No** `@Autowired` on the use case class itself.
 - **No** spring annotations on the use case class itself.
+
+### Business logic vs implementation detail
+
+**Business logic** is the procedure and the policy: what happens, in what order, under which conditions, and what is valid or forbidden. If a domain expert would recognize the sentence (“this combination is forbidden”, “this step runs only for the primary outcome”, “fail when a required dependency is missing”), it belongs in the use case — as `execute()` or as a private method of the use case, calling ports for anything outside the process.
+
+**Implementation detail** is how a port fulfills a step: libraries, file formats, wire protocols, document-model field walks, path normalization, retries, mapping to persistence or an external system. If you could swap the library or storage and the *business meaning* would stay the same, that code belongs in an adapter (or a private method of that adapter), not in the use case.
+
+Use this split:
+
+| In the use case | In the adapter |
+| --- | --- |
+| Sequence of business steps | How a single port method is carried out |
+| Rules, invariants, and “when to skip / fail / continue” that change the outcome | Technical defaults that do not change the outcome (e.g. treating a blank optional path as the default location) |
+| Collecting domain issues and choosing the exception | Parsing, serializing, I/O, vendor APIs |
+| Intent-revealing port calls | Infrastructure APIs and specification types |
+
+Do **not** hide policy in an adapter so `execute()` looks simpler. If a rule can change *what the system does* without a change to the use case, it was placed too low.
+
+### Composed method (step-down)
+
+Write each method as a **short outline of the procedure at one level of abstraction**. Implement each outline item as a private method one level down. You should be able to narrate `execute()` (and each callee) without opening the next method.
+
+- **One abstraction per method.** Do not mix “what” (business steps) with “how” (parsing, path math, I/O). How lives one or two levels down, or behind an outbound port.
+- **Names are the documentation of the step.** The call *is* the comment. Do not add a comment that restates the method name. Javadoc on public methods restates the procedure, not the internals.
+- **Push details down; do not extract sideways.** Prefer private methods on the owner over extra public overloads, `*Helper` / `*Util` types, or unused parameters that only pass defaults.
+- **Same shape at every depth.** A parent that is “for each item, validate the item” has a child that lists that item’s checks — not the child’s nested conditionals inlined into the parent.
+- **Procedure stays in the use case; mechanics stay in adapters.** `execute()` is a business script through **intent-revealing ports**. Infrastructure and specification-model types do not appear in the use case class.
+
+A private method exists when it is a **named step** in the parent’s story, not when it merely wraps a single `if`. Overloads that exist only to supply a default or a discarded argument hide the real procedure — collapse them.
 
 ---
 
@@ -139,7 +162,7 @@ Optional: split ports by concern (`...PersistenceOutboundPort`, `...Notification
 
 ## 7. Factories (`*Factory`)
 
-- `**@Component`** in the same package as the use case (typically the **only** `@Component` in that package).
+- `**@Component`** in the same package as the use case (typically the **only\*\* `@Component` in that package).
 - **Inject** Spring beans needed to **construct** port implementations: core services (`*Service`, `*CrudService`), `TransactionalOutboundPort`, clients, **MapStruct mappers** between entities and `*Res` when ports need them, etc.
 - **Method signature:** `public UseCase build<Name>(<Name>Command command, <Name>Presenter presenter)`.
 - **Inside:** `new <Name>OutboundPortImpl(...)` for each port—**never** register port impls as Spring beans. Pass `new <Name>(command, presenter, ...ports, transactionalOutboundPort)`.
@@ -157,13 +180,14 @@ The factory is the only place that chooses concrete port implementations for tha
 - **Visibility:** Port interfaces and their impls are often **package-private** so the boundary stays inside the use case package.
 - **Transactional port:** Shared across use cases; do not reimplement transaction handling inside each use case—delegate to `TransactionalOutboundPort`.
 - **No Spring on port impls:** If a concern needs to be testable in isolation, use plain `new` in unit tests or test the factory with mocked collaborators—not `@MockBean` on the impl type as a bean.
+- **Composed method:** Port impls and shared services they call use the same step-down shape as §5: a public/port method is a high-level sequence of named private steps. They own implementation detail; they must not leak those steps back into the use case, and they must not own business policy that belongs in the use case.
 
 ---
 
 ## 9. Core services vs use case layer
 
-- `**...services.core.*`** (and similar): CRUD, queries, reusable domain operations. Use cases **do not** call these directly from the use case class; they go through outbound ports whose impls delegate to core services.
-- `**utils.usecases`:** Cross-cutting use-case infrastructure (`UseCase`, `TransactionalOutboundPort`).
+- `**...services.core.*`** (and similar): CRUD, queries, reusable domain operations. Use cases **do not\*\* call these directly from the use case class; they go through outbound ports whose impls delegate to core services.
+- `**utils.usecases`:\*\* Cross-cutting use-case infrastructure (`UseCase`, `TransactionalOutboundPort`).
 
 ---
 
@@ -179,7 +203,7 @@ The factory is the only place that chooses concrete port implementations for tha
 1. Define **command** record (domain only) and **presenter** interface (domain arguments only) in `...services.usecases.<name>`.
 2. Define **outbound port** interfaces and **plain `*OutboundPortImpl` classes** (no Spring annotations). Implement validation/persistence/etc. with collaborators passed from the factory.
 3. Add **`@Component` factory** only: construct port impls with `new`, inject `TransactionalOutboundPort` and core services/mappers.
-4. Add `***UseCasesService`** methods (or extend an existing one): map `*CommandRes` → entity/command, run factory + `execute()`, map domain result from presenter to `*ResultRes`.
+4. Add `***UseCasesService`\** methods (or extend an existing one): map `*CommandRes`→ entity/command, run factory +`execute()`, map domain result from presenter to `\*ResultRes`.
 5. Add `**CommandRes` / `ResultRes**` under `rest.v2.resources...usecases...` with OpenAPI `@Schema` as needed.
 6. Add `**@RestController**` endpoint calling the use cases service; document with OpenAPI.
 7. Add **integration test** for the new route.

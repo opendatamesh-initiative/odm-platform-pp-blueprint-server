@@ -20,6 +20,12 @@ public class BlueprintSearchOptions {
     private String uuid;
 
     @Parameter(
+            description = "Filter blueprints by blueprint type. Exact match. BLUEPRINT is the root Blueprint; MODULE is the Blueprint module (component).",
+            schema = @Schema(implementation = BlueprintTypeRes.class, allowableValues = {"BLUEPRINT", "MODULE"})
+    )
+    private BlueprintTypeRes blueprintType;
+
+    @Parameter(
             description = "Filter blueprints that have any of these label UUIDs (match any)."
     )
     private List<String> labelUuids;
@@ -38,6 +44,14 @@ public class BlueprintSearchOptions {
 
     public void setUuid(String uuid) {
         this.uuid = uuid;
+    }
+
+    public BlueprintTypeRes getBlueprintType() {
+        return blueprintType;
+    }
+
+    public void setBlueprintType(BlueprintTypeRes blueprintType) {
+        this.blueprintType = blueprintType;
     }
 
     public List<String> getLabelUuids() {

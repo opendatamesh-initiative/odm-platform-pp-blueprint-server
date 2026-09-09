@@ -1,18 +1,19 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.updatedataproduct;
 
 import org.opendatamesh.platform.git.model.Repository;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.BlueprintRepositoryLogicalType;
 
 /**
  * Domain result for one updated target repository.
- * Carries the update branch, next checkpoint tag, commit hash, and optional PR web URL.
+ * Carries the update branch (null when content was unchanged), next checkpoint tag,
+ * commit hash, optional PR web URL, and whether the next render matched the current checkpoint.
  */
 public record UpdateDataProductTargetResult(
-        BlueprintRepositoryLogicalType type,
+        String targetId,
         Repository repository,
         String updateBranchName,
         String checkpointTag,
         String commitHash,
-        String pullRequestWebUrl
+        String pullRequestWebUrl,
+        boolean contentUnchanged
 ) {
 }

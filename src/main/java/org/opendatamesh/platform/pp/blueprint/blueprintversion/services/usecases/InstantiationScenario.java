@@ -1,7 +1,7 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases;
 
 /**
- * Instantiation layout derived from {@code instantiation.strategy} and presence of {@code composition}.
+ * Instantiation layout derived from {@code instantiation.repositories} cardinality and presence of {@code composition}.
  * Shared by instantiate and update-data-product use cases.
  * <ul>
  *   <li>{@link #MONOREPO_NO_COMPOSITION} — 1→1</li>
