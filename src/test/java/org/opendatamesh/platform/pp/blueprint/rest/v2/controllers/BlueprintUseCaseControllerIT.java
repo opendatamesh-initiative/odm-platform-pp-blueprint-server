@@ -10,11 +10,14 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecas
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.register.RegisterBlueprintResponseRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.BlueprintUpdateDocumentationFieldsCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.UpdateBlueprintDocumentationFieldsResponseRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.label.LabelRes;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -347,5 +350,205 @@ public class BlueprintUseCaseControllerIT extends BlueprintApplicationIT {
         blueprintRepo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
         blueprint.setBlueprintRepo(blueprintRepo);
         return blueprint;
+    }
+
+    /**
+     * Feature: Register blueprint with labels
+     * Given catalog labels exist
+     * When the client registers a blueprint that references those labels
+     * Then the response is 201 and GET shows the assignments
+     */
+    @Test
+    public void whenRegisterBlueprintWithLabelsThenReturn201AndGetShowsThem() {
+        String namePrefix = "whenRegisterBlueprintWithLabelsThenReturn201AndGetShowsThem";
+        LabelRes label = createLabel(namePrefix + "-label", "#0E8A16", "Status");
+
+        BlueprintRes blueprint = validBlueprintWithRepo(namePrefix);
+        blueprint.setLabels(List.of(labelStub(label.getUuid())));
+
+        RegisterBlueprintCommandRes command = new RegisterBlueprintCommandRes();
+        command.setBlueprint(blueprint);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<RegisterBlueprintResponseRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_REGISTER),
+                new HttpEntity<>(command, headers),
+                RegisterBlueprintResponseRes.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        String blueprintUuid = response.getBody().getBlueprint().getUuid();
+
+        try {
+            ResponseEntity<BlueprintRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(getResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getUuid).containsExactly(label.getUuid());
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getName).containsExactly(label.getName());
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getGroup).containsExactly("Status");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + label.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Update documentation fields — omit labels preserves assignments
+     */
+    @Test
+    public void whenUpdateDocumentationFieldsOmitLabelsThenAssignmentsUnchanged() {
+        String namePrefix = "whenUpdateDocumentationFieldsOmitLabelsThenAssignmentsUnchanged";
+        LabelRes label = createLabel(namePrefix + "-label", "#111111");
+        String blueprintUuid = registerBlueprintWithLabel(namePrefix, label.getUuid());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            BlueprintUpdateDocumentationFieldsCommandRes update = new BlueprintUpdateDocumentationFieldsCommandRes();
+            update.setUuid(blueprintUuid);
+            update.setDisplayName("new-display-" + namePrefix);
+            update.setDescription("new-description-" + namePrefix);
+
+            ResponseEntity<UpdateBlueprintDocumentationFieldsResponseRes> post = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/update-documentation-fields"),
+                    new HttpEntity<>(update, headers),
+                    UpdateBlueprintDocumentationFieldsResponseRes.class
+            );
+
+            assertThat(post.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(post.getBody().getBlueprint().getLabels())
+                    .extracting(LabelRes::getUuid)
+                    .containsExactly(label.getUuid());
+
+            ResponseEntity<BlueprintRes> afterGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(afterGet.getBody().getLabels()).extracting(LabelRes::getUuid).containsExactly(label.getUuid());
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + label.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Update documentation fields — present list replaces assignments
+     */
+    @Test
+    public void whenUpdateDocumentationFieldsWithLabelsThenAssignmentsReplaced() {
+        String namePrefix = "whenUpdateDocumentationFieldsWithLabelsThenAssignmentsReplaced";
+        LabelRes firstLabel = createLabel(namePrefix + "-first", "#111111");
+        LabelRes secondLabel = createLabel(namePrefix + "-second", "#222222");
+        String blueprintUuid = registerBlueprintWithLabel(namePrefix, firstLabel.getUuid());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            BlueprintUpdateDocumentationFieldsCommandRes update = new BlueprintUpdateDocumentationFieldsCommandRes();
+            update.setUuid(blueprintUuid);
+            update.setDisplayName(namePrefix + "-display");
+            update.setDescription(namePrefix + "-description");
+            update.setLabels(List.of(labelStub(secondLabel.getUuid())));
+
+            ResponseEntity<UpdateBlueprintDocumentationFieldsResponseRes> post = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/update-documentation-fields"),
+                    new HttpEntity<>(update, headers),
+                    UpdateBlueprintDocumentationFieldsResponseRes.class
+            );
+
+            assertThat(post.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(post.getBody().getBlueprint().getLabels())
+                    .extracting(LabelRes::getUuid)
+                    .containsExactly(secondLabel.getUuid());
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + firstLabel.getUuid()));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + secondLabel.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Update documentation fields — empty list clears assignments
+     */
+    @Test
+    public void whenUpdateDocumentationFieldsWithEmptyLabelsThenAssignmentsCleared() {
+        String namePrefix = "whenUpdateDocumentationFieldsWithEmptyLabelsThenAssignmentsCleared";
+        LabelRes label = createLabel(namePrefix + "-label", "#333333");
+        String blueprintUuid = registerBlueprintWithLabel(namePrefix, label.getUuid());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            BlueprintUpdateDocumentationFieldsCommandRes update = new BlueprintUpdateDocumentationFieldsCommandRes();
+            update.setUuid(blueprintUuid);
+            update.setDisplayName(namePrefix + "-display");
+            update.setDescription(namePrefix + "-description");
+            update.setLabels(List.of());
+
+            ResponseEntity<UpdateBlueprintDocumentationFieldsResponseRes> post = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/update-documentation-fields"),
+                    new HttpEntity<>(update, headers),
+                    UpdateBlueprintDocumentationFieldsResponseRes.class
+            );
+
+            assertThat(post.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(post.getBody().getBlueprint().getLabels()).isEmpty();
+
+            ResponseEntity<BlueprintRes> afterGet = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(afterGet.getBody().getLabels()).isEmpty();
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + label.getUuid()));
+        }
+    }
+
+    private String registerBlueprintWithLabel(String namePrefix, String labelUuid) {
+        BlueprintRes blueprint = validBlueprintWithRepo(namePrefix);
+        blueprint.setLabels(List.of(labelStub(labelUuid)));
+
+        RegisterBlueprintCommandRes command = new RegisterBlueprintCommandRes();
+        command.setBlueprint(blueprint);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<RegisterBlueprintResponseRes> registered = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_REGISTER),
+                new HttpEntity<>(command, headers),
+                RegisterBlueprintResponseRes.class
+        );
+        assertThat(registered.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return registered.getBody().getBlueprint().getUuid();
+    }
+
+    private LabelRes createLabel(String name, String color) {
+        return createLabel(name, color, null);
+    }
+
+    private LabelRes createLabel(String name, String color, String group) {
+        LabelRes label = new LabelRes();
+        label.setName(name);
+        label.setDescription(name + "-desc");
+        label.setColor(color);
+        label.setGroup(group);
+        ResponseEntity<LabelRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.LABELS),
+                new HttpEntity<>(label),
+                LabelRes.class
+        );
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private static LabelRes labelStub(String uuid) {
+        LabelRes stub = new LabelRes();
+        stub.setUuid(uuid);
+        return stub;
     }
 }

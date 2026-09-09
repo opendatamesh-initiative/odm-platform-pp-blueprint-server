@@ -3,6 +3,9 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.useca
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.label.LabelRes;
+
+import java.util.List;
 
 @Schema(name = "update_blueprint_documentation_fields_command")
 public class BlueprintUpdateDocumentationFieldsCommandRes {
@@ -18,6 +21,9 @@ public class BlueprintUpdateDocumentationFieldsCommandRes {
 
     @Schema(description = "When present, replaces the nested repository configuration entirely (must be complete).")
     private BlueprintRepo blueprintRepo;
+
+    @Schema(description = "When present, replaces the label assignments entirely (including empty list). Omit to preserve existing assignments. On write, only uuid is used.")
+    private List<LabelRes> labels;
 
     public String getUuid() {
         return uuid;
@@ -49,6 +55,14 @@ public class BlueprintUpdateDocumentationFieldsCommandRes {
 
     public void setBlueprintRepo(BlueprintRepo blueprintRepo) {
         this.blueprintRepo = blueprintRepo;
+    }
+
+    public List<LabelRes> getLabels() {
+        return labels;
+    }
+
+    public void setLabels(List<LabelRes> labels) {
+        this.labels = labels;
     }
 
     @Schema(name = "update_blueprint_documentation_fields_command_blueprint_repositories")

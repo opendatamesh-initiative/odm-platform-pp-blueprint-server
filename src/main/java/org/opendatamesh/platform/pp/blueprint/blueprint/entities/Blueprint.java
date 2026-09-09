@@ -2,9 +2,13 @@ package org.opendatamesh.platform.pp.blueprint.blueprint.entities;
 
 import org.hibernate.annotations.Fetch;
 import org.hibernate.annotations.FetchMode;
+import org.opendatamesh.platform.pp.blueprint.label.entities.Label;
 import org.opendatamesh.platform.pp.blueprint.utils.entities.VersionedEntity;
 
 import jakarta.persistence.*;
+
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "blueprints")
@@ -27,6 +31,15 @@ public class Blueprint extends VersionedEntity {
     @OneToOne(mappedBy = "blueprint", orphanRemoval = true, cascade = CascadeType.ALL)
     @Fetch(FetchMode.SELECT)
     private BlueprintRepo blueprintRepo;
+
+    @ManyToMany
+    @JoinTable(
+            name = "blueprints_labels",
+            joinColumns = @JoinColumn(name = "blueprint_uuid"),
+            inverseJoinColumns = @JoinColumn(name = "label_uuid")
+    )
+    @Fetch(FetchMode.SELECT)
+    private Set<Label> labels = new HashSet<>();
 
     public String getUuid() {
         return uuid;
@@ -66,5 +79,13 @@ public class Blueprint extends VersionedEntity {
 
     public void setBlueprintRepo(BlueprintRepo blueprintRepo) {
         this.blueprintRepo = blueprintRepo;
+    }
+
+    public Set<Label> getLabels() {
+        return labels;
+    }
+
+    public void setLabels(Set<Label> labels) {
+        this.labels = labels;
     }
 }

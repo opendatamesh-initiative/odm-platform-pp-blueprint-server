@@ -1,11 +1,16 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.repositories;
 
+import jakarta.persistence.criteria.Join;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint_;
+import org.opendatamesh.platform.pp.blueprint.label.entities.Label;
+import org.opendatamesh.platform.pp.blueprint.label.entities.Label_;
 import org.opendatamesh.platform.pp.blueprint.utils.repositories.PagingAndSortingAndSpecificationExecutorRepository;
 import org.opendatamesh.platform.pp.blueprint.utils.repositories.SpecsUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
+
+import java.util.Collection;
 
 public interface BlueprintsRepository extends PagingAndSortingAndSpecificationExecutorRepository<Blueprint, String> {
 
@@ -29,6 +34,19 @@ public interface BlueprintsRepository extends PagingAndSortingAndSpecificationEx
                     return cb.conjunction();
                 }
                 return cb.equal(cb.lower(root.get(Blueprint_.name)), name.toLowerCase());
+            };
+        }
+
+        public static Specification<Blueprint> hasAnyLabelUuid(Collection<String> labelUuids) {
+            return (root, query, cb) -> {
+                if (labelUuids == null || labelUuids.isEmpty()) {
+                    return cb.conjunction();
+                }
+                if (query != null) {
+                    query.distinct(true);
+                }
+                Join<Blueprint, Label> labels = root.join(Blueprint_.labels);
+                return labels.get(Label_.uuid).in(labelUuids);
             };
         }
     }
