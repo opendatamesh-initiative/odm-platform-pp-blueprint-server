@@ -113,7 +113,7 @@ All guides live under [`docs/`](docs/README.md).
 | [Multi-repository & composition](docs/service/repositories-and-composition.md) | Multiple remotes, reusable modules, layouts, and current support |
 | [Protected resources](docs/service/protected-resources.md) | Manifest protected paths and publication-time integrity check |
 | [Git providers](docs/service/git-providers.md) | Multi-provider Git operations and client-supplied auth |
-| [Blueprint manifest](src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) | Manifest schema, parameters, composition, Instantiation strategy |
+| [Blueprint manifest](src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) | Manifest schema, parameters, composition, repositories, protected resources |
 
 </details>
 

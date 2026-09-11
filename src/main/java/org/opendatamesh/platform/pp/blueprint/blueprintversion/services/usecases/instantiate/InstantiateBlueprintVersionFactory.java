@@ -57,8 +57,8 @@ public class InstantiateBlueprintVersionFactory {
 
     /**
      * Same persistency / manifest / templating wiring as production instantiate, but a local
-     * Git port that no-ops pushes and uses a throwaway target instead of cloning the live
-     * product integration branch.
+     * Git port that no-ops pushes, opens sources at release tags, and uses a throwaway
+     * target per destination key instead of cloning the live product integration branch.
      */
     public UseCase buildInstantiateBlueprintVersionForLocalValidation(
             InstantiateBlueprintVersionCommand command,

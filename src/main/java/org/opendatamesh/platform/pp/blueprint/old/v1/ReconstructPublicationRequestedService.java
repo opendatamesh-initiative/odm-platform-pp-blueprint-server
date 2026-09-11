@@ -98,9 +98,10 @@ public class ReconstructPublicationRequestedService {
         }
 
         ObjectNode reconstructed = (ObjectNode) version.deepCopy();
-        if (!hasNestedRepo(reconstructed)) {
+        if (!hasNestedRepo(reconstructed) || !hasAdditionalReposArray(reconstructed)) {
             nestProduct(reconstructed, product.getUuid());
         }
+        ensureAdditionalReposArray(reconstructed);
         if (!hasText(reconstructed, "tag") || !hasCloneUrl(reconstructed)) {
             throw new RegistryReconstructionException(MISSING_CLONE_METADATA);
         }
@@ -216,6 +217,21 @@ public class ReconstructPublicationRequestedService {
     private static boolean hasNestedRepo(JsonNode version) {
         JsonNode repo = version.path("dataProduct").path("dataProductRepo");
         return repo.isObject();
+    }
+
+    private static boolean hasAdditionalReposArray(JsonNode version) {
+        JsonNode additionalRepos = version.path("dataProduct").path("additionalDataProductRepos");
+        return additionalRepos.isArray();
+    }
+
+    private static void ensureAdditionalReposArray(ObjectNode version) {
+        JsonNode dataProduct = version.get("dataProduct");
+        if (dataProduct == null || !dataProduct.isObject()) {
+            return;
+        }
+        if (!hasAdditionalReposArray(version)) {
+            ((ObjectNode) dataProduct).set("additionalDataProductRepos", version.arrayNode());
+        }
     }
 
     private static boolean hasCloneUrl(JsonNode version) {

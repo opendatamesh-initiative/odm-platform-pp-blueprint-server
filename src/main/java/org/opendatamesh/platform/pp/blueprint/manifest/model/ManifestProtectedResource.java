@@ -7,6 +7,7 @@ import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 public class ManifestProtectedResource extends ManifestComponentBase {
 
     private String path;
+    private String repository;
     private ManifestProtectedResourceIntegrity integrity;
 
     public String getPath() {
@@ -15,6 +16,14 @@ public class ManifestProtectedResource extends ManifestComponentBase {
 
     public void setPath(String path) {
         this.path = path;
+    }
+
+    public String getRepository() {
+        return repository;
+    }
+
+    public void setRepository(String repository) {
+        this.repository = repository;
     }
 
     public ManifestProtectedResourceIntegrity getIntegrity() {

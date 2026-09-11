@@ -14,6 +14,7 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestComposition;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRoot;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
@@ -56,6 +57,8 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
     private static final String HINT_UNUSED_KEY =
             "Declare a route in instantiation.root.targets or composition[].targets that uses this key, or remove the unused key.";
     private static final String HINT_UNKNOWN_REPOSITORY = "Use a key declared in instantiation.repositories[].key.";
+    private static final String HINT_PROTECTED_RESOURCE_REPOSITORY =
+            "Use a key declared in instantiation.repositories[].key, or omit repository to use instantiation.root.repository.";
     private static final String HINT_DUPLICATE_DESTINATION = "Make destination (repository, path) pairs unique.";
     private static final String HINT_NESTED_PATH =
             "Use sibling destinations that do not nest under each other on the same repository key.";
@@ -430,6 +433,7 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
         }
 
         validateCompositionStructure(manifest, declaredKeys, usedKeys, destinations, issues);
+        validateProtectedResourceRepositories(manifest, declaredKeys, issues);
 
         for (String key : declaredKeys) {
             if (!usedKeys.contains(key)) {
@@ -441,6 +445,29 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl
         }
 
         detectDuplicateAndNestedDestinations(destinations, issues);
+    }
+
+    private void validateProtectedResourceRepositories(
+            Manifest manifest,
+            Set<String> declaredKeys,
+            List<InstantiationValidationIssue> issues) {
+        List<ManifestProtectedResource> protectedResources = manifest.getProtectedResources();
+        if (protectedResources == null || protectedResources.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < protectedResources.size(); i++) {
+            ManifestProtectedResource resource = protectedResources.get(i);
+            if (resource == null || !StringUtils.hasText(resource.getRepository())) {
+                continue;
+            }
+            String key = resource.getRepository().trim();
+            if (!declaredKeys.contains(key)) {
+                issues.add(new InstantiationValidationIssue(
+                        "protectedResources[" + i + "].repository",
+                        "Protected resource repository must match an instantiation.repositories[].key",
+                        HINT_PROTECTED_RESOURCE_REPOSITORY));
+            }
+        }
     }
 
     private void validateCompositionStructure(

@@ -1320,6 +1320,21 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /*
+     * Feature: Protected-resources destination key
+     * Scenario: Unknown repository key is rejected at publish
+     *   Given a blueprint whose `protectedResources[].repository` is not a declared instantiation key
+     *   When instantiate validates
+     *   Then 400 names `protectedResources[].repository` and hints to use a declared key or omit it
+     */
+    @Test
+    void whenInstantiateUnknownProtectedResourceRepositoryThenReturn400WithHint() throws Exception {
+        assertInstantiateInvalidManifestReturns400WithHint(
+                "/manifest/invalid/unknown-protected-resource-repository.yaml",
+                "protectedResources",
+                "omit");
+    }
+
+    /*
      * Feature: Structural validation at publish and instantiate
      * Scenario: Unused repository key is rejected at both gates
      *   Given a key "orphan" with no root or composition target referencing it

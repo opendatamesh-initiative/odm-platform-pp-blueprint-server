@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.opendatamesh.platform.git.git.GitOperation;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
 import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.git.model.RepositoryPointer;
 import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
@@ -15,12 +14,14 @@ import org.opendatamesh.platform.git.provider.GitProviderIdentifier;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepoProviderType;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
 import org.opendatamesh.platform.pp.blueprint.git.provider.GitProviderFactory;
 import org.springframework.http.HttpHeaders;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -35,8 +36,19 @@ import static org.mockito.Mockito.when;
 
 class InstantiateBlueprintVersionLocalGitOutboundPortTest {
 
+    /**
+     * Feature: Local instantiate Git adapter for integrity
+     *
+     * Scenario: openSources clones sources at release tags and openTarget does not clone the product branch
+     *   Given a local-validation Git adapter
+     *   When instantiate runs for local validation
+     *   Then each source is opened with a tag pointer
+     *   And the target integration branch is never cloned
+     *   And pushBranch and pushTag are not invoked on the Git provider
+     *   And a snapshot exists for the target’s `targetId`
+     */
     @Test
-    void withClonedSourceAndTargetDoesNotCloneTargetBranchAndDoesNotPush(@TempDir Path sourceDir) throws Exception {
+    void openSourcesClonesTagsAndOpenTargetDoesNotCloneProduct(@TempDir Path sourceDir) throws Exception {
         Files.writeString(sourceDir.resolve("plain.txt"), "from-source");
         GitProviderFactory gitProviderFactory = mock(GitProviderFactory.class);
         GitProvider gitProvider = mock(GitProvider.class);
@@ -58,24 +70,26 @@ class InstantiateBlueprintVersionLocalGitOutboundPortTest {
         repo.setProviderType(BlueprintRepoProviderType.GITHUB);
         repo.setProviderBaseUrl("https://github.com");
         blueprint.setBlueprintRepo(repo);
-        port.init(blueprint);
 
         Repository sourceRepository = new Repository();
         sourceRepository.setCloneUrlHttp("https://github.com/org/source.git");
-        SourceRepositoryDto source = new SourceRepositoryDto(null, BlueprintRepositoryLogicalType.ROOT, "v1.0.0", sourceRepository);
+        SourceRepositoryDto source = new SourceRepositoryDto("parent", "v1.0.0", sourceRepository);
         Repository targetRepository = new Repository();
         targetRepository.setCloneUrlHttp("https://github.com/org/product.git");
         targetRepository.setDefaultBranch("main");
-        TargetRepositoryDto target = new TargetRepositoryDto(null, BlueprintRepositoryLogicalType.ROOT, "main", targetRepository);
+        TargetRepositoryDto target = new TargetRepositoryDto("main", "main", targetRepository);
 
         AtomicReference<Path> targetPathSeen = new AtomicReference<>();
-        port.withClonedSourceAndTarget(source, target, "main", (src, dst) -> {
-            targetPathSeen.set(dst);
-            try {
-                Files.writeString(dst.resolve("rendered.txt"), "expected");
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+        port.openSources(blueprint, List.of(source), sourcePaths -> {
+            assertThat(sourcePaths).containsKey("parent");
+            port.openTarget(target, "main", dst -> {
+                targetPathSeen.set(dst);
+                try {
+                    Files.writeString(dst.resolve("rendered.txt"), "expected");
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
         });
 
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
@@ -90,10 +104,11 @@ class InstantiateBlueprintVersionLocalGitOutboundPortTest {
         verify(gitOperation, never()).pushTag(any(), any());
         verify(gitOperation, never()).createAndCheckoutOrphanBranch(any(), anyString());
 
-        assertThat(snapshot.getExpectedTreeRoot()).isNotNull();
-        assertThat(snapshot.getExpectedTreeRoot().resolve("rendered.txt")).exists();
-        assertThat(Files.exists(snapshot.getExpectedTreeRoot().resolve(".git"))).isFalse();
-        InstantiateBlueprintVersionLocalGitOutboundPort.deleteRecursively(snapshot.getExpectedTreeRoot());
+        Path expectedTree = snapshot.getExpectedTree("main");
+        assertThat(expectedTree).isNotNull();
+        assertThat(expectedTree.resolve("rendered.txt")).exists();
+        assertThat(Files.exists(expectedTree.resolve(".git"))).isFalse();
+        InstantiateBlueprintVersionLocalGitOutboundPort.deleteRecursively(expectedTree);
     }
 
     @Test

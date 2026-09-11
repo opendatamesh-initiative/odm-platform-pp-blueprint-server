@@ -86,13 +86,14 @@ The manifest must explicitly declare all parameters required to successfully ins
 
 The manifest must define a list of **Protected Resources** (specific files, directories, or paths).
 
-- Once a Blueprint is instantiated, the resources defined in this list are marked as read-only or immutable in the
-  context of future updates.
-- This ensures that critical infrastructure definitions or core scaffolding cannot be accidentally modified or
-  overwritten by developers working in the target repository.
-- Each `path` is relative to the **instantiated data-product repository root after render**, not the source blueprint
-  tree. Instantiation relocates the blueprint README and writes a lineage snapshot under `.odm/blueprint/` — do not
-  protect `README.md` or `manifest.yaml` at their source paths. The service guide
+- After instantiate, those paths must stay as the blueprint produced them. On data-product **publication**, the
+  service re-instantiates the recorded **parent** version locally and SHA-256-compares each listed path against the
+  published destination tree. Digests are **not** written onto `protectedResources[].integrity`.
+- Each `path` is relative to an **instantiated destination repository root after render**, not the source blueprint
+  tree. Instantiation relocates the parent README and writes a lineage snapshot under `.odm/blueprint/` on the
+  **root** key only — do not protect `README.md` or `manifest.yaml` at their source paths. Optional `repository`
+  names `instantiation.repositories[].key`; when omitted, the path is on `instantiation.root.repository`. Only the
+  **parent** list is evaluated when a blueprint is composed. The service guide
   [Protected resources](../../../../../../../../docs/service/protected-resources.md) covers the publication-time
   integrity check.
 
@@ -193,15 +194,17 @@ integrations.
 - `protectedResources` (Array of Objects, Optional): Files, directories, or globs marked immutable after initial
   generation. Each item:
   - `path` (String, Required): Path or glob relative to the **instantiated destination repository root** after
-    render (e.g. `infrastructure/core/**`, `docs/architecture.md`). Do **not** list source-only paths that
+    render (e.g. `infrastructure/core/**`, `data-plane/storage/**`, `docs/architecture.md`). Do **not** list source-only paths that
     instantiation relocates (`README.md` at the blueprint `readmePath`, `manifest.yaml` at `manifestRootPath`).
-    To protect lineage, declare the destination (`.odm/blueprint/README.md`, `.odm/blueprint/blueprint-manifest.yaml`,
-    or `.odm/blueprint/**`). The checker does not rewrite source paths to `.odm/blueprint/`.
-  - `integrity` (Object, Optional): Cryptographic digest for tamper detection. **Omitted** in the **source** Blueprint
-    manifest; **populated** on the manifest copy stored in the instantiated Data Product repository (for concrete
-    files, or per platform rules for globs/directories). When present:
-    - `algorithm` (String, Required): Hash algorithm identifier (e.g., `sha256`).
-    - `value` (String, Required): Lowercase hex-encoded digest of the protected content at instantiation time.
+    To protect parent lineage, declare the destination on the **root** key (`.odm/blueprint/README.md`, `.odm/blueprint/blueprint-manifest.yaml`,
+    or `.odm/blueprint/**`). To protect a composed module’s relocated README/manifest, declare `.odm/<alias>/...`
+    on the key that received that module. The checker does not rewrite source paths to `.odm/blueprint/`.
+  - `repository` (String, Optional): Logical destination key; must match `instantiation.repositories[].key` when present.
+    Omit the field to use `instantiation.root.repository` (monorepo fallback). Blank is treated as omitted.
+  - `integrity` (Object, Optional): Leftover digest object. **Omit it.** Instantiate does **not** populate hashes on the
+    product copy of the manifest. Publication evaluation **ignores** `value` and SHA-256-hashes the published tree
+    against a local re-instantiation instead. If `algorithm` is present and is not `sha256` (case-insensitive), that
+    path fails. When the object is present, publish validation still requires non-empty `algorithm` and `value`.
 - `composition` (Array of Objects, Optional): Defines child blueprints (modules) to be instantiated alongside the
   parent.
   - `module` (String, Required): A logical alias for the child module.
@@ -257,6 +260,10 @@ The orchestrator must enforce the following rules when validating a manifest:
   `composition[].targets`); unused keys are rejected.
 - Every `repository` reference in `instantiation.root.targets[]` and `composition[].targets[]` must match an existing
   `instantiation.repositories[].key`.
+- When `protectedResources[].repository` is present, it must match an existing `instantiation.repositories[].key`.
+  Omitted or blank `repository` is valid and means the designated root.
+- `protectedResources[].integrity` is optional leftover schema and should be omitted. If the object is present,
+  `algorithm` and `value` must be non-empty; evaluation still ignores `value`.
 - Exact duplicate `(repository, normalized path)` destinations across all routes are rejected.
 - Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
   rejected; use sibling destinations.
@@ -408,6 +415,11 @@ parameters:
     ui:
       group: Security
       label: Enable PII masking
+
+protectedResources:
+  - path: data-plane/storage/**
+  - path: .odm/storage/**
+  - path: app/serving/**
 
 instantiation:
   repositories:

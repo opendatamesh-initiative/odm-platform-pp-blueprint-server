@@ -12,6 +12,7 @@ import org.mockito.Mockito;
 import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.Commit;
 import org.opendatamesh.platform.git.model.Repository;
+import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
 import org.opendatamesh.platform.git.model.Tag;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
@@ -45,6 +46,7 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -61,6 +63,8 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     private static final String EVALUATE_PATH = "/api/v1/up/validator/evaluate-policy";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final ObjectMapper YAML_OBJECT_MAPPER = new ObjectMapper(new YAMLFactory());
+    private static final String MODULE_STORAGE_CLONE_URL = "https://github.com/org/module-storage-repository.git";
+    private static final String MODULE_SERVING_CLONE_URL = "https://github.com/org/module-serving-repository.git";
     private static final List<String> SOURCE_REPO_RESOURCE_FILES = List.of(
             "instantiate/source-repo/README.md",
             "instantiate/source-repo/manifest.yaml",
@@ -187,27 +191,31 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     /**
      * Feature: Protected-resources integrity evaluation
      *
-     * Scenario: Unsupported instantiation strategy is not applicable
-     *   Given a recorded blueprint version whose strategy is not monorepo without composition
-     *   And the data product version has blueprint lineage for that version
+     * Scenario: Polyrepo with protected resources is not applicable
+     *   Given a recorded blueprint with two or more repository keys and a non-empty `protectedResources` list
      *   When the validator evaluates the request
-     *   Then the response status is 200
-     *   And evaluationResult is true
-     *   And the message states that checks currently apply only to monorepo blueprints without composition
+     *   Then evaluationResult is true
+     *   And the message states polyrepo hashing is not applied yet
+     *   And the message does not say composition is unsupported
      */
     @Test
     void unsupportedStrategyReturnsNotApplicable() throws Exception {
-        JsonNode manifest = readYamlManifestResource("manifest/example-2.2-monorepo-composition.yaml");
-        BlueprintContext context = createBlueprintAndVersion("composed", "2.1.0", manifest);
+        JsonNode manifest = readYamlManifestResource("manifest/example-2.3-polyrepo-no-composition.yaml");
+        ((ObjectNode) manifest).set(
+                "protectedResources",
+                OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode().put("path", "terraform/**")));
+        BlueprintContext context = createBlueprintAndVersion("polyrepo-protected", "0.5.0", manifest);
         PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
-                "v2.1.0",
+                "v0.5.0",
                 lineageContent(context.blueprintName, context.versionNumber),
                 productRepoNode()
         ));
         ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().getEvaluationResult()).isTrue();
-        assertThat(response.getBody().getOutputObject().getMessage()).contains("monorepo blueprints without composition");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("polyrepo hashing is not applied yet");
+        assertThat(response.getBody().getOutputObject().getMessage()).doesNotContain("composition is unsupported");
+        assertThat(response.getBody().getOutputObject().getMessage()).doesNotContain("without composition");
         deleteCreatedBlueprint(context);
     }
 
@@ -243,15 +251,12 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     /**
      * Feature: Protected-resources integrity evaluation
      *
-     * Scenario: Matching protected resources pass and Git is not mutated
-     *   Given a recorded monorepo blueprint version with protected resources
-     *   And the published data product version tree matches a local re-instantiation of that blueprint
+     * Scenario: 1→1 with omitted repository still hashes as today
+     *   Given a recorded monorepo blueprint without composition with protected paths and no `repository` keys
+     *   And the published product tree matches a local re-instantiation
      *   When the validator evaluates the request
-     *   Then the response status is 200
-     *   And evaluationResult is true
+     *   Then evaluationResult is true
      *   And the message states protected resources match the blueprint
-     *   And Git pushBranch was never invoked
-     *   And Git pushTag was never invoked
      */
     @Test
     void applicableMatchingTreesPass(@TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
@@ -516,7 +521,235 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         deleteCreatedBlueprint(context);
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: N→1 with protected composition destinations is evaluated
+     *   Given a recorded parent blueprint that composes a published 1→1 module into one destination key
+     *   And the parent `protectedResources` list a post-instantiation path under the module destination
+     *   And the published product tree matches a local re-instantiation including that destination and `.odm/<alias>/` when protected
+     *   When the validator evaluates the request
+     *   Then evaluationResult is true
+     *   And the message does not state that checks apply only to monorepo without composition
+     */
+    @Test
+    void whenMonorepoWithCompositionProtectedPathsMatchThenPass(
+            @TempDir Path parentSource, @TempDir Path moduleSource, @TempDir Path productDir) throws Exception {
+        writeSourceBlueprintFiles(parentSource);
+        writeSafeDescriptor(parentSource);
+        writeSourceBlueprintFiles(moduleSource);
+        writeSafeDescriptor(moduleSource);
+        Files.writeString(moduleSource.resolve("module-only.txt"), "from-module\n");
+        copyN1ProtectedPublishedFiles(moduleSource, productDir);
+
+        BlueprintContext storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1", MODULE_STORAGE_CLONE_URL);
+        BlueprintContext serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0", MODULE_SERVING_CLONE_URL);
+        ObjectNode parentManifest = (ObjectNode) readYamlManifestResource("manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRefs(parentManifest, storage, serving);
+        parentManifest.set("protectedResources", n1ProtectedResources());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+        GitOperation gitOperation = stubGit(parentSource, moduleSource, productDir);
+
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "publication-v1",
+                composedLineageContent(parent.blueprintName, parent.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+        assertThat(response.getBody().getOutputObject().getMessage())
+                .contains("Protected resources match the blueprint");
+        assertThat(response.getBody().getOutputObject().getMessage())
+                .doesNotContain("without composition");
+        verify(gitOperation, never()).readRepository(any(), any(RepositoryPointerBranch.class), any());
+        verify(gitOperation, never()).pushBranch(any(), anyString());
+        verify(gitOperation, never()).pushTag(any(), anyString());
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage);
+        deleteCreatedBlueprint(serving);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: N→1 mismatch on a module destination path fails
+     *   Given the same composed parent
+     *   And the published product tree is missing a file under the protected module destination
+     *   When the validator evaluates the request
+     *   Then evaluationResult is false
+     *   And the message names that path as missing from the data product version
+     */
+    @Test
+    void whenMonorepoWithCompositionProtectedPathMissingThenFail(
+            @TempDir Path parentSource, @TempDir Path moduleSource, @TempDir Path productDir) throws Exception {
+        writeSourceBlueprintFiles(parentSource);
+        writeSafeDescriptor(parentSource);
+        writeSourceBlueprintFiles(moduleSource);
+        writeSafeDescriptor(moduleSource);
+        Files.writeString(moduleSource.resolve("module-only.txt"), "from-module\n");
+        copyN1ProtectedPublishedFiles(moduleSource, productDir);
+        Files.deleteIfExists(productDir.resolve("data-plane/storage/module-only.txt"));
+
+        BlueprintContext storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1", MODULE_STORAGE_CLONE_URL);
+        BlueprintContext serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0", MODULE_SERVING_CLONE_URL);
+        ObjectNode parentManifest = (ObjectNode) readYamlManifestResource("manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRefs(parentManifest, storage, serving);
+        parentManifest.set("protectedResources", n1ProtectedResources());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+        stubGit(parentSource, moduleSource, productDir);
+
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "publication-v1",
+                composedLineageContent(parent.blueprintName, parent.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("data-plane/storage/module-only.txt");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("missing");
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("data product version");
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage);
+        deleteCreatedBlueprint(serving);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Empty protectedResources is not applicable even with composition
+     *   Given a recorded N→1 parent whose `protectedResources` list is empty
+     *   When the validator evaluates the request
+     *   Then evaluationResult is true
+     *   And the message states the blueprint does not declare protected resources
+     */
+    @Test
+    void whenComposedParentWithEmptyProtectedResourcesThenNotApplicable() throws Exception {
+        BlueprintContext storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1", MODULE_STORAGE_CLONE_URL);
+        BlueprintContext serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0", MODULE_SERVING_CLONE_URL);
+        ObjectNode parentManifest = (ObjectNode) readYamlManifestResource("manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRefs(parentManifest, storage, serving);
+        parentManifest.set("protectedResources", OBJECT_MAPPER.createArrayNode());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "v2.1.0",
+                composedLineageContent(parent.blueprintName, parent.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("does not declare protected resources");
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage);
+        deleteCreatedBlueprint(serving);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Parent-only — module list is ignored
+     *   Given a recorded N→1 parent with an empty `protectedResources` list
+     *   And the composed module declares its own non-empty `protectedResources`
+     *   When the validator evaluates the request
+     *   Then evaluationResult is true
+     *   And the message states the blueprint does not declare protected resources
+     */
+    @Test
+    void whenModuleDeclaresProtectedResourcesAndParentDoesNotThenNotApplicable() throws Exception {
+        BlueprintContext storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1", MODULE_STORAGE_CLONE_URL);
+        BlueprintContext serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0", MODULE_SERVING_CLONE_URL);
+        ObjectNode parentManifest = (ObjectNode) readYamlManifestResource("manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRefs(parentManifest, storage, serving);
+        parentManifest.set("protectedResources", OBJECT_MAPPER.createArrayNode());
+        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "v2.1.0",
+                composedLineageContent(parent.blueprintName, parent.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("does not declare protected resources");
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(storage);
+        deleteCreatedBlueprint(serving);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Unknown repository key at evaluate fails closed
+     *   Given a recorded 1→1 blueprint whose stored protected resource names an undeclared `repository` key
+     *   When the validator evaluates the request
+     *   Then evaluationResult is false
+     *   And the message names the unknown key
+     */
+    @Test
+    void whenStoredUnknownProtectedRepositoryKeyThenFailClosed() throws Exception {
+        JsonNode manifest = manifestMonorepoNoComposition();
+        ((ObjectNode) manifest.get("protectedResources").get(0)).put("repository", "not-a-declared-key");
+        BlueprintContext context = createBlueprintAndVersion("unknown-prot-repo", "1.0.0", manifest);
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "v1.0.0",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()
+        ));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("not-a-declared-key");
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: Additional remotes on a monorepo product do not fail the check
+     *   Given a recorded 1→1 blueprint with protected resources
+     *   And the evaluation object’s nested product has a non-empty `additionalDataProductRepos` array
+     *   When the validator evaluates the request
+     *   Then the check still clones only the root product repository
+     *   And extras alone do not make evaluationResult false
+     */
+    @Test
+    void whenMonorepoProductHasAdditionalReposThenStillEvaluatesRoot(
+            @TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        copyProtectedPublishedFiles(sourceDir, productDir);
+        BlueprintContext context = createBlueprintAndVersion(
+                "matching-trees-extras", "1.2.0", manifestMonorepoNoComposition());
+        GitOperation gitOperation = stubGit(sourceDir, productDir);
+
+        ObjectNode event = publicationEvent(
+                "publication-v1",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()
+        );
+        ObjectNode extra = OBJECT_MAPPER.createObjectNode();
+        extra.put("manifestKey", "infra-repo");
+        extra.put("remoteUrlHttp", "https://github.com/org/extra-remote.git");
+        ((ObjectNode) event.path("eventContent").path("dataProductVersion").path("dataProduct"))
+                .set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode().add(extra));
+
+        PolicyEvaluationRequestRes request = evaluationRequest(event);
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+        verify(gitOperation, never()).readRepository(
+                argThat(repo -> repo != null && "https://github.com/org/extra-remote.git".equals(repo.getCloneUrlHttp())),
+                any(),
+                any());
+        deleteCreatedBlueprint(context);
+    }
+
     private GitOperation stubGit(Path sourceDir, Path productDir) {
+        return stubGit(sourceDir, sourceDir, productDir);
+    }
+
+    private GitOperation stubGit(Path parentSource, Path moduleSource, Path productDir) {
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
@@ -527,8 +760,10 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
             String cloneUrl = repository.getCloneUrlHttp();
             if (cloneUrl != null && cloneUrl.contains("customer360")) {
                 consumer.accept(productDir.toFile());
+            } else if (cloneUrl != null && cloneUrl.contains("module-")) {
+                consumer.accept(moduleSource.toFile());
             } else {
-                consumer.accept(sourceDir.toFile());
+                consumer.accept(parentSource.toFile());
             }
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
@@ -593,6 +828,110 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         return content;
     }
 
+    private ObjectNode composedLineageContent(String blueprintName, String versionNumber) {
+        ObjectNode content = OBJECT_MAPPER.createObjectNode();
+        ObjectNode blueprint = content.putObject("blueprint");
+        blueprint.put("blueprintName", blueprintName);
+        blueprint.put("blueprintVersionNumber", versionNumber);
+        ObjectNode parameters = blueprint.putObject("parameters");
+        parameters.put("projectSlug", "acme-lake");
+        parameters.put("enablePiiMasking", true);
+        return content;
+    }
+
+    private JsonNode n1ProtectedResources() {
+        return OBJECT_MAPPER.createArrayNode()
+                .add(OBJECT_MAPPER.createObjectNode().put("path", "data-plane/storage/module-only.txt"))
+                .add(OBJECT_MAPPER.createObjectNode().put("path", ".odm/storage/**"));
+    }
+
+    private void copyN1ProtectedPublishedFiles(Path moduleSource, Path productDir) throws IOException {
+        Path destination = productDir.resolve("data-plane/storage");
+        Files.createDirectories(destination);
+        Files.copy(
+                moduleSource.resolve("module-only.txt"),
+                destination.resolve("module-only.txt"),
+                StandardCopyOption.REPLACE_EXISTING);
+        Path sidecar = productDir.resolve(".odm/storage");
+        Files.createDirectories(sidecar);
+        Files.copy(moduleSource.resolve("README.md"), sidecar.resolve("README.md"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(moduleSource.resolve("manifest.yaml"), sidecar.resolve("manifest.yaml"), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private void rewriteCompositionRefs(ObjectNode parentManifest, BlueprintContext storage, BlueprintContext serving) {
+        for (JsonNode node : parentManifest.get("composition")) {
+            ObjectNode composition = (ObjectNode) node;
+            if ("storage".equals(composition.get("module").asText())) {
+                composition.put("blueprintName", storage.blueprintName);
+                composition.put("blueprintVersion", storage.versionNumber);
+            } else if ("serving".equals(composition.get("module").asText())) {
+                composition.put("blueprintName", serving.blueprintName);
+                composition.put("blueprintVersion", serving.versionNumber);
+            }
+        }
+    }
+
+    private BlueprintContext createPublishedModule(String blueprintName, String version, String cloneUrl)
+            throws Exception {
+        JsonNode moduleManifest = manifestMonorepoNoComposition();
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String uniqueBlueprintName = blueprintName + "-" + suffix;
+        ObjectNode content = (ObjectNode) moduleManifest.deepCopy();
+        content.put("name", uniqueBlueprintName);
+        content.put("version", version);
+        String prefix = "integrity-mod-" + version.replace(".", "-") + "-" + suffix;
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(uniqueBlueprintName);
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintRepo(buildModuleBlueprintRepo(cloneUrl));
+
+        ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createdBlueprint.getBody()).isNotNull();
+
+        BlueprintVersionRes versionRes = new BlueprintVersionRes();
+        versionRes.setName(prefix + "-version");
+        versionRes.setDescription(prefix + "-description");
+        versionRes.setReadme("README.md");
+        versionRes.setTag("v" + version);
+        versionRes.setVersionNumber(version);
+        versionRes.setSpec("odm-blueprint-manifest");
+        versionRes.setSpecVersion("1.0.0");
+        versionRes.setBlueprint(createdBlueprint.getBody());
+        versionRes.setContent(content);
+
+        ResponseEntity<BlueprintVersionRes> createdVersion = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS),
+                new HttpEntity<>(versionRes),
+                BlueprintVersionRes.class
+        );
+        assertThat(createdVersion.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return new BlueprintContext(createdBlueprint.getBody().getUuid(), uniqueBlueprintName, version);
+    }
+
+    private BlueprintRes.BlueprintRepoRes buildModuleBlueprintRepo(String cloneUrl) {
+        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprintRepo.setExternalIdentifier("module-blueprint-repository");
+        blueprintRepo.setName("module-blueprint-repository");
+        blueprintRepo.setDescription("module");
+        blueprintRepo.setManifestRootPath("/manifest.yaml");
+        blueprintRepo.setDescriptorTemplatePath(null);
+        blueprintRepo.setReadmePath("/README.md");
+        blueprintRepo.setRemoteUrlHttp(cloneUrl);
+        blueprintRepo.setRemoteUrlSsh("git@github.com:org/module-blueprint-repository.git");
+        blueprintRepo.setDefaultBranch("main");
+        blueprintRepo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        blueprintRepo.setProviderBaseUrl("https://github.com");
+        blueprintRepo.setOwnerId("org");
+        blueprintRepo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        return blueprintRepo;
+    }
+
     private void copyProtectedPublishedFiles(Path sourceDir, Path productDir) throws IOException {
         Path core = productDir.resolve("infrastructure/core");
         Files.createDirectories(core);
@@ -614,6 +953,24 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
                 Files.copy(inputStream, destination, StandardCopyOption.REPLACE_EXISTING);
             }
         }
+    }
+
+    /**
+     * Parent N→1 parameters do not include {@code environment}/{@code retentionDays}.
+     * The fixture descriptor template interpolates those keys as JSON; leave them
+     * and lineage enrichment fails to parse {@code templates/descriptor.json}.
+     */
+    private void writeSafeDescriptor(Path sourceDir) throws IOException {
+        Path descriptor = sourceDir.resolve("templates/descriptor.json.vm");
+        Files.createDirectories(descriptor.getParent());
+        Files.writeString(descriptor, """
+                {
+                  "dataProductDescriptor": "1.0.0",
+                  "info": {
+                    "name": "composed-product"
+                  }
+                }
+                """);
     }
 
     private BlueprintContext createBlueprintAndVersion(String blueprintName, String version, JsonNode manifestContent)

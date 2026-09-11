@@ -3,21 +3,27 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenario;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenarioResolver;
 import org.opendatamesh.platform.pp.blueprint.exceptions.NotFoundException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRepository;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 class EvaluateProtectedResourcesIntegrity implements UseCase {
+
+    static final String POLYREPO_NOT_APPLICABLE_MESSAGE =
+            "Protected-resource checks currently apply only to monorepo data products (one destination repository); polyrepo hashing is not applied yet";
 
     private final EvaluateProtectedResourcesIntegrityCommand command;
     private final EvaluateProtectedResourcesIntegrityPresenter presenter;
@@ -59,7 +65,7 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
                     command.productRepo(), command.publicationTag());
                  WorkingTree expected = instantiatePort.reinstantiateBlueprintLocally(
                          blueprintVersion, command)) {
-                compareProtectedResources(manifest.getProtectedResources(), published, expected);
+                compareProtectedResources(manifest, published, expected);
             }
         } catch (RuntimeException e) {
             presentInfrastructureIfNeeded(e);
@@ -88,13 +94,17 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
             presentInfrastructure("Cannot check protected resources: the blueprint repository is not configured");
             return true;
         }
-        if (resolveScenario(manifest) != InstantiationScenario.MONOREPO_NO_COMPOSITION) {
-            presentNotApplicable(
-                    "Protected-resource checks currently apply only to monorepo blueprints without composition");
-            return true;
-        }
         if (CollectionUtils.isEmpty(manifest.getProtectedResources())) {
             presentNotApplicable("This blueprint does not declare protected resources");
+            return true;
+        }
+        InstantiationScenario scenario = InstantiationScenarioResolver.resolve(manifest);
+        if (scenario == InstantiationScenario.POLYREPO_NO_COMPOSITION
+                || scenario == InstantiationScenario.POLYREPO_WITH_COMPOSITION) {
+            presentNotApplicable(POLYREPO_NOT_APPLICABLE_MESSAGE);
+            return true;
+        }
+        if (refuseUnknownProtectedResourceRepositories(manifest)) {
             return true;
         }
         if (!StringUtils.hasText(command.publicationTag())
@@ -108,14 +118,60 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         return false;
     }
 
+    private boolean refuseUnknownProtectedResourceRepositories(Manifest manifest) {
+        Set<String> declaredKeys = declaredRepositoryKeys(manifest);
+        List<String> unknown = new ArrayList<>();
+        for (ManifestProtectedResource protectedResource : manifest.getProtectedResources()) {
+            if (protectedResource == null || !StringUtils.hasText(protectedResource.getRepository())) {
+                continue;
+            }
+            String key = protectedResource.getRepository().trim();
+            if (!declaredKeys.contains(key)) {
+                unknown.add("Cannot check protected resources: protected resource '%s' names unknown repository key '%s'"
+                        .formatted(protectedResource.getPath(), key));
+            }
+        }
+        if (unknown.isEmpty()) {
+            return false;
+        }
+        presentFailed(List.of(), String.join("; ", unknown));
+        return true;
+    }
+
+    private Set<String> declaredRepositoryKeys(Manifest manifest) {
+        Set<String> keys = new LinkedHashSet<>();
+        if (manifest.getInstantiation() == null
+                || CollectionUtils.isEmpty(manifest.getInstantiation().getRepositories())) {
+            return keys;
+        }
+        for (ManifestInstantiationRepository repository : manifest.getInstantiation().getRepositories()) {
+            if (repository != null && StringUtils.hasText(repository.getKey())) {
+                keys.add(repository.getKey().trim());
+            }
+        }
+        return keys;
+    }
+
+    private String resolveDestinationRepositoryKey(ManifestProtectedResource protectedResource, Manifest manifest) {
+        if (protectedResource != null && StringUtils.hasText(protectedResource.getRepository())) {
+            return protectedResource.getRepository().trim();
+        }
+        if (manifest.getInstantiation() != null
+                && manifest.getInstantiation().getRoot() != null
+                && StringUtils.hasText(manifest.getInstantiation().getRoot().getRepository())) {
+            return manifest.getInstantiation().getRoot().getRepository().trim();
+        }
+        return null;
+    }
+
     private void compareProtectedResources(
-            List<ManifestProtectedResource> protectedResources,
+            Manifest manifest,
             WorkingTree published,
             WorkingTree expected
     ) {
         List<ProtectedResourceMismatch> mismatches = new ArrayList<>();
-        for (ManifestProtectedResource protectedResource : protectedResources) {
-            compareProtectedResource(protectedResource, published, expected, mismatches);
+        for (ManifestProtectedResource protectedResource : manifest.getProtectedResources()) {
+            compareProtectedResource(protectedResource, manifest, published, expected, mismatches);
         }
         if (mismatches.isEmpty()) {
             presentPassed("Protected resources match the blueprint");
@@ -126,10 +182,12 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
 
     private void compareProtectedResource(
             ManifestProtectedResource protectedResource,
+            Manifest manifest,
             WorkingTree published,
             WorkingTree expected,
             List<ProtectedResourceMismatch> mismatches
     ) {
+        resolveDestinationRepositoryKey(protectedResource, manifest);
         String declaredPath = protectedResource.getPath();
         if (protectedResource.getIntegrity() != null
                 && StringUtils.hasText(protectedResource.getIntegrity().getAlgorithm())
@@ -268,22 +326,6 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         }
         String joined = String.join(", ", quoted);
         return files.size() == 1 ? "file " + joined : "files " + joined;
-    }
-
-    private InstantiationScenario resolveScenario(Manifest manifest) {
-        if (manifest.getInstantiation() == null || manifest.getInstantiation().getStrategy() == null) {
-            throw new IllegalStateException("Cannot check protected resources: the blueprint manifest is missing an instantiation strategy");
-        }
-        boolean hasComposition = !CollectionUtils.isEmpty(manifest.getComposition());
-        ManifestInstantiation.InstantiationStrategy strategy = manifest.getInstantiation().getStrategy();
-        return switch (strategy) {
-            case MONOREPO -> hasComposition
-                    ? InstantiationScenario.MONOREPO_WITH_COMPOSITION
-                    : InstantiationScenario.MONOREPO_NO_COMPOSITION;
-            case POLYREPO -> hasComposition
-                    ? InstantiationScenario.POLYREPO_WITH_COMPOSITION
-                    : InstantiationScenario.POLYREPO_NO_COMPOSITION;
-        };
     }
 
     private void presentNotApplicable(String reason) {

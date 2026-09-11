@@ -199,6 +199,18 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
     }
 
     @Test
+    void whenUnknownProtectedResourceRepositoryThenIssueWithHint() throws IOException {
+        List<InstantiationValidationIssue> issues = collect(
+                "/manifest/invalid/unknown-protected-resource-repository.yaml");
+        assertThat(issues).anySatisfy(issue -> {
+            assertThat(issue.fieldPath()).contains("protectedResources");
+            assertThat(issue.fieldPath()).contains("repository");
+            assertThat(issue.problem()).contains("instantiation.repositories[].key");
+            assertThat(issue.hint()).containsIgnoringCase("omit");
+        });
+    }
+
+    @Test
     void whenValidPolyrepoManifestThenNoDescriptorRouteValidationIssue() throws IOException {
         JsonNode content = ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 "/manifest/example-2.3-polyrepo-no-composition.yaml");

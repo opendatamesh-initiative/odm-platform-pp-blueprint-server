@@ -117,6 +117,10 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
             assertThat(getResponse.getBody().getName()).isEqualTo(prefix + "-version");
             assertThat(getResponse.getBody().getVersionNumber()).isEqualTo("1.0.0");
             assertThat(getResponse.getBody().getCreatedBy()).isEqualTo("it-created-by");
+            JsonNode storedProtected = getResponse.getBody().getContent().path("protectedResources");
+            assertThat(storedProtected.isArray()).isTrue();
+            assertThat(storedProtected.get(0).has("repository")).isFalse();
+            assertThat(storedProtected.get(1).has("repository")).isFalse();
 
             rest.delete(apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + created.getUuid()));
         } finally {
@@ -570,6 +574,71 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
                 "/manifest/invalid/unknown-root-repository.yaml",
                 "root.repository",
                 "match");
+    }
+
+    /**
+     * Feature: Protected-resources destination key
+     * Scenario: Unknown repository key is rejected at publish
+     *   Given a blueprint whose `protectedResources[].repository` is not a declared instantiation key
+     *   When the version is published
+     *   Then the response is 400
+     *   And the error names `protectedResources[].repository` and hints to use a declared key or omit it
+     */
+    @Test
+    public void whenPublishUnknownProtectedResourceRepositoryThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/unknown-protected-resource-repository.yaml",
+                "protectedResources",
+                "omit");
+    }
+
+    /**
+     * Feature: Protected-resources destination key
+     * Scenario: Present repository key matching the root is accepted
+     *   Given a 1→1 blueprint with `protectedResources[].repository` equal to `instantiation.root.repository`
+     *   When the version is published
+     *   Then the response is 200
+     */
+    @Test
+    public void whenPublishProtectedResourceRepositoryIsRootKeyThenReturn201() throws IOException {
+        String prefix = "pubProtRootKey";
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            ObjectNode content = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE);
+            for (JsonNode node : content.withArray("protectedResources")) {
+                ((ObjectNode) node).put("repository", "main");
+            }
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    content
+            );
+
+            ResponseEntity<PublishBlueprintVersionResponseRes> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    PublishBlueprintVersionResponseRes.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getBlueprintVersion()).isNotNull();
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
     }
 
     /*

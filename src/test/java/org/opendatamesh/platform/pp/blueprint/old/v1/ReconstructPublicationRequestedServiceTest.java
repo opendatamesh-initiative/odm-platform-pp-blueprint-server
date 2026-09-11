@@ -91,6 +91,8 @@ class ReconstructPublicationRequestedServiceTest {
         stubUniqueLookup();
         ObjectNode versionFromRegistry = v2VersionResource(true, true);
         versionFromRegistry.put("uuid", VERSION_UUID);
+        ((ObjectNode) versionFromRegistry.path("dataProduct"))
+                .set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode());
         when(registryClient.getVersion(VERSION_UUID)).thenReturn(versionFromRegistry);
 
         PolicyEvaluationResultRes expected = passed(7L);
@@ -232,6 +234,67 @@ class ReconstructPublicationRequestedServiceTest {
         verify(validatorService).evaluate(captor.capture());
         JsonNode nestedRepo = captor.getValue().getObjectToEvaluate().path("dataProduct").path("dataProductRepo");
         assertThat(nestedRepo.path("remoteUrlHttp").asText()).isEqualTo("https://github.com/org/customer360.git");
+        verify(registryClient).getProduct(PRODUCT_UUID);
+    }
+
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: GET version without extras array nests the product
+     *   Given a Policy V1 objectToEvaluate with a readable FQN and version
+     *   And GET version has `dataProduct.dataProductRepo` but omits `additionalDataProductRepos`
+     *   And GET product returns a product with `additionalDataProductRepos` as an array
+     *   When reconstruction evaluates the request
+     *   Then the policy validator receives nested `additionalDataProductRepos` as an array
+     */
+    @Test
+    void getVersionWithoutAdditionalReposNestsProductBeforeDelegate() {
+        stubUniqueLookup();
+        ObjectNode versionWithoutExtras = v2VersionResource(true, true);
+        versionWithoutExtras.put("uuid", VERSION_UUID);
+        when(registryClient.getVersion(VERSION_UUID)).thenReturn(versionWithoutExtras);
+        ObjectNode product = productWithRepo();
+        product.set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode()
+                .add(OBJECT_MAPPER.createObjectNode().put("manifestKey", "infra-repo")));
+        when(registryClient.getProduct(PRODUCT_UUID)).thenReturn(product);
+        when(validatorService.evaluate(any())).thenReturn(passed(1L));
+
+        service.evaluate(request(v1Payload(FQN, VERSION_NUMBER)));
+
+        ArgumentCaptor<PolicyEvaluationRequestRes> captor = ArgumentCaptor.forClass(PolicyEvaluationRequestRes.class);
+        verify(validatorService).evaluate(captor.capture());
+        JsonNode extras = captor.getValue().getObjectToEvaluate().path("dataProduct").path("additionalDataProductRepos");
+        assertThat(extras.isArray()).isTrue();
+        assertThat(extras).hasSize(1);
+        assertThat(extras.get(0).path("manifestKey").asText()).isEqualTo("infra-repo");
+        verify(registryClient).getProduct(PRODUCT_UUID);
+    }
+
+    /**
+     * Feature: Reconstruct V2 publication object from Policy V1
+     *
+     * Scenario: Missing extras after GET product become an empty array
+     *   Given GET version and GET product both omit `additionalDataProductRepos`
+     *   When reconstruction evaluates the request
+     *   Then the nested product has `additionalDataProductRepos` as an empty array
+     *   And the policy validator is still called
+     */
+    @Test
+    void missingAdditionalReposAfterGetProductDefaultsToEmptyArray() {
+        stubUniqueLookup();
+        ObjectNode versionWithoutExtras = v2VersionResource(true, true);
+        versionWithoutExtras.put("uuid", VERSION_UUID);
+        when(registryClient.getVersion(VERSION_UUID)).thenReturn(versionWithoutExtras);
+        when(registryClient.getProduct(PRODUCT_UUID)).thenReturn(productWithRepo());
+        when(validatorService.evaluate(any())).thenReturn(passed(1L));
+
+        service.evaluate(request(v1Payload(FQN, VERSION_NUMBER)));
+
+        ArgumentCaptor<PolicyEvaluationRequestRes> captor = ArgumentCaptor.forClass(PolicyEvaluationRequestRes.class);
+        verify(validatorService).evaluate(captor.capture());
+        JsonNode extras = captor.getValue().getObjectToEvaluate().path("dataProduct").path("additionalDataProductRepos");
+        assertThat(extras.isArray()).isTrue();
+        assertThat(extras).isEmpty();
         verify(registryClient).getProduct(PRODUCT_UUID);
     }
 

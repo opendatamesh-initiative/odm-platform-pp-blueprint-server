@@ -67,6 +67,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         state.repositoryKeys.clear();
         state.usedRepositoryKeys.clear();
         state.routeDestinations.clear();
+        state.protectedResourceRepositories.clear();
 
         if (!Manifest.SPEC_NAME.equals(manifest.getSpec())) {
             context.addError("spec", "Manifest spec must be 'odm-blueprint-manifest'");
@@ -142,6 +143,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         validateUnusedRepositoryKeys();
         validateDuplicateDestinations();
         validateNestedPathPrefixes();
+        validateProtectedResourceRepositories();
     }
 
     @Override
@@ -183,6 +185,13 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
 
         validateRequiredString(manifestProtectedResource.getPath(), fieldPath + ".path",
                 "Protected resource path must be a non-empty string");
+
+        if (hasText(manifestProtectedResource.getRepository())) {
+            state.protectedResourceRepositories.add(
+                    new OdmBlueprintManifestValidatorState.ProtectedResourceRepository(
+                            fieldPath + ".repository",
+                            manifestProtectedResource.getRepository().trim()));
+        }
 
         if (manifestProtectedResource.getIntegrity() != null) {
             manifestProtectedResource.getIntegrity().accept(this);
@@ -423,6 +432,18 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
     }
 
     // --- Post-pass global invariants (after accept/visit walk; operate on collected state only) ---
+
+    private void validateProtectedResourceRepositories() {
+        for (OdmBlueprintManifestValidatorState.ProtectedResourceRepository destination
+                : state.protectedResourceRepositories) {
+            if (!state.repositoryKeys.contains(destination.repositoryKey())) {
+                context.addError(
+                        destination.fieldPath(),
+                        "Protected resource repository must match an instantiation.repositories[].key",
+                        "Use a key declared in instantiation.repositories[].key, or omit repository to use instantiation.root.repository.");
+            }
+        }
+    }
 
     private void validateUnusedRepositoryKeys() {
         for (String key : state.repositoryKeys) {
