@@ -21,7 +21,7 @@ import java.util.List;
 @Service
 public class LabelServiceImpl extends GenericMappedAndFilteredCrudServiceImpl<LabelSearchOptions, LabelRes, Label, String> implements LabelService {
 
-    private static final String LABEL_NAME_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_-]*$";
+    private static final String LABEL_NAME_PATTERN = "^[A-Za-z0-9][A-Za-z0-9 _-]*$";
     private static final String LABEL_COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$";
 
     private final LabelMapper mapper;
@@ -64,11 +64,16 @@ public class LabelServiceImpl extends GenericMappedAndFilteredCrudServiceImpl<La
         if (objectToValidate == null) {
             throw new BadRequestException("Label cannot be null");
         }
+        String name = objectToValidate.getName();
+        if (name != null) {
+            name = name.trim();
+            objectToValidate.setName(name);
+        }
         validateRequired("Name", objectToValidate.getName());
         validateLength("Name", objectToValidate.getName(), 255);
         if (!objectToValidate.getName().matches(LABEL_NAME_PATTERN)) {
             throw new BadRequestException(
-                    "Name may contain only simple characters (letters, digits, hyphen, underscore) and must start with a letter or digit");
+                    "Name may contain only simple characters (letters, digits, space, hyphen, underscore) and must start with a letter or digit");
         }
         if (StringUtils.hasText(objectToValidate.getColor())) {
             validateLength("Color", objectToValidate.getColor(), 32);

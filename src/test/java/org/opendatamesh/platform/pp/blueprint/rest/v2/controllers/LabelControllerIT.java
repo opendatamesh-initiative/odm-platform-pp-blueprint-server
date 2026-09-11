@@ -265,7 +265,93 @@ public class LabelControllerIT extends BlueprintApplicationIT {
      */
     @Test
     public void whenCreateLabelWithIllegalNameCharactersThenReturnBadRequest() {
-        LabelRes invalid = newLabel("illegal name", "#FF0000");
+        LabelRes invalid = newLabel("illegal/name", "#FF0000");
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.LABELS),
+                new HttpEntity<>(invalid),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Feature: Create label — internal spaces in name are allowed
+     * Given a label payload whose name contains spaces
+     * When the client sends POST
+     * Then the response status is 201 and GET returns the name with internal spaces kept
+     */
+    @Test
+    public void whenCreateLabelWithNameContainingSpacesThenAccepted() {
+        String namePrefix = "whenCreateLabelWithNameContainingSpacesThenAccepted";
+        String name = namePrefix + " Source aligned";
+
+        LabelRes label = newLabel(name, "#0E8A16");
+        ResponseEntity<LabelRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.LABELS),
+                new HttpEntity<>(label),
+                LabelRes.class
+        );
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        assertThat(created.getBody().getName()).isEqualTo(name);
+        String labelUuid = created.getBody().getUuid();
+
+        try {
+            ResponseEntity<LabelRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.LABELS, "/" + labelUuid),
+                    LabelRes.class
+            );
+            assertThat(getResponse.getBody().getName()).isEqualTo(name);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelUuid));
+        }
+    }
+
+    /**
+     * Feature: Padded name is trimmed on write
+     * Given a label payload with leading and trailing spaces in the name
+     * When the client sends POST
+     * Then the stored name is trimmed
+     */
+    @Test
+    public void whenCreateLabelWithPaddedNameThenTrimmed() {
+        String namePrefix = "whenCreateLabelWithPaddedNameThenTrimmed";
+
+        LabelRes label = newLabel("  " + namePrefix + "  ", "#0E8A16");
+        ResponseEntity<LabelRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.LABELS),
+                new HttpEntity<>(label),
+                LabelRes.class
+        );
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        assertThat(created.getBody().getName()).isEqualTo(namePrefix);
+        String labelUuid = created.getBody().getUuid();
+
+        try {
+            ResponseEntity<LabelRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.LABELS, "/" + labelUuid),
+                    LabelRes.class
+            );
+            assertThat(getResponse.getBody().getName()).isEqualTo(namePrefix);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelUuid));
+        }
+    }
+
+    /**
+     * Feature: Create label — whitespace-only name is rejected
+     * Given a label payload whose name is only spaces
+     * When the client sends POST
+     * Then the response status is 400
+     */
+    @Test
+    public void whenCreateLabelWithWhitespaceOnlyNameThenReturnBadRequest() {
+        LabelRes invalid = new LabelRes();
+        invalid.setName("   ");
+        invalid.setColor("#FF0000");
 
         ResponseEntity<String> response = rest.postForEntity(
                 apiUrl(RoutesV2.LABELS),

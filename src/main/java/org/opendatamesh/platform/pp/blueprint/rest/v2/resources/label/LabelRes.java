@@ -9,7 +9,7 @@ public class LabelRes extends VersionedRes {
     @Schema(description = "The unique identifier of the label")
     private String uuid;
 
-    @Schema(description = "The name of the label")
+    @Schema(description = "The name of the label. Letters, digits, space, hyphen, and underscore; must start with a letter or digit.")
     private String name;
 
     @Schema(description = "The description of the label", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -19,8 +19,7 @@ public class LabelRes extends VersionedRes {
     private String color;
 
     @Schema(
-            description = "Optional catalog group (free text; presentation metadata; not a filter key). " +
-                    "Values are trimmed on write; whitespace-only is stored as no group. Distinct groups are exact trimmed strings.",
+            description = "Optional catalog group (free text). Distinct groups are exact trimmed strings.",
             requiredMode = Schema.RequiredMode.NOT_REQUIRED
     )
     private String group;
