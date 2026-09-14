@@ -767,15 +767,18 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
     /**
      * Feature: Protected-resource manifest ownership
      *
-     * Scenario: Omitted repository resolves to the explicit root
+     * Scenario: Publication accepts omitted repository when root is not first
      *   Given a valid manifest whose root target is not first
      *   And a protected resource omits repository
-     *   When the manifest is published and integrity is evaluated
-     *   Then publication accepts the declaration
-     *   And integrity compares it on the target marked isRoot true
+     *   When the version is published
+     *   Then publication returns 201
+     *
+     * Publication-only: this IT does not evaluate integrity. Explicit-root comparison
+     * (including a non-first {@code isRoot} key) is
+     * {@link org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.EvaluateProtectedResourcesIntegrityTest#whenRepositoryOmittedThenResolveExplicitRootEvenIfNotFirst}.
      */
     @Test
-    public void whenRepositoryOmittedThenUseIsRootTarget() throws IOException {
+    public void whenRepositoryOmittedThenPublishAcceptsExplicitRootShorthand() throws IOException {
         String prefix = "pubProtOmitRepo";
         BlueprintRes blueprint = new BlueprintRes();
         blueprint.setName(prefix + "-bp");

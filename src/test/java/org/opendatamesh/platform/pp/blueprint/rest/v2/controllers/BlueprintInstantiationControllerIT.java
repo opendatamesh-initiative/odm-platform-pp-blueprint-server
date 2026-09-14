@@ -501,7 +501,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /**
-     * Spec — Scenario: targetId must match the sole instantiation.repositories[].key.
+     * Spec — Scenario: targetId must match the sole targetRepositories[].key.
      */
     @Test
     void whenTargetIdDoesNotMatchRepositoryKeyThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir)
@@ -832,7 +832,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      *   And the request maps only "app-repo"
      *   When the client POSTs instantiate
      *   Then the response status is 400
-     *   And the message names the missing key and a hint to supply targetRepositories for every instantiation.repositories[].key
+     *   And the message names the missing key and a hint to supply targetRepositories for every targetRepositories[].key
      *   And no Git mutation runs
      */
     @Test
@@ -952,7 +952,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      * Feature: Target mapping and Git constraints
      * Scenario: Unknown targetId is rejected
      *   Given a targetId that is not a declared repository key
-     *   Then 400 with a hint to match instantiation.repositories[].key
+     *   Then 400 with a hint to match targetRepositories[].key
      */
     @Test
     void whenUnknownTargetIdThenReturn400(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
@@ -1126,7 +1126,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      *   So that a multi-repo product can be instantiated in one request
      * Scenario: Mixed parent and module routes across two targets
      *   Given a published parent with keys "pipeline-repo" and "api-repo"
-     *   And instantiation.root.repository is "pipeline-repo"
+     *   And targetRepositories[] marks "pipeline-repo" as isRoot true
      *   And 1→1 modules "ingest" and "consume"
      *   And parent routes "./core" to "pipeline-repo"
      *   And ingest routes to "pipeline-repo" at "./pipelines/batch"
@@ -1203,10 +1203,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      *   As an orchestrator
      *   I want one parent split across several existing Git remotes
      *   So that each repository key receives only its routes and a checkpoint
-     * Scenario: First root.targets entry is not used as root when root.repository names another key
+     * Scenario: First type: root targets entry is not used as root when another key is marked isRoot
      *   Given a published parent with keys "infra-repo" and "app-repo"
-     *   And the first root.targets entry maps to "infra-repo"
-     *   And instantiation.root.repository is "app-repo"
+     *   And the first type: root targets[].repo maps to "infra-repo"
+     *   And targetRepositories[] marks "app-repo" as isRoot true
      *   When instantiate succeeds
      *   Then lineage is written only on app-repo
      *   And infra-repo is treated as an additional repo
@@ -1251,7 +1251,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      *   I want parent and 1→1 modules copied into one target at sibling paths
      *   So that a single Git repo holds the assembled product without nested overwrites
      * Scenario: Child instantiation block does not place files
-     *   Given a module whose own instantiation.root.targets would copy to "./"
+     *   Given a module whose own type: root instantiation[].targets would copy to "./"
      *   And the parent composition.targets place that module at "data-plane/storage"
      *   When instantiate runs
      *   Then module files appear under data-plane/storage not at the target root from the child manifest
@@ -1311,8 +1311,8 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
      *   As an author
      *   I want the same structural rules before publish and before instantiate
      *   So that invalid routing never reaches Git and every problem is listed with a hint
-     * Scenario: Empty root.targets is rejected at both gates
-     *   Given instantiation.root.targets is []
+     * Scenario: Empty type: root targets is rejected at both gates
+     *   Given the type: root instantiation[] entry has targets: []
      *   When a previously stored invalid content is instantiated
      *   Then instantiate returns 400 with the same rule and a hint
      *   And no Git mutation runs
@@ -1325,10 +1325,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: Missing instantiation.root.repository is rejected at both gates
-     *   Given instantiation.root.repository is absent or blank
+     * Scenario: Missing isRoot target is rejected at both gates
+     *   Given no targetRepositories[] entry sets isRoot: true
      *   When instantiate validates
-     *   Then 400 names instantiation.root.repository and hints to set it to a declared repositories[].key
+     *   Then 400 names targetRepositories and hints to set isRoot: true
      *   And no Git mutation runs
      */
     @Test
@@ -1339,10 +1339,10 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: instantiation.root.repository that is not a declared key is rejected at both gates
-     *   Given instantiation.root.repository is "unknown-repo"
+     * Scenario: Route repo that is not a declared key is rejected at both gates
+     *   Given instantiation[].targets[].repo is "unknown-repo"
      *   When instantiate validates
-     *   Then 400 names the field and hints to use a declared instantiation.repositories[].key
+     *   Then 400 names the field and hints to use a declared targetRepositories[].key
      */
     @Test
     void whenInstantiateUnknownRootRepositoryThenReturn400WithHint() throws Exception {

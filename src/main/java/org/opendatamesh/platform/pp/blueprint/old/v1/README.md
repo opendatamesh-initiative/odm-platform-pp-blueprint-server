@@ -4,7 +4,7 @@ Temporary adapter so Blueprint can evaluate protected-resources integrity while 
 
 Policy V1 cannot consume `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` and does not forward Git tag or product repository. This package reconstructs that publication object from Registry, then calls the lasting integrity check.
 
-When Policy V2 dispatches `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with nested tag + product repo, **delete this package**.
+When Policy V2 dispatches `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with nested root tag + product repo and keyed additional locators/refs, **delete this package**.
 
 Related lasting docs: [Protected resources](../../../../../../../../../../docs/service/protected-resources.md) · [Configuration](../../../../../../../../../../docs/setup/configuration.md)
 

@@ -39,6 +39,7 @@ import org.springframework.http.ResponseEntity;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -720,7 +721,10 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
                         .put("path", "infrastructure/core/**")
                         .put("repository", "infra-repo")));
         BlueprintContext context = createBlueprintAndVersion("poly-infra-only", "1.0.0", manifest);
-        GitOperation gitOperation = stubPublishedGit(sourceDir, sourceDir, Map.of("infra-repo", infraProduct));
+        GitOperation gitOperation = stubPublishedGit(
+                sourceDir,
+                Map.of(),
+                Map.of("infra-repo", publishedProduct(infraProduct, "infra-v9")));
 
         ObjectNode event = OBJECT_MAPPER.createObjectNode();
         ObjectNode version = event.putObject("eventContent").putObject("dataProductVersion");
@@ -763,7 +767,11 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
                         .put("repository", "infra-repo")));
         BlueprintContext context = createBlueprintAndVersion("poly-both", "1.0.0", manifest);
         GitOperation gitOperation = stubPublishedGit(
-                sourceDir, sourceDir, Map.of("customer360", rootProduct, "infra-repo", infraProduct));
+                sourceDir,
+                Map.of(),
+                Map.of(
+                        "customer360", publishedProduct(rootProduct, "root-v3"),
+                        "infra-repo", publishedProduct(infraProduct, "infra-v9")));
 
         ObjectNode event = publicationEvent(
                 "root-v3",
@@ -791,35 +799,49 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
      *
      * Scenario: N→N compares parent and Module output by destination
      *   Given a parent Blueprint and Modules route protected output across root and additional targets
+     *   And ingest and consume Modules have distinct source trees and clone URLs
+     *   And every published target is cloned at its recorded ref
      *   And every published target matches its same-key expected tree
      *   When integrity is evaluated
      *   Then evaluationResult is true
      *   And no target is compared against another target tree
+     *   And swapping Module sources or destination trees would fail the comparison
      */
     @Test
     void whenPolyrepoWithCompositionMatchesThenPass(
             @TempDir Path parentSource,
-            @TempDir Path moduleSource,
+            @TempDir Path ingestSource,
+            @TempDir Path consumeSource,
             @TempDir Path pipelineProduct,
             @TempDir Path apiProduct) throws Exception {
         writeSourceBlueprintFiles(parentSource);
         writeSafeDescriptor(parentSource);
-        writeSourceBlueprintFiles(moduleSource);
-        writeSafeDescriptor(moduleSource);
-        Files.writeString(moduleSource.resolve("module-only.txt"), "from-module\n");
-        copyNnProtectedPublishedFiles(moduleSource, pipelineProduct, apiProduct);
+        writeSourceBlueprintFiles(ingestSource);
+        writeSafeDescriptor(ingestSource);
+        writeSourceBlueprintFiles(consumeSource);
+        writeSafeDescriptor(consumeSource);
+        Files.writeString(ingestSource.resolve("ingest-only.txt"), "from-ingest-module\n");
+        Files.writeString(consumeSource.resolve("consume-only.txt"), "from-consume-module\n");
+        copyNnProtectedPublishedFiles(ingestSource, consumeSource, pipelineProduct, apiProduct);
 
         BlueprintContext ingest = createPublishedModule("odm-blueprint-ingest-batch", "2.0.0", MODULE_STORAGE_CLONE_URL);
         BlueprintContext consume = createPublishedModule("odm-blueprint-consumer-api", "1.1.0", MODULE_SERVING_CLONE_URL);
         ObjectNode parentManifest = (ObjectNode) readYamlManifestResource("manifest/example-2.4-polyrepo-composition.yaml");
         rewritePolyrepoCompositionRefs(parentManifest, ingest, consume);
         parentManifest.set("protectedResources", OBJECT_MAPPER.createArrayNode()
-                .add(OBJECT_MAPPER.createObjectNode().put("path", "pipelines/batch/module-only.txt"))
+                .add(OBJECT_MAPPER.createObjectNode().put("path", "pipelines/batch/ingest-only.txt"))
                 .add(OBJECT_MAPPER.createObjectNode()
-                        .put("path", "services/consumer/module-only.txt")
+                        .put("path", "services/consumer/consume-only.txt")
                         .put("repository", "api-repo")));
         BlueprintContext parent = createBlueprintAndVersion("mesh-polyrepo-parent", "1.3.0", parentManifest);
-        stubPublishedGit(parentSource, moduleSource, Map.of("customer360", pipelineProduct, "api-repo", apiProduct));
+        stubPublishedGit(
+                parentSource,
+                Map.of(
+                        "module-storage", ingestSource,
+                        "module-serving", consumeSource),
+                Map.of(
+                        "customer360", publishedProduct(pipelineProduct, "publication-v1"),
+                        "api-repo", publishedProduct(apiProduct, "api-v4")));
 
         ObjectNode event = publicationEvent(
                 "publication-v1",
@@ -877,33 +899,68 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         deleteCreatedBlueprint(context);
     }
 
+    private record PublishedProductStub(Path tree, String expectedRef) {
+    }
+
+    private PublishedProductStub publishedProduct(Path tree, String expectedRef) {
+        return new PublishedProductStub(tree, expectedRef);
+    }
+
     private GitOperation stubGit(Path sourceDir, Path productDir) {
         return stubGit(sourceDir, sourceDir, productDir);
     }
 
     private GitOperation stubGit(Path parentSource, Path moduleSource, Path productDir) {
-        return stubPublishedGit(parentSource, moduleSource, Map.of("customer360", productDir));
+        return stubPublishedGit(
+                parentSource,
+                Map.of(
+                        "module-storage", moduleSource,
+                        "module-serving", moduleSource),
+                Map.of("customer360", publishedProduct(productDir, null)));
     }
 
     private GitOperation stubPublishedGit(Path parentSource, Path moduleSource, Map<String, Path> productTreesByUrlFragment) {
+        Map<String, PublishedProductStub> publishedProducts = new java.util.LinkedHashMap<>();
+        productTreesByUrlFragment.forEach((key, tree) -> publishedProducts.put(key, publishedProduct(tree, null)));
+        return stubPublishedGit(
+                parentSource,
+                Map.of(
+                        "module-storage", moduleSource,
+                        "module-serving", moduleSource),
+                publishedProducts);
+    }
+
+    /**
+     * Serves parent/Module source trees by clone-URL fragment without inspecting the requested ref
+     * (source tags remain valid). Published product remotes are matched first; when
+     * {@link PublishedProductStub#expectedRef()} is set, a mismatched {@link RepositoryPointerTag}
+     * returns an empty tree so a root-tag fallback cannot pass by URL alone.
+     */
+    private GitOperation stubPublishedGit(
+            Path parentSource,
+            Map<String, Path> moduleTreesByUrlFragment,
+            Map<String, PublishedProductStub> publishedProducts) {
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
         when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(java.util.Optional.of(new Repository()));
         doAnswer(invocation -> {
             Repository repository = invocation.getArgument(0);
+            RepositoryPointer pointer = invocation.getArgument(1);
             Consumer<File> consumer = invocation.getArgument(2);
             String cloneUrl = repository.getCloneUrlHttp();
             if (cloneUrl != null) {
-                for (Map.Entry<String, Path> productTree : productTreesByUrlFragment.entrySet()) {
+                for (Map.Entry<String, PublishedProductStub> productTree : publishedProducts.entrySet()) {
                     if (cloneUrl.contains(productTree.getKey())) {
-                        consumer.accept(productTree.getValue().toFile());
+                        consumer.accept(publishedTreeForRef(productTree.getValue(), pointer).toFile());
                         return null;
                     }
                 }
-                if (cloneUrl.contains("module-")) {
-                    consumer.accept(moduleSource.toFile());
-                    return null;
+                for (Map.Entry<String, Path> moduleTree : moduleTreesByUrlFragment.entrySet()) {
+                    if (cloneUrl.contains(moduleTree.getKey())) {
+                        consumer.accept(moduleTree.getValue().toFile());
+                        return null;
+                    }
                 }
             }
             consumer.accept(parentSource.toFile());
@@ -1179,18 +1236,37 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         Files.copy(sourceDir.resolve("infrastructure/core/iam.tf"), core.resolve("iam.tf"), StandardCopyOption.REPLACE_EXISTING);
     }
 
-    private void copyNnProtectedPublishedFiles(Path moduleSource, Path pipelineProduct, Path apiProduct) throws IOException {
+    private Path publishedTreeForRef(PublishedProductStub product, RepositoryPointer pointer) {
+        if (product.expectedRef() == null) {
+            return product.tree();
+        }
+        if (pointer instanceof RepositoryPointerTag && product.expectedRef().equals(pointer.getRefValue())) {
+            return product.tree();
+        }
+        return emptyMismatchTree();
+    }
+
+    private Path emptyMismatchTree() {
+        try {
+            return Files.createTempDirectory("integrity-wrong-ref-");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void copyNnProtectedPublishedFiles(
+            Path ingestSource, Path consumeSource, Path pipelineProduct, Path apiProduct) throws IOException {
         Path pipelineDestination = pipelineProduct.resolve("pipelines/batch");
         Files.createDirectories(pipelineDestination);
         Files.copy(
-                moduleSource.resolve("module-only.txt"),
-                pipelineDestination.resolve("module-only.txt"),
+                ingestSource.resolve("ingest-only.txt"),
+                pipelineDestination.resolve("ingest-only.txt"),
                 StandardCopyOption.REPLACE_EXISTING);
         Path apiDestination = apiProduct.resolve("services/consumer");
         Files.createDirectories(apiDestination);
         Files.copy(
-                moduleSource.resolve("module-only.txt"),
-                apiDestination.resolve("module-only.txt"),
+                consumeSource.resolve("consume-only.txt"),
+                apiDestination.resolve("consume-only.txt"),
                 StandardCopyOption.REPLACE_EXISTING);
     }
 

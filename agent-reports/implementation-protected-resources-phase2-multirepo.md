@@ -18,7 +18,7 @@ This phase fills the Phase 1 seam: `EvaluateProtectedResourcesIntegrityCommand.a
 | AC / scenario | Evidence |
 | --- | --- |
 | Empty parent protection is not applicable | Phase 1 `lineageWithEmptyProtectedResourcesReturnsNotApplicable` preserved |
-| Optional/blank `repository` → explicit root | `whenRepositoryOmittedThenResolveExplicitRootEvenIfNotFirst`, `whenRepositoryOmittedThenUseIsRootTarget` (unit + publish IT) |
+| Optional/blank `repository` → explicit root | Unit: `whenRepositoryOmittedThenResolveExplicitRootEvenIfNotFirst`. Publication-only IT: `whenRepositoryOmittedThenPublishAcceptsExplicitRootShorthand` |
 | Module non-empty list rejected | Phase 1 `whenPublishModuleWithProtectedResourcesThenReturn400` preserved |
 | Referenced additional target uses own locator/ref | Phase 1 unit test + Phase 2 `whenMultipleTargetsProtectedThenCloneEachRecordedRef` |
 | Missing/duplicate referenced metadata fails before Git | Phase 1 unit tests preserved |
@@ -126,13 +126,12 @@ Targeted ITs — **pass**:
 2. **Local Registry workspace is not the assigned contract.** `/home/nicolapavin/git/odm-platform-pp-registry-server` still has `manifestKey` and no `additionalTags`. Implementation follows the user-assigned authoritative fields: root `dataProductRepo`/`tag`, additional `repositoryKey` locators, and `additionalTags[].repositoryKey/tag`.
 3. **Checkpoint isolation is API-level, not a combined update+Git-state proof of tag reuse.** The update IT runs a `contentUnchanged` update, then evaluates a tampered published snapshot at `publication-v1`. Integrity clones that publication ref, not `blueprint-v*`. `UpdateDataProductFromBlueprintVersion` / `contentUnchanged` were not modified.
 4. **1→N IT fixtures rewrite example-2.3 routes** to `infrastructure/` and `docs/` so they match the existing source-repo test files. Production example-2.3 still documents `terraform/` / `application/`.
-5. **Stale Javadocs outside this feature** (instantiate/update ITs still mentioning `instantiation.repositories`) were left untouched.
+5. **Stale Javadocs** for deleted `instantiation.repositories` / `instantiation.root.*` fields in instantiate/update ITs and `UpdateDataProductCommandRes` were rewritten in the review-fix commit (see addendum).
 
 ## Unresolved risks
 
 - Until Registry is on the `repositoryKey` + `additionalTags` contract, a live V1 reconstruction against the current local Registry tree would not supply additional refs. Core would fail closed for protected non-root targets (correct), but 1→N would not pass in that environment.
 - Reconstruction still GETs the product when the nested additional-repos array is absent, even for root-only protection. A product GET failure then fails closed before core can ignore unreferenced targets. This matches the V1 prompt’s “GET when additional array is absent” rule.
-- N→N ITs use one shared module working tree for both module remotes. That is enough to prove destination-keyed comparison; it does not prove mixed Module content isolation.
 - `Files.createSymbolicLink` remains required; Windows without symlink privilege is outside the current Linux/WSL test environment.
 
 ## Questions requiring human judgment
@@ -144,3 +143,41 @@ Targeted ITs — **pass**:
 ## Prompt / code gaps
 
 None that required a REASONS change. Reality that differed from the prompt was the Phase 1/2 delivery split (already documented) and the local Registry checkout lagging the assigned `repositoryKey`/`additionalTags` contract.
+
+## Review-fix addendum
+
+Addresses remaining confirmed findings from `agent-reports/review-protected-resources-final.md` without changing lasting integrity rules. Does not undo Phase 1 review-fix `61a8475`.
+
+### MEDIUM-1 — Distinct N→N Module sources
+
+`whenPolyrepoWithCompositionMatchesThenPass` now uses separate ingest/consume source trees (`ingest-only.txt` / `consume-only.txt`). Each Module clone URL fragment (`module-storage` / `module-serving`) resolves to its own tree. Protected paths are `pipelines/batch/ingest-only.txt` (root) and `services/consumer/consume-only.txt` (`api-repo`). Swapping Module sources or destination trees fails the comparison.
+
+### MEDIUM-2 — Ref-aware published Git fixture
+
+`stubPublishedGit` validates `RepositoryPointerTag` against an expected product ref when one is configured. A mismatched ref serves an empty tree. Applied to additional-only (`infra-v9`), root+additional (`root-v3` / `infra-v9`), and N→N (`publication-v1` / `api-v4`). Parent/Module source clones are still served by URL fragment only, so valid source tags keep working. 1→1 and N→1 helpers still omit expected product refs.
+
+### LOW-2 — Honest publication-only omitted-repository IT
+
+Renamed `whenRepositoryOmittedThenUseIsRootTarget` → `whenRepositoryOmittedThenPublishAcceptsExplicitRootShorthand`. Javadoc states publication-only 201 coverage and points to `EvaluateProtectedResourcesIntegrityTest.whenRepositoryOmittedThenResolveExplicitRootEvenIfNotFirst` as the explicit-root integrity proof.
+
+### LOW-4 — Stale final-manifest comments
+
+Rewrote remaining `instantiation.repositories` / `instantiation.root.repository` / `instantiation.root.targets` Javadocs in `BlueprintUpdateDataProductControllerIT`, `BlueprintInstantiationControllerIT`, and the `UpdateDataProductCommandRes` schema description. `BlueprintVersionsUseCaseControllerIT` / `InstantiateBlueprintVersion` wording from `61a8475` was left as-is.
+
+### Documentation polish
+
+`old/v1/README.md` intro now says Policy V2 removal requires nested root tag + product repo **and** keyed additional locators/refs.
+
+### Commands and results (this commit)
+
+| Command | Result |
+| --- | --- |
+| `./mvnw -DskipTests test-compile` | **pass** |
+| `git diff --check` | **pass** |
+| `./mvnw -Dtest=ProtectedResourcesValidatorControllerIT,EvaluateProtectedResourcesIntegrityTest,BlueprintVersionsUseCaseControllerIT#whenRepositoryOmittedThenPublishAcceptsExplicitRootShorthand test` | **pass** (34 tests, 0 failures) |
+
+`./mvnw verify` (full Failsafe IT suite) was not run.
+
+### Not fully resolved
+
+None of the assigned review findings. Intentionally unchanged: 1→1 / N→1 / root-only polyrepo stubs still omit expected product refs; `EvaluateProtectedResourcesIntegrityTest.whenRepositoryOmittedThenUseIsRootTarget` remains a one-line alias of the explicit-root unit test.

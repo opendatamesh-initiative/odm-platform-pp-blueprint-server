@@ -427,7 +427,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     /**
      * Scenario: Next version with extra or renamed repository key is rejected
      * Given current and next parent versions of the same blueprint
-     * When next instantiation.repositories keys differ from current
+     * When next targetRepositories[] keys differ from current
      * Then the API returns 400 listing the structural delta with a hint to keep keys stable or instantiate new remotes
      * And no Git mutation occurs
      */
@@ -509,7 +509,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
      * And each mapped remote has blueprint-v{current}
      * When update-data-product supplies a complete targetId map
      * Then each remote gets its own update branch and next checkpoint tag of the same name
-     * And lineage and descriptor exist only on instantiation.root.repository
+     * And lineage and descriptor exist only on the target marked isRoot true
      */
     @Test
     void whenPolyrepoNoCompositionUpdateThenFanOutResultsAndRootLineageOnly(
@@ -737,7 +737,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
 
     /**
      * Scenario: Root key or topology change is rejected
-     * Given current 1→1 and next N→1 or a different instantiation.root.repository
+     * Given current 1→1 and next N→1 or a different isRoot targetRepositories[] key
      * When update-data-product is called
      * Then validation fails with a structure-change hint before Git
      */
