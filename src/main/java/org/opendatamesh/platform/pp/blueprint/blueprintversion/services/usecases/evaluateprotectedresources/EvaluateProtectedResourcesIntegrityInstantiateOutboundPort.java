@@ -4,7 +4,7 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.Blueprin
 
 interface EvaluateProtectedResourcesIntegrityInstantiateOutboundPort {
 
-    WorkingTree reinstantiateBlueprintLocally(
+    TargetWorkingTrees reinstantiateBlueprintLocally(
             BlueprintVersion blueprintVersion,
             EvaluateProtectedResourcesIntegrityCommand command
     );

@@ -94,6 +94,8 @@ public class ProtectedResourcesPolicyValidatorService {
         return new EvaluateProtectedResourcesIntegrityCommand(
                 versionResource == null ? null : text(versionResource, "tag"),
                 mapProductRepo(versionResource),
+                List.of(),
+                List.of(),
                 blueprintName,
                 blueprintVersionNumber,
                 mapParameters(blueprint)

@@ -15,6 +15,8 @@ interface PublishBlueprintVersionManifestOutboundPort {
 
     boolean isMonorepoNoComposition(JsonNode content);
 
+    boolean hasProtectedResources(JsonNode content);
+
     List<String> listMappedChildParameterKeys(JsonNode parentContent, String compositionFieldPath);
 
     List<String> listModuleParameterKeysWithoutDefault(JsonNode moduleContent);

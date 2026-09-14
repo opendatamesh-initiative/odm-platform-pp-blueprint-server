@@ -128,6 +128,24 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImplTest {
     }
 
     /**
+     * Feature: Lasting protected-resources integrity
+     *
+     * Scenario: Absolute or traversing protected path is invalid
+     *   Given a protected path is absolute or contains a traversal segment
+     *   When the path is digested
+     *   Then the outcome contains an INVALID_PATH mismatch
+     */
+    @Test
+    void absoluteAndTraversalPathsAreInvalid(@TempDir Path repo) {
+        DigestResult absolute = digestPort.computeDigest(tree(repo), "/secret");
+        assertThat(absolute.hasError()).isTrue();
+        assertThat(absolute.error()).isEqualTo(MismatchKind.INVALID_PATH);
+        DigestResult traversal = digestPort.computeDigest(tree(repo), "../secret");
+        assertThat(traversal.hasError()).isTrue();
+        assertThat(traversal.error()).isEqualTo(MismatchKind.INVALID_PATH);
+    }
+
+    /**
      * Feature: Protected-resources integrity evaluation
      *
      * Scenario: File digest is SHA-256 of raw bytes

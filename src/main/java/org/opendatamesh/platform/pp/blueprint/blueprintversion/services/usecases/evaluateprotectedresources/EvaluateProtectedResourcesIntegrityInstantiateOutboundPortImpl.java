@@ -9,24 +9,27 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.InstantiateBlueprintVersionFactory;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.RenderedTreeSnapshot;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate.TargetRepositoryDto;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
+import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
 import org.opendatamesh.platform.pp.blueprint.validator.config.BlueprintValidatorProperties;
 import org.opendatamesh.platform.pp.blueprint.validator.config.ValidatorGitCredentialHeaders;
 import org.springframework.http.HttpHeaders;
-import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 class EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl
         implements EvaluateProtectedResourcesIntegrityInstantiateOutboundPort {
 
     private static final String FAILED_TO_REBUILD =
             "Cannot check protected resources: failed to rebuild the expected files from the blueprint";
+    private static final String LOCAL_BRANCH = "main";
 
     private final InstantiateBlueprintVersionFactory instantiateFactory;
     private final BlueprintValidatorProperties validatorProperties;
@@ -40,13 +43,12 @@ class EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl
     }
 
     @Override
-    public WorkingTree reinstantiateBlueprintLocally(
+    public TargetWorkingTrees reinstantiateBlueprintLocally(
             BlueprintVersion blueprintVersion,
             EvaluateProtectedResourcesIntegrityCommand command
     ) {
         HttpHeaders credentials = resolveBlueprintCredentials(blueprintVersion);
-        Path expectedTree = snapshotExpectedTree(blueprintVersion, command, credentials);
-        return new CloseableWorkingTree(expectedTree);
+        return snapshotExpectedTrees(blueprintVersion, command, credentials);
     }
 
     private HttpHeaders resolveBlueprintCredentials(BlueprintVersion blueprintVersion) {
@@ -61,29 +63,23 @@ class EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl
                                 + providerType));
     }
 
-    private Path snapshotExpectedTree(
+    private TargetWorkingTrees snapshotExpectedTrees(
             BlueprintVersion blueprintVersion,
             EvaluateProtectedResourcesIntegrityCommand command,
             HttpHeaders credentials
     ) {
-        String rootKey = retrieveRootTargetRepositoryKey(blueprintVersion);
+        List<String> declaredKeys = declaredTargetKeys(blueprintVersion);
         RenderedTreeSnapshot snapshot = new RenderedTreeSnapshot();
         try {
             instantiateFactory.buildInstantiateBlueprintVersionForLocalValidation(
-                    buildInstantiateCommand(rootKey, command),
+                    buildInstantiateCommand(declaredKeys, command),
                     result -> {
-                        // expected tree is captured by the local Git port into the snapshot
+                        // expected trees are captured by the local Git port into the snapshot
                     },
                     credentials,
                     snapshot
             ).execute();
-            Path expectedTree = expectedTreeForRoot(snapshot, rootKey);
-            if (expectedTree == null || !Files.isDirectory(expectedTree)) {
-                deleteSnapshotTrees(snapshot);
-                throw new IllegalStateException(FAILED_TO_REBUILD);
-            }
-            deleteLeftoverSnapshotTrees(snapshot, expectedTree);
-            return expectedTree;
+            return adaptSnapshot(declaredKeys, snapshot);
         } catch (RuntimeException e) {
             deleteSnapshotTrees(snapshot);
             throw e;
@@ -91,106 +87,84 @@ class EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl
     }
 
     private InstantiateBlueprintVersionCommand buildInstantiateCommand(
-            String rootKey,
+            List<String> declaredKeys,
             EvaluateProtectedResourcesIntegrityCommand command
     ) {
-        ProductRepoLocator productRepo = command.productRepo();
-        TargetRepositoryDto target = new TargetRepositoryDto(
-                rootKey,
-                productRepo.defaultBranch(),
-                toGitRepository(productRepo)
-        );
-        Map<String, JsonNode> parameters = command.lineageParameters() == null
-                ? Map.of()
-                : command.lineageParameters();
+        List<TargetRepositoryDto> targets = new ArrayList<>();
+        for (String key : declaredKeys) {
+            targets.add(new TargetRepositoryDto(key, LOCAL_BRANCH, syntheticRepository(key)));
+        }
+        Map<String, JsonNode> parameters = command.lineageParameters();
         return new InstantiateBlueprintVersionCommand(
                 command.blueprintName(),
                 command.blueprintVersionNumber(),
-                List.of(target),
+                targets,
                 parameters,
                 BlueprintGitNamingConventions.DEFAULT_COMMIT_AUTHOR_NAME,
                 BlueprintGitNamingConventions.DEFAULT_COMMIT_AUTHOR_EMAIL
         );
     }
 
-    private String retrieveRootTargetRepositoryKey(BlueprintVersion blueprintVersion) {
-        JsonNode content = blueprintVersion.getContent();
-        JsonNode rootRepository = content == null
-                ? null
-                : content.path("instantiation").path("root").path("repository");
-        if (rootRepository == null || !rootRepository.isTextual() || !StringUtils.hasText(rootRepository.asText())) {
+    private List<String> declaredTargetKeys(BlueprintVersion blueprintVersion) {
+        Manifest manifest = parseManifest(blueprintVersion);
+        if (manifest.getTargetRepositories() == null || manifest.getTargetRepositories().isEmpty()) {
             throw new IllegalStateException(FAILED_TO_REBUILD);
         }
-        return rootRepository.asText().trim();
-    }
-
-    private Path expectedTreeForRoot(RenderedTreeSnapshot snapshot, String rootKey) {
-        Path expectedTree = snapshot.getExpectedTree(rootKey);
-        if (expectedTree != null) {
-            return expectedTree;
-        }
-        if (snapshot.values().size() == 1) {
-            return snapshot.values().iterator().next();
-        }
-        return null;
-    }
-
-    private Repository toGitRepository(ProductRepoLocator repo) {
-        Repository repository = new Repository();
-        repository.setId(repo.externalIdentifier());
-        repository.setName(repo.name());
-        repository.setDefaultBranch(repo.defaultBranch());
-        repository.setOwnerId(repo.ownerId());
-        repository.setCloneUrlHttp(repo.remoteUrlHttp());
-        return repository;
-    }
-
-    private static void deleteLeftoverSnapshotTrees(RenderedTreeSnapshot snapshot, Path keep) {
-        for (Path path : snapshot.values()) {
-            if (path != null && !path.equals(keep)) {
-                deleteRecursively(path);
+        String rootKey = null;
+        int rootCount = 0;
+        List<String> keys = new ArrayList<>();
+        for (ManifestTargetRepository repository : manifest.getTargetRepositories()) {
+            if (repository == null || repository.getKey() == null || repository.getKey().isBlank()) {
+                continue;
+            }
+            String key = repository.getKey().trim();
+            keys.add(key);
+            if (Boolean.TRUE.equals(repository.getIsRoot())) {
+                rootCount++;
+                rootKey = key;
             }
         }
+        if (keys.isEmpty() || rootCount != 1 || rootKey == null) {
+            throw new IllegalStateException(FAILED_TO_REBUILD);
+        }
+        return keys;
+    }
+
+    private Manifest parseManifest(BlueprintVersion blueprintVersion) {
+        try {
+            return ManifestParserFactory.getParser().deserialize(blueprintVersion.getContent());
+        } catch (IOException e) {
+            throw new IllegalStateException(FAILED_TO_REBUILD, e);
+        }
+    }
+
+    private TargetWorkingTrees adaptSnapshot(List<String> declaredKeys, RenderedTreeSnapshot snapshot) {
+        Map<String, WorkingTree> trees = new LinkedHashMap<>();
+        for (String key : declaredKeys) {
+            Path expectedTree = snapshot.getExpectedTree(key);
+            if (expectedTree == null || !Files.isDirectory(expectedTree)) {
+                deleteSnapshotTrees(snapshot);
+                throw new IllegalStateException(
+                        "Cannot check protected resources: expected tree for repository key '%s' was not produced"
+                                .formatted(key));
+            }
+            trees.put(key, new CloseableWorkingTree(expectedTree));
+        }
+        return TargetWorkingTrees.of(trees);
+    }
+
+    private Repository syntheticRepository(String key) {
+        Repository repository = new Repository();
+        repository.setId("integrity-expected-" + key);
+        repository.setName("integrity-expected-" + key);
+        repository.setDefaultBranch(LOCAL_BRANCH);
+        repository.setCloneUrlHttp("https://integrity.local/expected/" + key);
+        return repository;
     }
 
     private static void deleteSnapshotTrees(RenderedTreeSnapshot snapshot) {
         for (Path path : snapshot.values()) {
-            deleteRecursively(path);
-        }
-    }
-
-    private static void deleteRecursively(Path path) {
-        if (path == null || !Files.exists(path)) {
-            return;
-        }
-        try (Stream<Path> walk = Files.walk(path)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    // best-effort cleanup
-                }
-            });
-        } catch (IOException ignored) {
-            // best-effort cleanup
-        }
-    }
-
-    private static final class CloseableWorkingTree implements WorkingTree {
-        private final Path root;
-
-        private CloseableWorkingTree(Path root) {
-            this.root = root;
-        }
-
-        @Override
-        public Path path() {
-            return root;
-        }
-
-        @Override
-        public void close() {
-            deleteRecursively(root);
+            CloseableWorkingTree.deleteRecursively(path);
         }
     }
 }

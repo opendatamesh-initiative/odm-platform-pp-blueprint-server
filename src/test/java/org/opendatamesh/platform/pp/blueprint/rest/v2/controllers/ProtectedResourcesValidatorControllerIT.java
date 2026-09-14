@@ -22,6 +22,7 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.ErrorRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
 import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
@@ -191,37 +192,6 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     /**
      * Feature: Protected-resources integrity evaluation
      *
-     * Scenario: Polyrepo with protected resources is not applicable
-     *   Given a recorded blueprint with two or more repository keys and a non-empty `protectedResources` list
-     *   When the validator evaluates the request
-     *   Then evaluationResult is true
-     *   And the message states polyrepo hashing is not applied yet
-     *   And the message does not say composition is unsupported
-     */
-    @Test
-    void unsupportedStrategyReturnsNotApplicable() throws Exception {
-        JsonNode manifest = readYamlManifestResource("manifest/example-2.3-polyrepo-no-composition.yaml");
-        ((ObjectNode) manifest).set(
-                "protectedResources",
-                OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode().put("path", "terraform/**")));
-        BlueprintContext context = createBlueprintAndVersion("polyrepo-protected", "0.5.0", manifest);
-        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
-                "v0.5.0",
-                lineageContent(context.blueprintName, context.versionNumber),
-                productRepoNode()
-        ));
-        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().getEvaluationResult()).isTrue();
-        assertThat(response.getBody().getOutputObject().getMessage()).contains("polyrepo hashing is not applied yet");
-        assertThat(response.getBody().getOutputObject().getMessage()).doesNotContain("composition is unsupported");
-        assertThat(response.getBody().getOutputObject().getMessage()).doesNotContain("without composition");
-        deleteCreatedBlueprint(context);
-    }
-
-    /**
-     * Feature: Protected-resources integrity evaluation
-     *
      * Scenario: Applicable check missing product repository or tag fails closed
      *   Given a recorded monorepo blueprint version with protected resources
      *   And the data product version has blueprint lineage for that version
@@ -249,14 +219,13 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     }
 
     /**
-     * Feature: Protected-resources integrity evaluation
+     * Feature: Repaired one-destination integrity
      *
-     * Scenario: 1→1 with omitted repository still hashes as today
-     *   Given a recorded monorepo blueprint without composition with protected paths and no `repository` keys
-     *   And the published product tree matches a local re-instantiation
-     *   When the validator evaluates the request
+     * Scenario: 1→1 matching root shorthand passes
+     *   Given a recorded 1→1 Blueprint with root-shorthand protected paths
+     *   And the published root tree matches local re-instantiation
+     *   When integrity is evaluated
      *   Then evaluationResult is true
-     *   And the message states protected resources match the blueprint
      */
     @Test
     void applicableMatchingTreesPass(@TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
@@ -344,36 +313,6 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getEvaluationResult()).isFalse();
         assertThat(response.getBody().getOutputObject().getMessage()).contains("was not found");
-    }
-
-    /**
-     * Feature: Protected-resources integrity evaluation
-     *
-     * Scenario: Missing blueprint repository configuration fails
-     *   Given a recorded blueprint version with protected resources whose blueprint has no Git repository
-     *   And the data product version has blueprint lineage for that version
-     *   And the evaluation object has a publication tag and nested product repository
-     *   When the validator evaluates the request
-     *   Then the response status is 200
-     *   And evaluationResult is false
-     *   And the message states the blueprint repository is not configured
-     */
-    @Test
-    void missingBlueprintRepositoryFails() throws Exception {
-        BlueprintContext context = createBlueprintAndVersion(
-                "no-repo", "1.0.0", manifestMonorepoNoComposition(), false);
-        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
-                "v1.0.0",
-                lineageContent(context.blueprintName, context.versionNumber),
-                productRepoNode()
-        ));
-        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().getEvaluationResult()).isFalse();
-        assertThat(response.getBody().getOutputObject().getMessage())
-                .contains("the blueprint repository is not configured");
-        deleteCreatedBlueprint(context);
     }
 
     /**
@@ -649,38 +588,6 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     /**
      * Feature: Protected-resources integrity evaluation
      *
-     * Scenario: Parent-only — module list is ignored
-     *   Given a recorded N→1 parent with an empty `protectedResources` list
-     *   And the composed module declares its own non-empty `protectedResources`
-     *   When the validator evaluates the request
-     *   Then evaluationResult is true
-     *   And the message states the blueprint does not declare protected resources
-     */
-    @Test
-    void whenModuleDeclaresProtectedResourcesAndParentDoesNotThenNotApplicable() throws Exception {
-        BlueprintContext storage = createPublishedModule("odm-blueprint-s3-lake", "3.0.1", MODULE_STORAGE_CLONE_URL);
-        BlueprintContext serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0", MODULE_SERVING_CLONE_URL);
-        ObjectNode parentManifest = (ObjectNode) readYamlManifestResource("manifest/example-2.2-monorepo-composition.yaml");
-        rewriteCompositionRefs(parentManifest, storage, serving);
-        parentManifest.set("protectedResources", OBJECT_MAPPER.createArrayNode());
-        BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
-        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
-                "v2.1.0",
-                composedLineageContent(parent.blueprintName, parent.versionNumber),
-                productRepoNode()
-        ));
-        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().getEvaluationResult()).isTrue();
-        assertThat(response.getBody().getOutputObject().getMessage()).contains("does not declare protected resources");
-        deleteCreatedBlueprint(parent);
-        deleteCreatedBlueprint(storage);
-        deleteCreatedBlueprint(serving);
-    }
-
-    /**
-     * Feature: Protected-resources integrity evaluation
-     *
      * Scenario: Unknown repository key at evaluate fails closed
      *   Given a recorded 1→1 blueprint whose stored protected resource names an undeclared `repository` key
      *   When the validator evaluates the request
@@ -874,6 +781,7 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     private BlueprintContext createPublishedModule(String blueprintName, String version, String cloneUrl)
             throws Exception {
         JsonNode moduleManifest = manifestMonorepoNoComposition();
+        ((ObjectNode) moduleManifest).set("protectedResources", OBJECT_MAPPER.createArrayNode());
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String uniqueBlueprintName = blueprintName + "-" + suffix;
         ObjectNode content = (ObjectNode) moduleManifest.deepCopy();
@@ -884,6 +792,7 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
         blueprint.setBlueprintRepo(buildModuleBlueprintRepo(cloneUrl));
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
@@ -975,12 +884,6 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
 
     private BlueprintContext createBlueprintAndVersion(String blueprintName, String version, JsonNode manifestContent)
             throws Exception {
-        return createBlueprintAndVersion(blueprintName, version, manifestContent, true);
-    }
-
-    private BlueprintContext createBlueprintAndVersion(
-            String blueprintName, String version, JsonNode manifestContent, boolean includeBlueprintRepo)
-            throws Exception {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String uniqueBlueprintName = blueprintName + "-" + suffix;
         ObjectNode content = (ObjectNode) manifestContent.deepCopy();
@@ -991,9 +894,8 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
-        if (includeBlueprintRepo) {
-            blueprint.setBlueprintRepo(buildBlueprintRepo());
-        }
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(buildBlueprintRepo());
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),

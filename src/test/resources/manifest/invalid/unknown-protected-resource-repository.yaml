@@ -15,12 +15,13 @@ protectedResources:
   - path: infrastructure/core/**
     repository: unknown-repo
 
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: main
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main-repository
+        destinationPath: ./

@@ -229,7 +229,8 @@ class InstantiateBlueprintVersionLocalGitOutboundPort implements InstantiateBlue
                     if (dir.getFileName() != null && ".git".equals(dir.getFileName().toString())) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
-                    if (Files.isSymbolicLink(dir)) {
+                    if (Files.isSymbolicLink(dir) && !dir.equals(sourceRoot)) {
+                        copySymlink(sourceRoot, dir, snapshotRoot);
                         return FileVisitResult.SKIP_SUBTREE;
                     }
                     Path relative = sourceRoot.relativize(dir);
@@ -241,7 +242,11 @@ class InstantiateBlueprintVersionLocalGitOutboundPort implements InstantiateBlue
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    if (Files.isSymbolicLink(file) || !Files.isRegularFile(file)) {
+                    if (Files.isSymbolicLink(file)) {
+                        copySymlink(sourceRoot, file, snapshotRoot);
+                        return FileVisitResult.CONTINUE;
+                    }
+                    if (!Files.isRegularFile(file)) {
                         return FileVisitResult.CONTINUE;
                     }
                     Path destination = snapshotRoot.resolve(sourceRoot.relativize(file));
@@ -257,6 +262,15 @@ class InstantiateBlueprintVersionLocalGitOutboundPort implements InstantiateBlue
             deleteRecursively(snapshotRoot);
             throw new InternalException("Failed to snapshot locally re-instantiated tree", e);
         }
+    }
+
+    private static void copySymlink(Path sourceRoot, Path source, Path destinationRoot) throws IOException {
+        Path destination = destinationRoot.resolve(sourceRoot.relativize(source));
+        if (destination.getParent() != null) {
+            Files.createDirectories(destination.getParent());
+        }
+        Files.deleteIfExists(destination);
+        Files.createSymbolicLink(destination, Files.readSymbolicLink(source));
     }
 
     private Path createTempDirectory(String prefix) {

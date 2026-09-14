@@ -91,6 +91,11 @@ class PublishBlueprintVersion implements UseCase {
                             + "Hint: Composition modules must be monorepo with no composition "
                             + "(one repository key, empty composition).");
         }
+        if (manifestOutboundPort.hasProtectedResources(blueprintVersion.getContent())) {
+            throw new BadRequestException(
+                    "A Blueprint module must not declare protectedResources. "
+                            + "Hint: Remove protectedResources from the module; declare final protected paths on the parent Blueprint.");
+        }
     }
 
     private void validateCompositionModules(BlueprintVersion parentVersion) {
@@ -116,6 +121,17 @@ class PublishBlueprintVersion implements UseCase {
                                         composition.blueprintVersion()),
                         "Composition modules must be monorepo with no composition "
                                 + "(one repository key, empty composition)."));
+            }
+            if (isBlueprintModule(moduleVersion)
+                    && manifestOutboundPort.hasProtectedResources(moduleVersion.getContent())) {
+                issues.add(formatModuleIssue(
+                        composition,
+                        "Composition module '%s' (%s@%s) declares protectedResources"
+                                .formatted(
+                                        composition.moduleAlias(),
+                                        composition.blueprintName(),
+                                        composition.blueprintVersion()),
+                        "Remove protectedResources from the module; declare final protected paths on the parent Blueprint."));
             }
             if (isBlueprintModule(moduleVersion) && hasDescriptorTemplatePath(moduleVersion)) {
                 issues.add(formatModuleIssue(

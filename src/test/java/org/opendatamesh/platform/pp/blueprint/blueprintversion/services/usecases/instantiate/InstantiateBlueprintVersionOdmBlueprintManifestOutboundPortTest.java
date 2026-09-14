@@ -172,7 +172,7 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: Missing instantiation.root.repository is rejected at both gates
+     * Scenario: Missing isRoot target is rejected at both gates
      */
     @Test
     void whenMissingRootRepositoryThenIssueWithHint() throws IOException {
@@ -186,7 +186,7 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: instantiation.root.repository that is not a declared key is rejected at both gates
+     * Scenario: Route repo that is not a declared key is rejected at both gates
      */
     @Test
     void whenUnknownRootRepositoryThenIssueWithHint() throws IOException {
@@ -204,7 +204,7 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
         assertThat(issues).anySatisfy(issue -> {
             assertThat(issue.fieldPath()).contains("protectedResources");
             assertThat(issue.fieldPath()).contains("repository");
-            assertThat(issue.problem()).contains("instantiation.repositories[].key");
+            assertThat(issue.problem()).contains("targetRepositories[].key");
             assertThat(issue.hint()).containsIgnoringCase("omit");
         });
     }

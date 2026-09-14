@@ -28,8 +28,10 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
         if (repoRoot == null || declaredPath == null || declaredPath.isBlank()) {
             return new DigestResult(MismatchKind.INVALID_PATH, "the protected path is empty", Map.of());
         }
-        String normalizedDeclared = declaredPath.replace('\\', '/').replaceFirst("^/+", "");
-        if (normalizedDeclared.isEmpty() || hasPathTraversal(normalizedDeclared)) {
+        String normalizedDeclared = declaredPath.replace('\\', '/');
+        if (normalizedDeclared.isEmpty()
+                || isAbsolutePath(normalizedDeclared)
+                || hasPathTraversal(normalizedDeclared)) {
             return new DigestResult(
                     MismatchKind.INVALID_PATH,
                     "the protected path is not allowed: " + declaredPath,
@@ -172,6 +174,10 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
             }
         }
         return false;
+    }
+
+    private static boolean isAbsolutePath(String relativePath) {
+        return relativePath.startsWith("/") || relativePath.matches("^[A-Za-z]:/.*");
     }
 
     private static boolean hasPathTraversal(String relativePath) {

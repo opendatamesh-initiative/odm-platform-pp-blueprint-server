@@ -2,15 +2,11 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenario;
-import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.InstantiationScenarioResolver;
 import org.opendatamesh.platform.pp.blueprint.exceptions.NotFoundException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedResource;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRepository;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
-import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -21,9 +17,6 @@ import java.util.Map;
 import java.util.Set;
 
 class EvaluateProtectedResourcesIntegrity implements UseCase {
-
-    static final String POLYREPO_NOT_APPLICABLE_MESSAGE =
-            "Protected-resource checks currently apply only to monorepo data products (one destination repository); polyrepo hashing is not applied yet";
 
     private final EvaluateProtectedResourcesIntegrityCommand command;
     private final EvaluateProtectedResourcesIntegrityPresenter presenter;
@@ -58,14 +51,20 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
                 return;
             }
             Manifest manifest = persistencyPort.readManifest(blueprintVersion);
-            if (refuseIfNotEvaluable(blueprintVersion, manifest)) {
+            if (isEmptyProtection(manifest)) {
+                presentNotApplicable("This blueprint does not declare protected resources");
                 return;
             }
-            try (WorkingTree published = productGitPort.clonePublishedDataProductVersion(
-                    command.productRepo(), command.publicationTag());
-                 WorkingTree expected = instantiatePort.reinstantiateBlueprintLocally(
-                         blueprintVersion, command)) {
-                compareProtectedResources(manifest, published, expected);
+            List<ProtectedPublishedTarget> protectedTargets = resolveProtectedPublishedTargets(manifest);
+            if (protectedTargets == null) {
+                return;
+            }
+            if (refuseIfSourceBlueprintRepositoryMissing(blueprintVersion)) {
+                return;
+            }
+            try (TargetWorkingTrees expected = instantiatePort.reinstantiateBlueprintLocally(
+                    blueprintVersion, command)) {
+                compareProtectedTargets(protectedTargets, expected);
             }
         } catch (RuntimeException e) {
             presentInfrastructureIfNeeded(e);
@@ -84,94 +83,183 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
         }
     }
 
-    private boolean refuseIfNotEvaluable(BlueprintVersion blueprintVersion, Manifest manifest) {
+    private boolean isEmptyProtection(Manifest manifest) {
+        return manifest.getProtectedResources() == null || manifest.getProtectedResources().isEmpty();
+    }
+
+    private boolean refuseIfSourceBlueprintRepositoryMissing(BlueprintVersion blueprintVersion) {
         BlueprintRepo blueprintRepo = blueprintVersion.getBlueprint() == null
                 ? null
                 : blueprintVersion.getBlueprint().getBlueprintRepo();
         if (blueprintRepo == null
-                || !StringUtils.hasText(blueprintRepo.getRemoteUrlHttp())
+                || !hasText(blueprintRepo.getRemoteUrlHttp())
                 || blueprintRepo.getProviderType() == null) {
             presentInfrastructure("Cannot check protected resources: the blueprint repository is not configured");
-            return true;
-        }
-        if (CollectionUtils.isEmpty(manifest.getProtectedResources())) {
-            presentNotApplicable("This blueprint does not declare protected resources");
-            return true;
-        }
-        InstantiationScenario scenario = InstantiationScenarioResolver.resolve(manifest);
-        if (scenario == InstantiationScenario.POLYREPO_NO_COMPOSITION
-                || scenario == InstantiationScenario.POLYREPO_WITH_COMPOSITION) {
-            presentNotApplicable(POLYREPO_NOT_APPLICABLE_MESSAGE);
-            return true;
-        }
-        if (refuseUnknownProtectedResourceRepositories(manifest)) {
-            return true;
-        }
-        if (!StringUtils.hasText(command.publicationTag())
-                || command.productRepo() == null
-                || !StringUtils.hasText(command.productRepo().remoteUrlHttp())
-                || !StringUtils.hasText(command.productRepo().providerType())) {
-            presentFailed(List.of(),
-                    "Cannot check protected resources: the data product version is missing its Git repository or tag");
             return true;
         }
         return false;
     }
 
-    private boolean refuseUnknownProtectedResourceRepositories(Manifest manifest) {
+    private List<ProtectedPublishedTarget> resolveProtectedPublishedTargets(Manifest manifest) {
+        String rootKey = resolveExplicitRootKey(manifest);
+        if (rootKey == null) {
+            presentFailed(List.of(),
+                    "Cannot check protected resources: the blueprint manifest does not declare exactly one root target repository");
+            return null;
+        }
         Set<String> declaredKeys = declaredRepositoryKeys(manifest);
+        Map<String, List<ManifestProtectedResource>> resourcesByKey = new LinkedHashMap<>();
         List<String> unknown = new ArrayList<>();
         for (ManifestProtectedResource protectedResource : manifest.getProtectedResources()) {
-            if (protectedResource == null || !StringUtils.hasText(protectedResource.getRepository())) {
+            if (protectedResource == null) {
                 continue;
             }
-            String key = protectedResource.getRepository().trim();
-            if (!declaredKeys.contains(key)) {
-                unknown.add("Cannot check protected resources: protected resource '%s' names unknown repository key '%s'"
-                        .formatted(protectedResource.getPath(), key));
+            String resolvedKey = resolveProtectedRepositoryKey(protectedResource, rootKey, declaredKeys, unknown);
+            if (resolvedKey == null) {
+                continue;
+            }
+            resourcesByKey.computeIfAbsent(resolvedKey, ignored -> new ArrayList<>()).add(protectedResource);
+        }
+        if (!unknown.isEmpty()) {
+            presentFailed(List.of(), String.join("; ", unknown));
+            return null;
+        }
+        List<ProtectedPublishedTarget> targets = new ArrayList<>();
+        for (Map.Entry<String, List<ManifestProtectedResource>> entry : resourcesByKey.entrySet()) {
+            ProtectedPublishedTarget target = resolvePublishedTarget(entry.getKey(), rootKey, entry.getValue());
+            if (target == null) {
+                return null;
+            }
+            targets.add(target);
+        }
+        return targets;
+    }
+
+    private String resolveExplicitRootKey(Manifest manifest) {
+        if (manifest.getTargetRepositories() == null) {
+            return null;
+        }
+        String rootKey = null;
+        int rootCount = 0;
+        for (ManifestTargetRepository repository : manifest.getTargetRepositories()) {
+            if (repository == null || !Boolean.TRUE.equals(repository.getIsRoot())) {
+                continue;
+            }
+            rootCount++;
+            if (hasText(repository.getKey())) {
+                rootKey = repository.getKey().trim();
             }
         }
-        if (unknown.isEmpty()) {
-            return false;
+        if (rootCount != 1 || !hasText(rootKey)) {
+            return null;
         }
-        presentFailed(List.of(), String.join("; ", unknown));
-        return true;
+        return rootKey;
     }
 
     private Set<String> declaredRepositoryKeys(Manifest manifest) {
         Set<String> keys = new LinkedHashSet<>();
-        if (manifest.getInstantiation() == null
-                || CollectionUtils.isEmpty(manifest.getInstantiation().getRepositories())) {
+        if (manifest.getTargetRepositories() == null) {
             return keys;
         }
-        for (ManifestInstantiationRepository repository : manifest.getInstantiation().getRepositories()) {
-            if (repository != null && StringUtils.hasText(repository.getKey())) {
+        for (ManifestTargetRepository repository : manifest.getTargetRepositories()) {
+            if (repository != null && hasText(repository.getKey())) {
                 keys.add(repository.getKey().trim());
             }
         }
         return keys;
     }
 
-    private String resolveDestinationRepositoryKey(ManifestProtectedResource protectedResource, Manifest manifest) {
-        if (protectedResource != null && StringUtils.hasText(protectedResource.getRepository())) {
-            return protectedResource.getRepository().trim();
+    private String resolveProtectedRepositoryKey(
+            ManifestProtectedResource protectedResource,
+            String rootKey,
+            Set<String> declaredKeys,
+            List<String> unknown
+    ) {
+        if (!hasText(protectedResource.getRepository())) {
+            return rootKey;
         }
-        if (manifest.getInstantiation() != null
-                && manifest.getInstantiation().getRoot() != null
-                && StringUtils.hasText(manifest.getInstantiation().getRoot().getRepository())) {
-            return manifest.getInstantiation().getRoot().getRepository().trim();
+        String key = protectedResource.getRepository().trim();
+        if (!declaredKeys.contains(key)) {
+            unknown.add("Cannot check protected resources: protected resource '%s' names unknown repository key '%s'"
+                    .formatted(protectedResource.getPath(), key));
+            return null;
         }
-        return null;
+        return key;
     }
 
-    private void compareProtectedResources(
-            Manifest manifest,
-            WorkingTree published,
-            WorkingTree expected
+    private ProtectedPublishedTarget resolvePublishedTarget(
+            String repositoryKey,
+            String rootKey,
+            List<ManifestProtectedResource> resources
+    ) {
+        if (rootKey.equals(repositoryKey)) {
+            if (!isCompleteLocator(command.rootProductRepo()) || !hasText(command.rootPublicationRef())) {
+                presentFailed(List.of(),
+                        "Cannot check protected resources: the data product version is missing its Git repository or tag");
+                return null;
+            }
+            return new ProtectedPublishedTarget(
+                    repositoryKey, command.rootProductRepo(), command.rootPublicationRef(), resources);
+        }
+        List<KeyedProductRepoLocator> locators = exactLocatorMatches(repositoryKey);
+        List<KeyedProductRepoRef> refs = exactRefMatches(repositoryKey);
+        if (locators.size() != 1 || refs.size() != 1
+                || !isCompleteLocator(locators.get(0).locator())
+                || !hasText(refs.get(0).ref())) {
+            presentFailed(List.of(),
+                    "Cannot check protected resources: publication metadata for repository key '%s' is missing, blank, or duplicated"
+                            .formatted(repositoryKey));
+            return null;
+        }
+        return new ProtectedPublishedTarget(
+                repositoryKey, locators.get(0).locator(), refs.get(0).ref(), resources);
+    }
+
+    private List<KeyedProductRepoLocator> exactLocatorMatches(String repositoryKey) {
+        List<KeyedProductRepoLocator> matches = new ArrayList<>();
+        for (KeyedProductRepoLocator locator : command.additionalProductRepos()) {
+            if (locator != null && repositoryKey.equals(locator.repositoryKey())) {
+                matches.add(locator);
+            }
+        }
+        return matches;
+    }
+
+    private List<KeyedProductRepoRef> exactRefMatches(String repositoryKey) {
+        List<KeyedProductRepoRef> matches = new ArrayList<>();
+        for (KeyedProductRepoRef ref : command.additionalRefs()) {
+            if (ref != null && repositoryKey.equals(ref.repositoryKey())) {
+                matches.add(ref);
+            }
+        }
+        return matches;
+    }
+
+    private static boolean isCompleteLocator(ProductRepoLocator locator) {
+        return locator != null
+                && hasText(locator.remoteUrlHttp())
+                && hasText(locator.providerType());
+    }
+
+    private void compareProtectedTargets(
+            List<ProtectedPublishedTarget> protectedTargets,
+            TargetWorkingTrees expected
     ) {
         List<ProtectedResourceMismatch> mismatches = new ArrayList<>();
-        for (ManifestProtectedResource protectedResource : manifest.getProtectedResources()) {
-            compareProtectedResource(protectedResource, manifest, published, expected, mismatches);
+        for (ProtectedPublishedTarget target : protectedTargets) {
+            WorkingTree expectedTree = expected.get(target.repositoryKey());
+            if (expectedTree == null) {
+                presentFailed(List.of(),
+                        "Cannot check protected resources: expected tree for repository key '%s' was not produced"
+                                .formatted(target.repositoryKey()));
+                return;
+            }
+            try (WorkingTree published = productGitPort.clonePublishedDataProductVersion(
+                    target.locator(), target.ref())) {
+                for (ManifestProtectedResource protectedResource : target.resources()) {
+                    compareProtectedResource(protectedResource, published, expectedTree, mismatches);
+                }
+            }
         }
         if (mismatches.isEmpty()) {
             presentPassed("Protected resources match the blueprint");
@@ -182,15 +270,13 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
 
     private void compareProtectedResource(
             ManifestProtectedResource protectedResource,
-            Manifest manifest,
             WorkingTree published,
             WorkingTree expected,
             List<ProtectedResourceMismatch> mismatches
     ) {
-        resolveDestinationRepositoryKey(protectedResource, manifest);
         String declaredPath = protectedResource.getPath();
         if (protectedResource.getIntegrity() != null
-                && StringUtils.hasText(protectedResource.getIntegrity().getAlgorithm())
+                && hasText(protectedResource.getIntegrity().getAlgorithm())
                 && !"sha256".equalsIgnoreCase(protectedResource.getIntegrity().getAlgorithm().trim())) {
             mismatches.add(new ProtectedResourceMismatch(
                     declaredPath,
@@ -356,11 +442,23 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
 
     private String infrastructureMessage(RuntimeException e) {
         String message = e.getMessage();
-        if (!StringUtils.hasText(message)) {
+        if (!hasText(message)) {
             message = e.getClass().getSimpleName();
         }
         return message.toLowerCase(Locale.ROOT).contains("token")
                 ? "Cannot complete the protected-resource check"
                 : message;
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private record ProtectedPublishedTarget(
+            String repositoryKey,
+            ProductRepoLocator locator,
+            String ref,
+            List<ManifestProtectedResource> resources
+    ) {
     }
 }

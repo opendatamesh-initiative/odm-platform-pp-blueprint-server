@@ -111,6 +111,74 @@ class InstantiateBlueprintVersionLocalGitOutboundPortTest {
         InstantiateBlueprintVersionLocalGitOutboundPort.deleteRecursively(expectedTree);
     }
 
+    /**
+     * Feature: Local instantiate Git adapter for integrity
+     *
+     * Scenario: Snapshot symbolic link fails safely
+     *   Given a protected match is a symbolic link in a cloned or expected snapshot
+     *   When the path is digested
+     *   Then the outcome contains a SYMLINK mismatch
+     */
+    @Test
+    void openTargetPreservesSymbolicLinksInSnapshot(@TempDir Path sourceDir) throws Exception {
+        Files.writeString(sourceDir.resolve("plain.txt"), "from-source");
+        GitProviderFactory gitProviderFactory = mock(GitProviderFactory.class);
+        GitProvider gitProvider = mock(GitProvider.class);
+        GitOperation gitOperation = mock(GitOperation.class);
+        when(gitProviderFactory.buildGitProvider(any(GitProviderIdentifier.class), any())).thenReturn(gitProvider);
+        when(gitProvider.gitOperation()).thenReturn(gitOperation);
+        doAnswer(invocation -> {
+            Consumer<File> consumer = invocation.getArgument(2);
+            consumer.accept(sourceDir.toFile());
+            return null;
+        }).when(gitOperation).readRepository(any(), any(), any());
+
+        RenderedTreeSnapshot snapshot = new RenderedTreeSnapshot();
+        InstantiateBlueprintVersionLocalGitOutboundPort port = new InstantiateBlueprintVersionLocalGitOutboundPort(
+                new HttpHeaders(), gitProviderFactory, snapshot);
+
+        Blueprint blueprint = new Blueprint();
+        BlueprintRepo repo = new BlueprintRepo();
+        repo.setProviderType(BlueprintRepoProviderType.GITHUB);
+        repo.setProviderBaseUrl("https://github.com");
+        blueprint.setBlueprintRepo(repo);
+
+        Repository sourceRepository = new Repository();
+        sourceRepository.setCloneUrlHttp("https://github.com/org/source.git");
+        SourceRepositoryDto source = new SourceRepositoryDto("parent", "v1.0.0", sourceRepository);
+        Repository targetRepository = new Repository();
+        targetRepository.setCloneUrlHttp("https://github.com/org/product.git");
+        TargetRepositoryDto target = new TargetRepositoryDto("main", "main", targetRepository);
+        TargetRepositoryDto second = new TargetRepositoryDto("infra-repo", "main", targetRepository);
+
+        port.openSources(blueprint, List.of(source), sourcePaths -> {
+            port.openTarget(target, "main", dst -> {
+                try {
+                    Files.writeString(dst.resolve("real.txt"), "x");
+                    Files.createSymbolicLink(dst.resolve("link.txt"), dst.resolve("real.txt").getFileName());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            port.openTarget(second, "main", dst -> {
+                try {
+                    Files.writeString(dst.resolve("infra.txt"), "infra");
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        });
+
+        Path expectedTree = snapshot.getExpectedTree("main");
+        Path infraTree = snapshot.getExpectedTree("infra-repo");
+        assertThat(expectedTree).isNotNull();
+        assertThat(infraTree).isNotNull();
+        assertThat(Files.isSymbolicLink(expectedTree.resolve("link.txt"))).isTrue();
+        assertThat(Files.exists(infraTree.resolve("infra.txt"))).isTrue();
+        InstantiateBlueprintVersionLocalGitOutboundPort.deleteRecursively(expectedTree);
+        InstantiateBlueprintVersionLocalGitOutboundPort.deleteRecursively(infraTree);
+    }
+
     @Test
     void createAndCheckoutOrphanBranchDoesNotRequireOrigin(@TempDir Path repoDir) throws Exception {
         try (Git git = Git.init().setInitialBranch("main").setDirectory(repoDir.toFile()).call()) {
