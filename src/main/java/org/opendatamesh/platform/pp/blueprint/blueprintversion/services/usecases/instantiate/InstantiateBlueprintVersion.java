@@ -230,7 +230,7 @@ class InstantiateBlueprintVersion implements UseCase {
 
     /**
      * The descriptor and its blueprint lineage metadata belong only to the target
-     * mapped to {@code instantiation.root.repository}, and the descriptor is
+     * marked {@code targetRepositories[].isRoot: true}, and the descriptor is
      * rendered at the same path it occupies in the blueprint source repository
      * ({@code descriptorTemplatePath}).
      */

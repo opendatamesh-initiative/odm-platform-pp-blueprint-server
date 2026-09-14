@@ -137,3 +137,18 @@ Targeted tests — **pass**:
 | --- | --- |
 | `TargetWorkingTreesTest` | pass |
 | `EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImplTest` | pass |
+
+## Review-fix addendum (LOW-1, LOW-3, Phase 1 LOW-4)
+
+Independent review `agent-reports/review-protected-resources-final.md` confirmed three Phase 1-owned leftovers. Docs-only plus a stronger recorded-version test; no production behavior change.
+
+1. **LOW-1.** `whenLaterBlueprintChangesProtectionThenRecordedVersionListIsUsed` now stores materially different v1 (`v1-only.txt` on the explicit root) and v2 (`v2-only.txt` on `infra-repo`) policies. The persistency fake throws if version `2.0.0` is loaded or its manifest is read. Full Gherkin Javadoc is unchanged.
+2. **LOW-3.** `InstantiateBlueprintVersion.renderDescriptorAndLineageOnRootRepository` Javadoc now names `targetRepositories[].isRoot: true`.
+3. **LOW-4 (Phase 1-owned).** Final-manifest Javadocs in `InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest` and the matching empty-root-targets block in `BlueprintVersionsUseCaseControllerIT` now describe typed `instantiation[]` / `targets[]`, route `repo`, and `targetRepositories[]`. Instantiate/update ITs listed in the review remain out of this slice.
+
+`./mvnw -q -DskipTests compile test-compile` — **pass**
+
+| Command | Result |
+| --- | --- |
+| `EvaluateProtectedResourcesIntegrityTest` | pass |
+| `InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest` | pass |

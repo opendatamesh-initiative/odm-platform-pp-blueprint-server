@@ -649,11 +649,11 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: Empty root.targets is rejected at both gates
-     *   Given instantiation.root.targets is []
+     * Scenario: Empty root targets are rejected at both gates
+     *   Given the type: root instantiation[] entry has targets: []
      *   When the client publishes the version
      *   Then the response status is 400
-     *   And the message states root.targets must be non-empty and includes a hint
+     *   And the message states instantiation[].targets must be non-empty and includes a hint
      */
     @Test
     public void whenPublishEmptyRootTargetsThenReturn400WithHint() throws IOException {

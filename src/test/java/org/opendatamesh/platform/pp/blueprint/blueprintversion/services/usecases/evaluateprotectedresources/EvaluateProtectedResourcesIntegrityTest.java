@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -285,7 +286,9 @@ class EvaluateProtectedResourcesIntegrityTest {
             @TempDir Path published, @TempDir Path expected) throws Exception {
         Files.writeString(published.resolve("v1-only.txt"), "same");
         Files.writeString(expected.resolve("v1-only.txt"), "same");
-        RecordingPersistencyPort persistency = persistency(polyrepoManifest(protectedResource("v1-only.txt", null)));
+        Manifest recordedV1 = polyrepoManifest(protectedResource("v1-only.txt", null));
+        Manifest laterV2 = polyrepoManifest(protectedResource("v2-only.txt", "infra-repo"));
+        RecordingPersistencyPort persistency = persistencyWithRecordedAndLaterPolicy(recordedV1, laterV2);
         CapturingPresenter presenter = new CapturingPresenter();
         new EvaluateProtectedResourcesIntegrity(
                 command(ROOT_LOCATOR, "root-tag", List.of(), List.of()),
@@ -297,7 +300,10 @@ class EvaluateProtectedResourcesIntegrityTest {
         ).execute();
 
         assertThat(persistency.requestedVersions).containsExactly("1.0.0");
+        assertThat(persistency.readManifests).containsExactly("1.0.0");
         assertThat(presenter.passed).isTrue();
+        assertThat(presenter.failed).isFalse();
+        assertThat(presenter.infrastructure).isFalse();
     }
 
     /**
@@ -389,7 +395,27 @@ class EvaluateProtectedResourcesIntegrityTest {
     }
 
     private static RecordingPersistencyPort persistency(Manifest manifest) {
+        return new RecordingPersistencyPort(
+                Map.of("1.0.0", blueprintVersionWithRepo("1.0.0")),
+                Map.of("1.0.0", manifest),
+                Set.of());
+    }
+
+    private static RecordingPersistencyPort persistencyWithRecordedAndLaterPolicy(
+            Manifest recordedV1,
+            Manifest laterV2
+    ) {
+        return new RecordingPersistencyPort(
+                Map.of(
+                        "1.0.0", blueprintVersionWithRepo("1.0.0"),
+                        "2.0.0", blueprintVersionWithRepo("2.0.0")),
+                Map.of("1.0.0", recordedV1, "2.0.0", laterV2),
+                Set.of("2.0.0"));
+    }
+
+    private static BlueprintVersion blueprintVersionWithRepo(String versionNumber) {
         BlueprintVersion version = new BlueprintVersion();
+        version.setVersionNumber(versionNumber);
         Blueprint blueprint = new Blueprint();
         BlueprintRepo repo = new BlueprintRepo();
         repo.setRemoteUrlHttp("https://github.com/org/source.git");
@@ -397,7 +423,7 @@ class EvaluateProtectedResourcesIntegrityTest {
         repo.setProviderBaseUrl("https://github.com");
         blueprint.setBlueprintRepo(repo);
         version.setBlueprint(blueprint);
-        return new RecordingPersistencyPort(version, manifest);
+        return version;
     }
 
     private static EvaluateProtectedResourcesIntegrityInstantiateOutboundPort instantiatePort(
@@ -494,24 +520,57 @@ class EvaluateProtectedResourcesIntegrityTest {
     }
 
     private static final class RecordingPersistencyPort implements EvaluateProtectedResourcesIntegrityPersistencyOutboundPort {
-        private final BlueprintVersion version;
-        private final Manifest manifest;
+        private final Map<String, BlueprintVersion> versionsByNumber;
+        private final Map<String, Manifest> manifestsByNumber;
+        private final Set<String> forbiddenVersions;
         private final List<String> requestedVersions = new ArrayList<>();
+        private final List<String> readManifests = new ArrayList<>();
 
         private RecordingPersistencyPort(BlueprintVersion version, Manifest manifest) {
-            this.version = version;
-            this.manifest = manifest;
+            String number = version.getVersionNumber() == null ? "1.0.0" : version.getVersionNumber();
+            version.setVersionNumber(number);
+            this.versionsByNumber = Map.of(number, version);
+            this.manifestsByNumber = Map.of(number, manifest);
+            this.forbiddenVersions = Set.of();
+        }
+
+        private RecordingPersistencyPort(
+                Map<String, BlueprintVersion> versionsByNumber,
+                Map<String, Manifest> manifestsByNumber,
+                Set<String> forbiddenVersions
+        ) {
+            this.versionsByNumber = Map.copyOf(versionsByNumber);
+            this.manifestsByNumber = Map.copyOf(manifestsByNumber);
+            this.forbiddenVersions = Set.copyOf(forbiddenVersions);
         }
 
         @Override
         public BlueprintVersion findByBlueprintNameAndVersion(String blueprintName, String blueprintVersion) {
             requestedVersions.add(blueprintVersion);
-            return version;
+            refuseLaterVersion(blueprintVersion);
+            BlueprintVersion found = versionsByNumber.get(blueprintVersion);
+            if (found == null) {
+                throw new AssertionError("unexpected Blueprint version lookup: " + blueprintVersion);
+            }
+            return found;
         }
 
         @Override
         public Manifest readManifest(BlueprintVersion blueprintVersion) {
-            return manifest;
+            String number = blueprintVersion.getVersionNumber();
+            readManifests.add(number);
+            refuseLaterVersion(number);
+            Manifest found = manifestsByNumber.get(number);
+            if (found == null) {
+                throw new AssertionError("no manifest for Blueprint version " + number);
+            }
+            return found;
+        }
+
+        private void refuseLaterVersion(String blueprintVersion) {
+            if (forbiddenVersions.contains(blueprintVersion)) {
+                throw new AssertionError("must not read later Blueprint version " + blueprintVersion);
+            }
         }
     }
 }
