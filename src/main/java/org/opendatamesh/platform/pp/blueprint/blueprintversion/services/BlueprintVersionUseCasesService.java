@@ -177,6 +177,7 @@ public class BlueprintVersionUseCasesService {
                 res.setCheckpointTag(targetResult.checkpointTag());
                 res.setCommitHash(targetResult.commitHash());
                 res.setPullRequestWebUrl(targetResult.pullRequestWebUrl());
+                res.setContentUnchanged(targetResult.contentUnchanged());
                 results.add(res);
             }
         }

@@ -7,7 +7,6 @@ record InstantiationRoute(
         String sourceId,
         String sourcePath,
         String repositoryKey,
-        String destinationPath,
-        boolean fromParent
+        String destinationPath
 ) {
 }

@@ -1,5 +1,7 @@
 # SPDD Analysis: Support all repository scenarios for blueprint update
 
+See companion instantiate analysis `BDMD-4820-202608251703` and prompts `BDMD-4820-202608261148` / `BDMD-4820-202608271455`. Structure freeze compares root `instantiation[]` targets and module `instantiation[]` targets (by composition alias).
+
 ## Original Business Requirement
 
 BDMD-4820
@@ -24,7 +26,7 @@ Keep using only root blueprint and its parameters instantiation values as the on
 Currently the DataProduct registry keeps track only of the "root" git repository (pointer with url and other metadata).
 This should be extended to keep track also of other repositories, keeping also their key (the ones defined in the manifest)
 so they can be referenced and reconciled during other processes (like blueprint update).
-The registry **root** pointer (`dataProductRepo`) is the remote mapped to **`instantiation.root.repository`**; other keys are additional repos.
+The registry **root** pointer (`dataProductRepo`) is the remote mapped to the **`targetRepositories[]` entry with `isRoot: true`**; other keys are additional repos.
 
 Out of scope:
 
@@ -36,7 +38,7 @@ Out of scope:
 1. Blueprint modules MUST be monorepo with no composition (for now).
 2. All the blueprint structural validation rules MUST be checked both before publishing and before instantiation.
 3. Validation errors should be explicit and clear to the user, specifying ALL the problems found. The error message should also include a hint on how to solve each error.
-4. The data-product **root** repository (descriptor + lineage + registry `dataProductRepo`) MUST be declared explicitly on the parent routing block as `instantiation.root.repository` (a declared `repositories[].key`). Do not infer it from the first `root.targets[]` entry, from a descriptor-covering route, or from a reserved key name. `primary` on a target entry is not used.
+4. The data-product **root** repository (descriptor + lineage + registry `dataProductRepo`) MUST be designated explicitly via **`targetRepositories[].isRoot: true`** (exactly one entry). Do not infer it from the first route entry, from a descriptor-covering route, or from a reserved key name.
 
 For now, only support updates of the content of the existing bluperint structure. E.g. are not supported updates that include modification to the blueprint structure, like module change, repository key change, etc..
 
@@ -73,7 +75,7 @@ Topology is **not** a manifest field. It is derived from the **next** parent ver
 | **1 repository key**   | **1→1** monorepo   | **N→1** monorepo + modules |
 | **≥2 repository keys** | **1→N** polyrepo   | **N→N** polyrepo + modules |
 
-Legend: **P** = next parent blueprint, **M** = composed module (next parent’s `composition[]`), **T** = target Git remote identified by a manifest `key`. Each **T** already has a **pure** checkpoint `blueprint-v{current}`. Update writes a new pure tree on `update/blueprint-v{next}` and tags `blueprint-v{next}`. Dashed **lineage** arrows exist only toward the key equal to **next** `instantiation.root.repository`. **Next topology and layout must match current**; source **content**, parameter **values**, and **`parameterMapping`** may change.
+Legend: **P** = next parent blueprint, **M** = composed module (next parent’s `composition[]`), **T** = target Git remote identified by a manifest `key`. Each **T** already has a **pure** checkpoint `blueprint-v{current}`. Update writes a new pure tree on `update/blueprint-v{next}` and tags `blueprint-v{next}`. Dashed **lineage** arrows exist only toward the key with **next** `targetRepositories[].isRoot: true`. **Next topology and layout must match current**; source **content**, parameter **values**, and **`parameterMapping`** may change.
 
 ### Shared per-target Git policy (all four topologies)
 
@@ -87,7 +89,7 @@ flowchart TB
   clone --> branch[Create update/blueprint-v next from checkpoint]
   branch --> clean[Clean working tree preserving .git]
   clean --> routes[Apply next-version routes into this target]
-  routes --> root{This key is instantiation.root.repository?}
+  routes --> root{This key has isRoot: true?}
   root -->|yes| lin[Render descriptor if configured<br/>Record parent-only lineage]
   root -->|no| commit
   lin --> commit[Commit, tag blueprint-v next, push branch + tag]
@@ -122,7 +124,7 @@ M2 ── routes ───┘     (clean + re-render next; user files stay on ma
 
 ### 1→N — Polyrepo, no composition
 
-One parent source; subtrees routed to **different** keys. **Each** remote is updated independently: its own clone at **its** `blueprint-v{current}`, its own `update/blueprint-v{next}`, its own next checkpoint tag (same **name**, different remotes). Lineage only on `instantiation.root.repository`.
+One parent source; subtrees routed to **different** keys. **Each** remote is updated independently: its own clone at **its** `blueprint-v{current}`, its own `update/blueprint-v{next}`, its own next checkpoint tag (same **name**, different remotes). Lineage only on the `targetRepositories[]` entry with `isRoot: true`.
 
 ```text
               ┌── routes ──► T_infra-repo   (checkpoint + update branch)
@@ -172,13 +174,13 @@ flowchart LR
 ### Existing Concepts (from codebase)
 
 - **Blueprint / Blueprint version**: Platform records for a template Git repository and a published snapshot. Update always loads **two** parent versions of the **same** blueprint (current vs next). Composition modules are other published versions looked up from the **next** parent’s `composition[]`.
-- **Blueprint Manifest**: Authoritative routing contract (`instantiation.repositories[]`, `instantiation.root.repository`, `instantiation.root.targets[]`, `composition[]` with `targets[]` and `parameterMapping`). Relationship: **next** version must **repeat the same layout** as current (keys, root, routes, composition slots); **`parameterMapping` is content** and may differ. The use case then renders next content (including next mappings) through that frozen layout. Current is the **layout baseline**, not only a checkpoint name.
-- **Instantiation scenario**: Four cases (1→1, N→1, 1→N, N→N) derived from repository-key cardinality × composition. Relationship: instantiate and update each run **one route-driven pipeline** for all four; scenario enum is taxonomy for logging/tests, not four Git scripts.
-- **Logical repository key / target mapping**: Request `targetRepositories[].targetId` must match `instantiation.repositories[].key`. Relationship: the update API is list-based (`targetRepositories` / `results`); validation requires a **complete unique map** of every next-version key (no longer “exactly one”).
+- **Blueprint Manifest**: Authoritative routing contract (`targetRepositories[]`, typed `instantiation[]`, `composition[]` with `parameterMapping`). Relationship: **next** version must **repeat the same layout** as current (keys, `isRoot`, root/module `instantiation[]` routes, composition slots); **`parameterMapping` is content** and may differ.
+- **Instantiation scenario**: Four cases (1→1, N→1, 1→N, N→N) derived from `targetRepositories` key cardinality × composition. Relationship: instantiate and update each run **one route-driven pipeline** for all four; scenario enum is taxonomy for logging/tests, not four Git scripts.
+- **Logical repository key / target mapping**: Request `targetRepositories[].targetId` must match `targetRepositories[].key`. Relationship: the update API is list-based (`targetRepositories` / `results`); validation requires a **complete unique map** of every next-version key (no longer “exactly one”).
 - **Update data product from blueprint version**: Dedicated hexagonal use case (`POST .../update-data-product`). Relationship: Git flow differs from instantiate (branch from checkpoint, clean, no orphan, no merge to main, optional PR). It must **not** call the instantiate use case.
 - **Tag-based 3-way merge / checkpoint / update branch**: Domain naming via `BlueprintGitNamingConventions` (`blueprint-v{version}`, `update/blueprint-v{version}`). Relationship: each **data-product remote** that received instantiate files already has a **pure** checkpoint; update creates the next pure commit **from that tag**. Same tag **name** on every remote is correct because tags live in different Git repositories — no per-key discriminator is required.
 - **Optional Pull Request (global)**: `createPullRequest` applies to **all** processed targets; each entry may set `pullRequestTargetBranch`. PR open is a **side operation** (HTTP 200 + `warnings` on failure). Merge/delete remain out of scope.
-- **Route (`sourcePath` → `repository` + `path`)**: Uniform mapping for parent root and composition modules. Relationship: update flattens **next** routes via the manifest port and applies each through `applyRoute` after a clean working tree; the former whole-tree `monorepoNoCompositionRenderAndCopy` path is removed.
+- **Route (`sourcePath` → `repo` + `destinationPath`)**: Uniform mapping on `instantiation[].targets[]`. Relationship: update flattens **next** routes via the manifest port and applies each through `applyRoute` after a clean working tree.
 - **Parameter set (parent) + module `parameterMapping`**: Next parent parameters come from the request; modules use **next** `{ $param }` / `{ value }` mappings (changes vs current are **supported**). Parent lineage must not include module-only parameters.
 - **Blueprint–data-product lineage**: Parent version identity + parent resolved parameters on the **root** descriptor and `.odm/blueprint/` sidecar. Relationship: this ticket **keeps** parent-only lineage on the designated root target only, including during update.
 - **Keyed data-product repositories (registry)**: Root `dataProductRepo` plus additional repos keyed by manifest `key`. Relationship: **preparatory** for clients to assemble `targetRepositories`; **update does not read or write the registry**.
@@ -188,13 +190,13 @@ flowchart LR
 ### New Concepts Required
 
 - **Multi-source, multi-target update**: Parent plus modules cloned at **next** source tags; each mapped data-product remote opened at **current** checkpoint tag; routes from the **next** manifest applied after a clean working tree. Relationship: same sources/routes as instantiate; different Git starting point (checkpoint, not integration branch) and ending (push update branch + next tag, not merge to main).
-- **Cross-version structure freeze (content-only update)**: Current and next parent manifests must share the same **blueprint structure** (instantiation/composition **layout**). Relationship: update re-renders **content** through an **identical** layout: source files; request parameter **values**; composition **`parameterMapping`** (child keys, `$param` vs `value`, parent-key names, `{ value }` literals); optional module **version** bump in the same slot. Structural change is **not supported** (400), including: repository key add/remove/rename; `instantiation.root.repository` change; topology change (1→1 / N→1 / 1→N / N→N); `root.targets` route identity change (`sourcePath` + `repository` + `path`); composition **slot** change (add/remove alias, different `blueprintName`, different composition `targets`). Same alias + same `blueprintName` + same targets may point at a **new** `blueprintVersion` (module content roll-forward). Next `parameterMapping` is validated for **shape** (`{ $param }` / `{ value }`) and resolved against **next** parent parameters — it is **not** compared to current.
+- **Cross-version structure freeze (content-only update)**: Current and next parent manifests must share the same **blueprint structure** (instantiation/composition **layout**). Structural change is **not supported** (400), including: repository key add/remove/rename; `isRoot` designation change; topology change; root `instantiation[]` route identity change (`sourcePath` + `repo` + `destinationPath`); composition **slot** change (add/remove alias, different `blueprintName`, different module `instantiation[]` targets). Same alias + same `blueprintName` + same module targets may point at a **new** `blueprintVersion`. Next `parameterMapping` is validated for **shape** and resolved against **next** parent parameters — it is **not** compared to current.
 - **Per-target update result fan-out**: One `results[]` row per processed target (already on the wire). Relationship: N→1 still one result; 1→N / N→N produce several; warnings remain a **request-level** list.
 
 ### Key Business Rules
 
 - All four topologies must **update** successfully when the request maps **every** next-version repository key to a concrete Git repo that already has checkpoint `blueprint-v{current}`.
-- Routing, modules, descriptor placement, and lineage follow the **next** version only — same rules as instantiate (non-empty `root.targets`, declared `root.repository`, unused keys rejected, exact and nested destination conflicts rejected, modules 1→1, `{ $param }` / `{ value }`, parent-only lineage on the root key, platform-owned descriptor render when `descriptorTemplatePath` is set).
+- Routing, modules, descriptor placement, and lineage follow the **next** version only — same rules as instantiate (non-empty `instantiation[]` entry targets, exactly one `isRoot: true`, unused keys rejected, exact and nested destination conflicts rejected, modules 1→1, `{ $param }` / `{ value }`, parent-only lineage on the root key, platform-owned descriptor render when `descriptorTemplatePath` is set).
 - **Structural rules** of the **next** manifest MUST be checked in the update use case (same **logic** as publish/instantiate, **separate** validation code — no shared validator class). Update additionally validates: current ≠ next, same blueprint, complete unique `targetId` map, **structure freeze** between current and next (layout fingerprint), parameters against the **next** manifest.
 - Validation reports **all** problems found in that gate (do not stop at the first error). Each problem is **explicit**, **clear**, and includes a **hint**. Git/runtime failures after a valid request may still fail on the first operation.
 - After validation, **each** target that receives at least one next-version route: open at current checkpoint → create update branch → **clean** → apply routes → if root, descriptor + parent lineage → commit → next checkpoint tag → push branch + tag → optional PR.
@@ -202,9 +204,9 @@ flowchart LR
 - The server **does not** merge PRs or delete update branches.
 - `createPullRequest` is **global**; PR failure after a successful push for that target is a **warning**, not a failed request.
 - Update **does not** call the registry. Clients may use keyed additional repos to fill `targetRepositories`.
-- Child modules of the **next** parent must be published **monorepo, no composition**. Child instantiation topology is ignored for file placement; parent `composition[].targets` win.
+- Child modules of the **next** parent must be published **monorepo, no composition**. Child instantiation topology is ignored for file placement; parent `instantiation[]` module entries win.
 - Parent parameter validation is the request contract; module parameters are derived from next `parameterMapping`, not a second client parameter bag.
-- **Content-only updates** of the existing blueprint structure are supported; **structural modifications are not**. Reject (400, collect-all, with hint) any current→next delta in: repository keys, root key, topology, `root.targets` routes, composition slots (`alias` / `blueprintName` / composition `targets`). Allowed: file changes in parent/module sources; request parameter **values**; **`parameterMapping` changes** (rewire `$param`, change `{ value }`, add/remove mapped child keys) as long as next mappings are well-formed and resolve against next parent parameters; same-slot module `blueprintVersion` bump. First apply of a new remote remains **instantiate**.
+- **Content-only updates** of the existing blueprint structure are supported; **structural modifications are not**. Reject (400, collect-all, with hint) any current→next delta in: repository keys, `isRoot` designation, topology, root `instantiation[]` routes, composition slots (`alias` / `blueprintName` / module `instantiation[]` targets). Allowed: file changes in parent/module sources; request parameter **values**; **`parameterMapping` changes** (rewire `$param`, change `{ value }`, add/remove mapped child keys) as long as next mappings are well-formed and resolve against next parent parameters; same-slot module `blueprintVersion` bump. First apply of a new remote remains **instantiate**.
 - Partial Git failure across targets: **fail-fast** after the first Git failure; earlier remotes may already have been pushed. PR warnings do **not** stop later targets.
 - UI remains out of scope.
 
@@ -216,9 +218,9 @@ flowchart LR
 
 Treat this as a **backend** expansion of the existing **update** use case in blueprint-server only. Registry and instantiate contracts stay as delivered by the companion instantiate work. UI stays out of scope.
 
-**Implementation status (synced from branch `16-feature-multi-repository-support`):** `UpdateDataProductFromBlueprintVersion` now runs one route-driven loop for all four topologies. Git workspaces use `openSources` (parent + modules at next release tags, shared across targets) plus per-target `openTargetAtCheckpoint` (current tag). Manifest validation collects structure-freeze and next structural issues; provider mismatch and module `parameterMapping` resolution use dedicated collect-all port methods before Git.
+`UpdateDataProductFromBlueprintVersion` runs one route-driven loop for all four topologies. Git workspaces use `openSources` (parent + modules at next release tags, shared across targets) plus per-target `openTargetAtCheckpoint` (current tag). Manifest validation collects structure-freeze and next structural issues; provider mismatch and module `parameterMapping` resolution use dedicated collect-all port methods before Git.
 
-Keep the existing update hexagon (command + presenter + persistency / manifest / templating / git ports). Replace the scenario switch’s three “unsupported” branches with **one routing-and-render loop** parameterized by next-version sources (parent ± modules) and targets (one or many keys) — the same shape instantiate already uses — while **keeping update Git policy**: checkpoint checkout, update branch, clean, no merge to integration, optional PR.
+Keep the existing update hexagon (command + presenter + persistency / manifest / templating / git ports). Use **one routing-and-render loop** parameterized by next-version sources (parent ± modules) and targets (one or many keys) — the same shape instantiate already uses — while **keeping update Git policy**: checkpoint checkout, update branch, clean, no merge to integration, optional PR.
 
 High-level data flow: client supplies parent name, current/next versions, next parent parameters, and a full key→Git map → service loads current and next parent versions → collect-all validation (next structural + request + **structure freeze vs current**) → clone next sources at tags and each target at current checkpoint → for each target, branch / clean / apply **frozen** routes / lineage on root / commit / tag / push → optional PR per target → present `results` + `warnings`.
 
@@ -262,8 +264,8 @@ The use case drives this sequence (one pipeline for all four topologies). If val
 
 1. **Accept the command** — Require parent identity, distinct current/next versions, parameters, and a keyed target list.
 2. **Locate current and next parent versions** — Same blueprint UUID; not-found is explicit.
-3. **Collect all validation problems** — Update validation port (same **rules** as instantiate for the **next** manifest, **separate code**): structural manifest, required `instantiation.root.repository`, non-empty `root.targets`, unused keys, destination duplicates and nested path-prefix, **next** `parameterMapping` shape (not compared to current), parameter values vs defaults, complete unique `targetId` map. **Also:** compare current vs next **layout fingerprint** and reject any structural delta (keys, root key, topology, routes, composition slots). Do **not** include `parameterMapping` in that fingerprint. Do **not** validate descriptor placement against `root.targets`.
-4. **Understand the job** — From the valid **next** manifest, derive routes, designated root target key, and which sources each target needs. Scenario may be logged; it does not fork Git policy.
+3. **Collect all validation problems** — Update validation port (same **rules** as instantiate for the **next** manifest, **separate code**): structural manifest, exactly one `isRoot: true`, non-empty root `instantiation[]` targets, unused keys, destination duplicates and nested path-prefix, **next** `parameterMapping` shape (not compared to current), parameter values vs defaults, complete unique `targetId` map. **Also:** compare current vs next **layout fingerprint** and reject any structural delta (keys, root key, topology, routes, composition slots). Do **not** include `parameterMapping` in that fingerprint. Do **not** validate descriptor placement against `instantiation[]` routes.
+4. **Understand the job** — From the valid **next** manifest, derive routes, designated root target key (`isRoot: true`), and which sources each target needs. Scenario may be logged; it does not fork Git policy.
 5. **Locate modules** — For each next `composition[]` entry, persistency locates that published version. Each module **must** be monorepo, no composition. Collect all module problems with hints.
 6. **Resolve module parameter sets** — `{ $param }` vs `{ value }` against the next parent resolved set. Failures are validation-style with hints.
 7. **For each target key that receives at least one next route** (Git/runtime fail-fast after validation):
@@ -311,17 +313,17 @@ execute
 - **One generalized update pipeline vs four scenario methods**: Four copies would diverge from instantiate and from each other. → **One pipeline** driven by next-version routes + keyed targets. Scenario enum is for logging/tests, not four Git scripts.
 - **Mirror instantiate routing, keep update Git policy**: Instantiate already materializes multiple sources and applies routes per target. Update’s Git starting/ending points differ. → **Reuse routing/lineage/module rules**; **do not** invoke the instantiate use case; **evolve** update’s Git port toward “open next sources + target at checkpoint” instead of a single parent source × single target.
 - **Which manifest drives the update?** → **Next** for **content** (source trees, parameter values, **`parameterMapping`**, lineage identity). **Current** is the **layout baseline**. Routes applied at Git time come from next, but they must be **identical** to current’s layout fingerprint or validation fails first.
-- **Content-only vs structure change**: Authors may ship new files / template text / request parameter **values** / **`parameterMapping`** on the same layout. They may **not** reshape the product (new module, dropped module, different module `blueprintName`, new/removed/renamed repository key, different `root.repository`, different `root.targets` or composition `targets`, topology change). → **Reject** those layout deltas at validation (collect-all) with a hint that update is content-only for now. **`parameterMapping` is content**: next mappings replace current; validate next shape and resolve against next parent parameters. Same composition **slot** (`alias` + `blueprintName` + targets) may bump `blueprintVersion` so module **content** can move forward. New remotes still go through **instantiate**.
+- **Content-only vs structure change**: Authors may ship new files / template text / request parameter **values** / **`parameterMapping`** on the same layout. They may **not** reshape the product (new module, dropped module, different module `blueprintName`, new/removed/renamed repository key, different `isRoot` designation, different root/module `instantiation[]` targets, topology change). → **Reject** those layout deltas at validation (collect-all) with a hint that update is content-only for now. **`parameterMapping` is content**: next mappings replace current; validate next shape and resolve against next parent parameters. Same composition **slot** (`alias` + `blueprintName` + targets) may bump `blueprintVersion` so module **content** can move forward. New remotes still go through **instantiate**.
 - **Checkpoint tag naming with many remotes**: Tags are per Git remote. → **Keep** `blueprint-v{version}` / `update/blueprint-v{version}` with **no** key suffix. A discriminator would only matter if two logical keys shared one physical remote (already undefined).
-- **Structural validation on update**: Update today checks parameters and “exactly one target / 1→1”. → **Same structural rules as instantiate** on the **next** manifest, implemented in **update’s** validation port (not the publish visitor, not instantiate’s validator class). Request checks stay update-specific (versions, **structure freeze vs current**, `targetId` map).
+- **Structural validation on update**: → **Same structural rules as instantiate** on the **next** manifest, implemented in **update’s** validation port (not the publish visitor, not instantiate’s validator class). Request checks stay update-specific (versions, **structure freeze vs current**, `targetId` map).
 - **Validation error reporting**: Fail-fast hides remaining issues. → **Collect all** validation problems; each with a fix hint. Align message style with instantiate’s issue list.
-- **Lineage and descriptor**: Whole-tree update render currently copies parent lineage as part of 1→1 helper. → **Align with instantiate**: routes first; platform-owned descriptor on root; parent lineage only on `instantiation.root.repository`. No lineage copy on secondary remotes.
+- **Lineage and descriptor**: → **Align with instantiate**: routes first; platform-owned descriptor on root; parent lineage only on the `isRoot` key. No lineage copy on secondary remotes.
 - **Module parameter mapping**: Bare scalars are invalid; `{ $param }` / `{ value }` as in instantiate. → Always use the **next** parent’s `parameterMapping` (changes vs current are **supported**). Resolve from **next** parent parameter set. Do **not** copy instantiate’s current shortcut of reusing the parent map as the module map if that still skips `parameterMapping`.
 - **Git provider for module sources**: → Child provider type and base URL **must match** the parent (same as instantiate).
 - **PR policy across many targets**: Already global on/off; already per-target base branch. → After **each** successful target push, attempt PR if the flag is on; PR failure warns and **does not** skip later targets. Git failure **does** stop later targets.
 - **Does update write or read the registry?** → **No.** List-based `targetRepositories` remains the contract. Keyed additional repos help **callers** reconcile; they are not loaded inside this use case.
 - **Missing current checkpoint**: → Fail that target; do not fall back to the default branch (would poison purity / 3-way semantics).
-- **Intent-revealing Git port**: Today `init` + `withClonedSourceAndTargetAtCheckpoint` + `monorepoNoCompositionRenderAndCopy` leaked 1→1 mechanics. → Evolve ports so `execute()` reads as the procedure above. Delivered as `openSources` + `openTargetAtCheckpoint` with granular commit/tag/push steps. Checkpoint **order** stays in the use case.
+- **Intent-revealing Git port**: → Evolve ports so `execute()` reads as the procedure above. Delivered as `openSources` + `openTargetAtCheckpoint` with granular commit/tag/push steps. Checkpoint **order** stays in the use case.
 - **Partial Git failure**: Pushes are not a distributed transaction. → **Fail-fast**; document that earlier `results` may already exist on remotes (presenter may still only run on success today — if the use case throws, the client may not see partial `results`; that limitation is acceptable unless presenters already support partial success).
 - **UI**: → Out of scope.
 
@@ -338,12 +340,12 @@ execute
 - **Infer missing `targetId`s from registry additional repos**: Rejected for this ticket. Update stays Git-only given the request list; registry is not a runtime dependency of blueprint-server update.
 - **Copy lineage sidecar onto every target “so each repo is self-describing”**: Rejected. Lineage remains parent-only on the designated root, consistent with instantiate.
 - **Per-target checkpoint tag suffix (`blueprint-v{version}-{key}`)**: Rejected. Unnecessary while each key maps to a distinct remote; collides with existing 1→1 tags already on remotes.
-- **Change root key between versions and move lineage to the new root**: Rejected. Descriptor/registry identity would jump remotes without an instantiate of the new root. Require stable `instantiation.root.repository`.
+- **Change root key between versions and move lineage to the new root**: Rejected. Descriptor/registry identity would jump remotes without an instantiate of the new root. Require stable `targetRepositories[].isRoot: true`.
 - **Extract one shared validator class for publish, instantiate, and update**: Rejected. Rules are shared; implementations stay separate (known drift risk, covered by tests).
 - **Stop at the first validation error**: Rejected. Report **all** problems, each with a hint.
 - **Fail the whole request when one PR open fails**: Rejected. PR remains best-effort **warnings** on HTTP 200 for that request (if Git for remaining targets has not failed).
 - **Server-side merge of update branches into integration**: Rejected. Tag-based 3-way merge in the user’s PR remains the product strategy.
-- **Keep `monorepoNoCompositionRenderAndCopy` for 1→1 and add a second path for the other three**: Rejected. Even 1→1 must honor `root.targets` path splits; one apply-route path covers all four.
+- **Keep `monorepoNoCompositionRenderAndCopy` for 1→1 and add a second path for the other three**: Rejected. Even 1→1 must honor root `instantiation[]` path splits; one apply-route path covers all four.
 
 ---
 
@@ -356,12 +358,12 @@ execute
 | **Four update topologies**                     | All four must work; no longer “not supported yet”.                                                                                                                                                |
 | **Who supplies Git remotes**                   | Client `targetRepositories[]`. Update does **not** read/write the registry.                                                                                                                       |
 | **Which version’s manifest**                   | **Next** for **content** (sources, parameter values, **`parameterMapping`**, lineage). **Current** is the **layout baseline**; next keys/root/routes/slots must match. |
-| **Content-only vs structure**                  | **Content** (files, request parameter values, **`parameterMapping`**, same-slot module version bump) is supported. **Structure** (keys, root key, topology, routes, composition slots) is **rejected**. |
-| **Key / module / route change current → next** | **Reject** (validation). Same keys, same `instantiation.root.repository`, same routes, same composition slots (alias + blueprintName + targets). **`parameterMapping` is not part of this comparison.** |
+| **Content-only vs structure**                  | **Content** (files, request parameter values, **`parameterMapping`**, same-slot module version bump) is supported. **Structure** (keys, root key / `isRoot`, topology, routes, composition slots) is **rejected**. |
+| **Key / module / route change current → next** | **Reject** (validation). Same keys, same `isRoot` designation, same routes, same composition slots (alias + blueprintName + targets). **`parameterMapping` is not part of this comparison.** |
 | **`parameterMapping` change current → next**   | **Supported** (content). Validate and resolve the **next** mapping only. |
 | **Checkpoint naming**                          | Unchanged `blueprint-v{version}` / `update/blueprint-v{version}` per remote.                                                                                                                      |
 | **Lineage**                                    | Parent next version + parent next parameters, **root target only**.                                                                                                                               |
-| **Modules**                                    | Must be 1→1; file placement from parent `composition[].targets`.                                                                                                                                  |
+| **Modules**                                    | Must be 1→1; file placement from parent `instantiation[]` module entries.                                                                                                                                  |
 | **Structural validation**                      | Same rules as instantiate, on **next**, in **update’s** own validation code. Collect **all** issues with hints.                                                                                   |
 | **PR**                                         | Global flag; per-target base branch; best-effort warnings.                                                                                                                                        |
 | **UI**                                         | Out of scope.                                                                                                                                                                                     |
@@ -379,12 +381,12 @@ None remaining for this analysis after the decisions above. Open product questio
 
 ### Edge Cases
 
-- **Empty `root.targets` on next**: Rejected (400) as a structural rule at update validation (same as publish/instantiate).
-- **Missing or undeclared `instantiation.root.repository` on next**: Rejected (400).
+- **Empty root `instantiation[]` targets on next**: Rejected (400) as a structural rule at update validation (same as publish/instantiate).
+- **Missing or multiple `isRoot: true` on next**: Rejected (400).
 - **Current and next key sets differ** (added/removed/renamed key): Rejected (400) — structure change; hint: keep keys stable or instantiate new remotes first.
-- **Root key differs** between current and next: Rejected (400).
+- **Root key / `isRoot` differs** between current and next: Rejected (400).
 - **Topology differs** (e.g. current 1→1, next N→1): Rejected (400) — structure change.
-- **`root.targets` or composition `targets` differ** (sourcePath / repository / path): Rejected (400) — structure change; content updates must keep the same routes.
+- **Root or module `instantiation[]` targets differ** (sourcePath / repo / destinationPath): Rejected (400) — structure change; content updates must keep the same routes.
 - **Composition slot change** (add/remove alias, different `blueprintName`): Rejected (400) — module change unsupported.
 - **Same slot, new module `blueprintVersion`**: Allowed — module **content** roll-forward.
 - **`parameterMapping` differs** (child keys, `$param` vs `value`, `$param` parent key, `{ value }` literals): **Allowed**. Resolve **next** mappings; malformed next mapping or unresolvable `$param` still 400 (shape/resolution), not because it differs from current.
@@ -392,14 +394,14 @@ None remaining for this analysis after the decisions above. Open product questio
 - **Next tag or update branch already exists** on a remote: Reject (collision), same as 1→1 today.
 - **Module polyrepo or composed**: Rejected when loading next composition.
 - **`descriptorTemplatePath` set but template missing** in next parent source: Fail at update runtime (not a publish-time 400), same as instantiate.
-- **Polyrepo with no descriptor-covering `root.targets` route**: Allowed; descriptor still placed on designated root when the template path is set.
+- **Polyrepo with no descriptor-covering root route**: Allowed; descriptor still placed on designated root when the template path is set.
 - **Monorepo composition nested under parent `./`**: 400 structural (path-prefix), so update never has to define copy order.
 - **Same physical Git URL mapped to two keys**: Still undefined/unsupported if URLs collide; two logical update cycles on one remote would fight over the same checkpoint tag name.
 - **README/manifest relocate**: Parent `BlueprintRepo` paths; apply **only** on the root target after routes + implicit descriptor render (align with instantiate).
 - **Blueprint file removed in next version**: Clean + re-render makes the deletion appear on the update branch; user-only files on integration remain additions vs the old pure checkpoint.
 - **User edited same lines as next blueprint** (Scenario 2B): Expected PR conflict; no server resolution — now on **each** remote independently.
 - **Empty commit** after clean+render identical to previous pure tip: Keep today’s implicit Git behavior (allow or fail as the Git layer already does); do not invent a new policy.
-- **Existing 1→1 products**: Behavior remains: one key, checkpoint → update branch → optional PR; additionally honor `root.targets` instead of ignoring routes.
+- **Existing 1→1 products**: Behavior remains: one key, checkpoint → update branch → optional PR; additionally honor root `instantiation[]` targets instead of ignoring routes.
 - **Global PR true, first target PR fails, second target Git still pending**: Warning recorded; continue other targets; overall HTTP 200 only if no Git failure.
 
 ### Technical Risks
@@ -423,19 +425,19 @@ The requirement does not number ACs; implied criteria from the instantiate analy
 
 | AC# | Description                                                                                                                 | Addressable? | Gaps/Notes                                                                                                              |
 | --- | --------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| 1   | Monorepo, no composition (1→1) continues to update parent → one target from current checkpoint                              | Yes          | Must honor `root.targets`; keep parent lineage; keep PR/warnings behavior                                               |
+| 1   | Monorepo, no composition (1→1) continues to update parent → one target from current checkpoint                              | Yes          | Must honor root `instantiation[]` targets; keep parent lineage; keep PR/warnings behavior                                               |
 | 2   | Monorepo + composition (N→1): parent + modules re-rendered into one target at distinct paths                                | Yes          | Modules must be 1→1; `{ $param }` / `{ value }`; one checkpoint/PR                                                      |
 | 3   | Polyrepo, no composition (1→N): parent split across ≥2 mapped targets, each from its own current checkpoint                 | Yes          | Complete key mapping; lineage only on root; global PR applies to every target                                           |
 | 4   | Polyrepo + composition (N→N): parent + modules routed across several targets                                                | Yes          | Combination of AC2+AC3; same Git-provider constraint                                                                    |
-| 5   | Lineage tracks only root (parent) blueprint and parent instantiation parameters                                             | Yes          | Next parent + next parent params on `instantiation.root.repository` only                                                |
+| 5   | Lineage tracks only root (parent) blueprint and parent instantiation parameters                                             | Yes          | Next parent + next parent params on `isRoot` key only                                                |
 | 6   | Public list API (`targetRepositories` / `results`) is used without breaking change                                          | Yes          | Widen validation from “exactly one key” to “complete map”; DTOs already lists                                           |
 | 7   | Optional global PR; merge/delete remain manual; PR failure → warnings                                                       | Yes          | Same as BDMD-5127; now N results                                                                                        |
 | 8   | Checkpoint/update-branch naming unchanged; 3-way merge semantics preserved per remote                                       | Yes          | No key suffix; missing current tag does not fall back to default branch                                                 |
-| 9   | Current vs next blueprint **structure** is frozen (keys, root, topology, routes, composition slots)                         | Yes          | Content-only: files, parameter values, **`parameterMapping`**, and same-slot module version may change; layout deltas are 400 with hint |
+| 9   | Current vs next blueprint **structure** is frozen (keys, root / `isRoot`, topology, routes, composition slots)                         | Yes          | Content-only: files, parameter values, **`parameterMapping`**, and same-slot module version may change; layout deltas are 400 with hint |
 | 10  | Update does not write the registry; UI out of scope                                                                         | Yes          | Callers may still persist keyed additional repos separately                                                             |
 | 11  | Unused keys, overlapping routes, nested path-prefix → 400 on **next**                                                       | Yes          | Update validation; same rules as instantiate                                                                            |
 | 12  | `parameterMapping` `{ $param }` / `{ value }`; bare scalars invalid; **mapping changes vs current are supported**           | Yes          | Applied from **next** manifest when resolving modules; not part of the structure fingerprint                            |
-| 13  | `instantiation.root.targets` non-empty; explicit `root.repository`                                                          | Yes          | On next version at update gate                                                                                          |
+| 13  | Root `instantiation[]` targets non-empty; explicit `targetRepositories[].isRoot: true`                                                          | Yes          | On next version at update gate                                                                                          |
 | 14  | Composition modules are monorepo with no composition                                                                        | Yes          | Fail update if a next-version module is polyrepo or composed                                                            |
 | 15  | All structural validation **rules** apply before update (next version)                                                      | Yes          | Same logic; **separate code** from publish/instantiate                                                                  |
 | 16  | Validation lists **all** problems; each message includes a **fix hint**                                                     | Yes          | Accumulate then report                                                                                                  |

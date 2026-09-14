@@ -37,6 +37,7 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionCommandRes;
@@ -496,6 +497,7 @@ public class TagBasedThreeWayMergeIT extends BlueprintApplicationIT {
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(uniqueBlueprintName + "-display");
         blueprint.setDescription(uniqueBlueprintName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
         blueprint.setBlueprintRepo(buildBlueprintRepo());
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(

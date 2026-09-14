@@ -13,19 +13,12 @@ parameters:
       label: Data domain
       formType: text
 
-instantiation:
-  repositories:
-    - key: pipeline-repo
-      description: Target repository for data pipeline components
-    - key: api-repo
-      description: Target repository for API serving components
-
-  root:
-    repository: pipeline-repo
-    targets:
-      - sourcePath: ./core
-        repository: pipeline-repo
-        path: ./core
+targetRepositories:
+  - key: pipeline-repo
+    description: Target repository for data pipeline components
+    isRoot: true
+  - key: api-repo
+    description: Target repository for API serving components
 
 composition:
   - module: ingest
@@ -33,17 +26,30 @@ composition:
     blueprintVersion: 2.0.0
     parameterMapping:
       domain: { $param: dataDomain }
-    targets:
-      - sourcePath: ./
-        repository: pipeline-repo
-        path: pipelines/batch
 
   - module: consume
     blueprintName: odm-blueprint-consumer-api
     blueprintVersion: 1.1.0
     parameterMapping:
       domain: { $param: dataDomain }
+
+instantiation:
+  - type: module
+    moduleName: ingest
     targets:
       - sourcePath: ./
-        repository: api-repo
-        path: services/consumer
+        repo: pipeline-repo
+        destinationPath: ./pipelines/batch
+
+  - type: module
+    moduleName: consume
+    targets:
+      - sourcePath: ./
+        repo: api-repo
+        destinationPath: ./services/consumer
+
+  - type: root
+    targets:
+      - sourcePath: ./
+        repo: pipeline-repo
+        destinationPath: ./core

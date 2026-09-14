@@ -24,6 +24,10 @@ public class Blueprint extends VersionedEntity {
     @Column(name = "description")
     private String description;
 
+    @Column(name = "blueprint_type", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private BlueprintType blueprintType;
+
     @OneToOne(mappedBy = "blueprint", orphanRemoval = true, cascade = CascadeType.ALL)
     @Fetch(FetchMode.SELECT)
     private BlueprintRepo blueprintRepo;
@@ -58,6 +62,14 @@ public class Blueprint extends VersionedEntity {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public BlueprintType getBlueprintType() {
+        return blueprintType;
+    }
+
+    public void setBlueprintType(BlueprintType blueprintType) {
+        this.blueprintType = blueprintType;
     }
 
     public BlueprintRepo getBlueprintRepo() {

@@ -24,6 +24,7 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMo
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.ErrorRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.updatedataproduct.UpdateDataProductCommandRes;
@@ -106,6 +107,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         assertThat(response.getBody().getResults().getFirst().getCheckpointTag()).isEqualTo("blueprint-v2.0.0");
         assertThat(response.getBody().getResults().getFirst().getCommitHash()).isEqualTo("abc123def456");
         assertThat(response.getBody().getResults().getFirst().getPullRequestWebUrl()).isNull();
+        assertThat(response.getBody().getResults().getFirst().getContentUnchanged()).isFalse();
         assertThat(response.getBody().getWarnings()).isEmpty();
 
         ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
@@ -349,8 +351,14 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         assertThat(response.getBody().getMessage()).contains("does-not-exist");
     }
 
+    /**
+     * Scenario: Missing current checkpoint is not treated as unchanged
+     * Given a mapped remote lacks blueprint-v{current}
+     * When update-data-product reaches that target
+     * Then the operation fails at open-target without classifying the remote as contentUnchanged
+     */
     @Test
-    void whenCurrentCheckpointMissingThenFailWithoutDefaultBranchCheckout(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+    void whenCurrentCheckpointMissingThenFailWithoutContentUnchanged(@TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
         writeSourceBlueprintFiles(sourceDir);
         BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0");
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
@@ -368,6 +376,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().getError()).isEqualTo("GitOperationFailed");
         assertThat(response.getBody().getMessage()).contains("blueprint-v1.0.0");
+        verify(mockGitOperation, never()).isWorkingTreeClean(any());
         verify(mockGitOperation, never()).createAndCheckoutBranch(any(), anyString());
         deleteCreatedBlueprint(context.blueprintUuid);
     }
@@ -377,14 +386,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         writeSourceBlueprintFiles(sourceDir);
         Files.writeString(targetDir.resolve("from-checkpoint.txt"), "baseline");
         BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0");
-        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
-        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
-        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
-        doAnswer(invocation -> {
-            Consumer<File> consumer = invocation.getArgument(2);
-            consumer.accept(targetDir.toFile());
-            return null;
-        }).when(mockGitOperation).readRepository(any(), any(), any());
+        GitOperation mockGitOperation = stubUpdateHappyPath(sourceDir, targetDir);
         doThrow(new GitOperationException("createAndCheckoutBranch", "branch update/blueprint-v2.0.0 already exists"))
                 .when(mockGitOperation).createAndCheckoutBranch(any(), anyString());
 
@@ -431,7 +433,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     void whenNextRepositoryKeysDifferThenReturn400WithoutGit() throws Exception {
         JsonNode currentManifest = manifestMonorepoNoComposition();
         ObjectNode nextManifest = (ObjectNode) currentManifest.deepCopy();
-        ArrayNode repositories = (ArrayNode) nextManifest.at("/instantiation/repositories");
+        ArrayNode repositories = (ArrayNode) nextManifest.get("targetRepositories");
         ObjectNode extra = repositories.addObject();
         extra.put("key", "extra");
         extra.put("description", "extra repository");
@@ -622,21 +624,20 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     }
 
     /**
-     * Scenario: Composition module with descriptorTemplatePath is rejected
-     * Given a next parent composing a published 1→1 module whose BlueprintRepo.descriptorTemplatePath is set
+     * Scenario: Composition child that is a catalog Blueprint is rejected
+     * Given a next parent composing a published Blueprint (root), not a MODULE
      * When update-data-product is called
-     * Then validation fails before Git with a hint that only the root blueprint may have descriptorTemplatePath
+     * Then validation fails before Git with a hint that only a Blueprint module may be composed
      */
     @Test
-    void whenCompositionModuleHasDescriptorTemplatePathThenReturn400() throws Exception {
-        ModuleBlueprint storage = createPublishedModule(
+    void whenCompositionChildIsCatalogBlueprintThenReturn400() throws Exception {
+        ModuleBlueprint composedBlueprint = createPublishedCatalogBlueprint(
                 "odm-blueprint-s3-lake",
                 "3.0.1",
-                manifestMonorepoNoComposition(),
-                buildBlueprintRepo());
+                manifestMonorepoNoComposition());
         ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
         ObjectNode manifest = (ObjectNode) manifestMonorepoWithComposition();
-        rewriteCompositionRefs(manifest, storage, serving);
+        rewriteCompositionRefs(manifest, composedBlueprint, serving);
 
         BlueprintPair context = createBlueprintWithVersions("full-stack-dp", "1.0.0", "2.0.0", manifest, manifest);
 
@@ -651,13 +652,43 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
                 ErrorRes.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody().getMessage()).contains("declares descriptorTemplatePath");
-        assertThat(response.getBody().getMessage()).contains("Only the parent (root) blueprint may have descriptorTemplatePath");
+        assertThat(response.getBody().getMessage()).contains("not a Blueprint module");
+        assertThat(response.getBody().getMessage()).contains("Only a Blueprint module may be composed");
         verify(mockGitOperation, never()).readRepository(any(), any(), any());
 
         deleteCreatedBlueprint(context.blueprintUuid);
-        deleteCreatedBlueprint(storage.blueprintUuid());
+        deleteCreatedBlueprint(composedBlueprint.blueprintUuid());
         deleteCreatedBlueprint(serving.blueprintUuid());
+    }
+
+    /*
+     * Feature: Composition and instantiate by blueprintType
+     * Scenario: Updating a data product from a Blueprint module alone returns 400
+     *   Given a published MODULE with two versions
+     *   When the client calls update-data-product with that MODULE as the parent
+     *   Then the response status is 400
+     *   And the message states that a Blueprint module cannot be used alone to update a data product
+     */
+    @Test
+    void whenUpdateDataProductFromBlueprintModuleThenReturn400() throws Exception {
+        ModuleBlueprint module = createPublishedModule("module-alone-update", "1.0.0");
+        publishModuleVersion(module, "2.0.0");
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        ResponseEntity<ErrorRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildUpdateRequest(module.blueprintName(), false, null), jsonHeaders()),
+                ErrorRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMessage()).contains("cannot be used alone to update a data product");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+
+        deleteCreatedBlueprint(module.blueprintUuid());
     }
 
     /**
@@ -742,8 +773,8 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     void whenRoutesOrCompositionSlotsDifferThenReturn400() throws Exception {
         JsonNode currentManifest = manifestMonorepoNoComposition();
         ObjectNode nextManifest = (ObjectNode) currentManifest.deepCopy();
-        ObjectNode rootTarget = (ObjectNode) nextManifest.at("/instantiation/root/targets/0");
-        rootTarget.put("path", "renamed/");
+        ObjectNode rootTarget = (ObjectNode) nextManifest.at("/instantiation/0/targets/0");
+        rootTarget.put("destinationPath", "renamed/");
 
         BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0", currentManifest, nextManifest);
 
@@ -935,6 +966,249 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         deleteCreatedBlueprint(context.blueprintUuid);
     }
 
+    /**
+     * Scenario: Polyrepo update succeeds when a secondary remote has no content delta
+     * Given a next parent with two or more repository keys
+     * And each mapped remote has checkpoint blueprint-v{current}
+     * And after clean and next render one secondary remote working tree is clean and the root remote has changes
+     * When update-data-product runs
+     * Then the request returns HTTP 200
+     * And the dirty remote gets an update branch, next checkpoint tag on a new commit, and optional PR when requested
+     * And the clean remote gets blueprint-v{next} on the existing checkpoint SHA with no commit, no branch push, and no PR
+     * And results include contentUnchanged true for the clean remote and a warning naming that target
+     */
+    @Test
+    void whenPolyrepoSecondaryRemoteUnchangedThenRetagOnlyAndContinueDirtyTargets(
+            @TempDir Path sourceDir,
+            @TempDir Path infraTarget,
+            @TempDir Path appTarget) throws Exception {
+        writePolyrepoSourceFiles(sourceDir);
+        writeSafeDescriptor(sourceDir);
+        JsonNode manifest = manifestPolyrepoNoComposition();
+        BlueprintPair context = createBlueprintWithVersions("split-stack", "1.0.0", "2.0.0", manifest, manifest);
+
+        GitOperation mockGitOperation = stubUpdateHappyPath(List.of(sourceDir), infraTarget, appTarget);
+        when(mockGitOperation.isWorkingTreeClean(infraTarget.toFile())).thenReturn(true);
+        when(mockGitOperation.isWorkingTreeClean(appTarget.toFile())).thenReturn(false);
+        when(mockGitOperation.getCheckedOutCommitSha(infraTarget.toFile())).thenReturn("unchanged-infra-sha");
+        when(mockGitOperation.getHeadSha(eq(appTarget.toFile()), anyString())).thenReturn("dirty-app-sha");
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        PullRequest pullRequest = new PullRequest();
+        pullRequest.setWebUrl("https://github.com/org/app-repo/pull/9");
+        when(mockGitProvider.createPullRequest(any(), any())).thenReturn(pullRequest);
+
+        ResponseEntity<UpdateDataProductResultRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildPolyrepoUpdateRequest(context.blueprintName, true), jsonHeaders()),
+                UpdateDataProductResultRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getResults()).hasSize(2);
+
+        UpdateDataProductTargetResultRes infraResult = response.getBody().getResults().stream()
+                .filter(r -> "infra-repo".equals(r.getTargetId()))
+                .findFirst()
+                .orElseThrow();
+        UpdateDataProductTargetResultRes appResult = response.getBody().getResults().stream()
+                .filter(r -> "app-repo".equals(r.getTargetId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(infraResult.getContentUnchanged()).isTrue();
+        assertThat(infraResult.getUpdateBranchName()).isNull();
+        assertThat(infraResult.getPullRequestWebUrl()).isNull();
+        assertThat(infraResult.getCheckpointTag()).isEqualTo("blueprint-v2.0.0");
+        assertThat(infraResult.getCommitHash()).isEqualTo("unchanged-infra-sha");
+
+        assertThat(appResult.getContentUnchanged()).isFalse();
+        assertThat(appResult.getUpdateBranchName()).isEqualTo("update/blueprint-v2.0.0");
+        assertThat(appResult.getCommitHash()).isEqualTo("dirty-app-sha");
+        assertThat(appResult.getPullRequestWebUrl()).isEqualTo("https://github.com/org/app-repo/pull/9");
+
+        assertThat(response.getBody().getWarnings()).anySatisfy(w -> assertThat(w).contains("infra-repo"));
+
+        verify(mockGitOperation, never()).commit(eq(infraTarget.toFile()), any());
+        verify(mockGitOperation, never()).createAndCheckoutBranch(eq(infraTarget.toFile()), anyString());
+        verify(mockGitOperation, never()).pushBranch(eq(infraTarget.toFile()), anyString());
+        verify(mockGitOperation).pushTag(eq(infraTarget.toFile()), eq("blueprint-v2.0.0"));
+        verify(mockGitOperation).createAndCheckoutBranch(eq(appTarget.toFile()), eq("update/blueprint-v2.0.0"));
+        verify(mockGitOperation).pushBranch(eq(appTarget.toFile()), eq("update/blueprint-v2.0.0"));
+        verify(mockGitOperation).pushTag(eq(appTarget.toFile()), eq("blueprint-v2.0.0"));
+        verify(mockGitProvider, times(1)).createPullRequest(any(), any());
+
+        deleteCreatedBlueprint(context.blueprintUuid);
+    }
+
+    /**
+     * Scenario: Single-target identical render is a successful no-op
+     * Given a monorepo no-composition target whose next pure render matches the current checkpoint
+     * When update-data-product runs
+     * Then HTTP 200 is returned with one result row contentUnchanged true
+     * And blueprint-v{next} is pushed on the existing SHA
+     * And commit, pushBranch, and openPullRequest are not invoked
+     */
+    @Test
+    void whenMonorepoNextRenderMatchesCheckpointThenRetagWithoutCommitOrBranch(
+            @TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0");
+        GitOperation mockGitOperation = stubUpdateHappyPath(sourceDir, targetDir);
+        when(mockGitOperation.isWorkingTreeClean(any())).thenReturn(true);
+        when(mockGitOperation.getCheckedOutCommitSha(any())).thenReturn("same-as-current-sha");
+
+        ResponseEntity<UpdateDataProductResultRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildUpdateRequest(context.blueprintName, true, "main"), jsonHeaders()),
+                UpdateDataProductResultRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getResults()).hasSize(1);
+        UpdateDataProductTargetResultRes result = response.getBody().getResults().getFirst();
+        assertThat(result.getContentUnchanged()).isTrue();
+        assertThat(result.getUpdateBranchName()).isNull();
+        assertThat(result.getPullRequestWebUrl()).isNull();
+        assertThat(result.getCheckpointTag()).isEqualTo("blueprint-v2.0.0");
+        assertThat(result.getCommitHash()).isEqualTo("same-as-current-sha");
+        assertThat(response.getBody().getWarnings()).anySatisfy(w ->
+                assertThat(w).contains(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY));
+
+        verify(mockGitOperation, never()).commit(any(), any());
+        verify(mockGitOperation, never()).createAndCheckoutBranch(any(), anyString());
+        verify(mockGitOperation, never()).pushBranch(any(), anyString());
+        verify(mockGitOperation).pushTag(eq(targetDir.toFile()), eq("blueprint-v2.0.0"));
+        verify(gitProviderFactoryMock.getMockGitProvider(), never()).createPullRequest(any(), any());
+
+        deleteCreatedBlueprint(context.blueprintUuid);
+    }
+
+    /**
+     * Scenario: All targets unchanged still succeed
+     * Given every mapped remote has an identical next render
+     * When update-data-product runs
+     * Then HTTP 200 returns a results row per key all contentUnchanged true
+     * And each remote receives only the next checkpoint tag push
+     */
+    @Test
+    void whenAllTargetsUnchangedThenReturn200WithContentUnchangedResults(
+            @TempDir Path sourceDir,
+            @TempDir Path infraTarget,
+            @TempDir Path appTarget) throws Exception {
+        writePolyrepoSourceFiles(sourceDir);
+        JsonNode manifest = manifestPolyrepoNoComposition();
+        BlueprintPair context = createBlueprintWithVersions("split-stack", "1.0.0", "2.0.0", manifest, manifest);
+
+        GitOperation mockGitOperation = stubUpdateHappyPath(List.of(sourceDir), infraTarget, appTarget);
+        when(mockGitOperation.isWorkingTreeClean(any())).thenReturn(true);
+        when(mockGitOperation.getCheckedOutCommitSha(any())).thenReturn("shared-unchanged-sha");
+
+        ResponseEntity<UpdateDataProductResultRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildPolyrepoUpdateRequest(context.blueprintName, true), jsonHeaders()),
+                UpdateDataProductResultRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getResults()).hasSize(2);
+        assertThat(response.getBody().getResults())
+                .allSatisfy(r -> {
+                    assertThat(r.getContentUnchanged()).isTrue();
+                    assertThat(r.getUpdateBranchName()).isNull();
+                    assertThat(r.getPullRequestWebUrl()).isNull();
+                    assertThat(r.getCheckpointTag()).isEqualTo("blueprint-v2.0.0");
+                    assertThat(r.getCommitHash()).isEqualTo("shared-unchanged-sha");
+                });
+        assertThat(response.getBody().getWarnings()).hasSize(2);
+
+        verify(mockGitOperation, never()).commit(any(), any());
+        verify(mockGitOperation, never()).createAndCheckoutBranch(any(), anyString());
+        verify(mockGitOperation, never()).pushBranch(any(), anyString());
+        verify(mockGitOperation, times(2)).pushTag(any(), eq("blueprint-v2.0.0"));
+        verify(gitProviderFactoryMock.getMockGitProvider(), never()).createPullRequest(any(), any());
+
+        deleteCreatedBlueprint(context.blueprintUuid);
+    }
+
+    /**
+     * Scenario: Dirty remote still commits and can open a pull request
+     * Given a target whose next render differs from the current checkpoint
+     * And createPullRequest is true
+     * When update-data-product runs
+     * Then the server creates the update branch, commits, tags the new SHA, pushes branch and tag, and opens a PR
+     */
+    @Test
+    void whenTargetHasContentDeltaThenCommitTagPushAndOptionalPullRequest(
+            @TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0");
+        GitOperation mockGitOperation = stubUpdateHappyPath(sourceDir, targetDir);
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        PullRequest pullRequest = new PullRequest();
+        pullRequest.setWebUrl("https://github.com/org/dp-repo/pull/55");
+        when(mockGitProvider.createPullRequest(any(), any())).thenReturn(pullRequest);
+
+        ResponseEntity<UpdateDataProductResultRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildUpdateRequest(context.blueprintName, true, "main"), jsonHeaders()),
+                UpdateDataProductResultRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        UpdateDataProductTargetResultRes result = response.getBody().getResults().getFirst();
+        assertThat(result.getContentUnchanged()).isFalse();
+        assertThat(result.getUpdateBranchName()).isEqualTo("update/blueprint-v2.0.0");
+        assertThat(result.getCommitHash()).isEqualTo("abc123def456");
+        assertThat(result.getPullRequestWebUrl()).isEqualTo("https://github.com/org/dp-repo/pull/55");
+
+        verify(mockGitOperation).createAndCheckoutBranch(eq(targetDir.toFile()), eq("update/blueprint-v2.0.0"));
+        verify(mockGitOperation).commit(eq(targetDir.toFile()), any());
+        verify(mockGitOperation).pushBranch(eq(targetDir.toFile()), eq("update/blueprint-v2.0.0"));
+        verify(mockGitOperation).pushTag(eq(targetDir.toFile()), eq("blueprint-v2.0.0"));
+        verify(mockGitProvider).createPullRequest(any(), any());
+
+        deleteCreatedBlueprint(context.blueprintUuid);
+    }
+
+    /**
+     * Scenario: Next checkpoint tag collision on an unchanged remote still fails
+     * Given a clean working tree after render
+     * And blueprint-v{next} already exists on that remote
+     * When the no-op path tries to create the next tag
+     * Then the request fails with a Git error and later targets are not processed
+     */
+    @Test
+    void whenUnchangedRemoteNextTagAlreadyExistsThenFailFast(
+            @TempDir Path sourceDir,
+            @TempDir Path infraTarget,
+            @TempDir Path appTarget) throws Exception {
+        writePolyrepoSourceFiles(sourceDir);
+        JsonNode manifest = manifestPolyrepoNoComposition();
+        BlueprintPair context = createBlueprintWithVersions("split-stack", "1.0.0", "2.0.0", manifest, manifest);
+
+        GitOperation mockGitOperation = stubUpdateHappyPath(List.of(sourceDir), infraTarget, appTarget);
+        when(mockGitOperation.isWorkingTreeClean(any())).thenReturn(true);
+        when(mockGitOperation.getCheckedOutCommitSha(any())).thenReturn("unchanged-sha");
+        doThrow(new GitOperationException("addTag", "tag blueprint-v2.0.0 already exists"))
+                .when(mockGitOperation).addTag(eq(infraTarget.toFile()), any(Tag.class));
+
+        ResponseEntity<ErrorRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildPolyrepoUpdateRequest(context.blueprintName, false), jsonHeaders()),
+                ErrorRes.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getError()).isEqualTo("GitOperationFailed");
+        assertThat(response.getBody().getMessage()).contains("blueprint-v2.0.0");
+        verify(mockGitOperation, never()).pushTag(any(), anyString());
+        verify(mockGitOperation, never()).createAndCheckoutBranch(eq(appTarget.toFile()), anyString());
+        verify(mockGitOperation, never()).addTag(eq(appTarget.toFile()), any(Tag.class));
+
+        deleteCreatedBlueprint(context.blueprintUuid);
+    }
+
     private GitOperation stubUpdateHappyPath(Path sourceDir, Path targetDir) {
         return stubUpdateHappyPath(List.of(sourceDir), targetDir);
     }
@@ -974,6 +1248,8 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         }).when(mockGitOperation).readRepository(any(), any(), any());
 
         when(mockGitOperation.createAndCheckoutBranch(any(), anyString())).thenReturn("abc123def456");
+        when(mockGitOperation.isWorkingTreeClean(any())).thenReturn(false);
+        when(mockGitOperation.getCheckedOutCommitSha(any())).thenReturn("abc123def456");
         doNothing().when(mockGitOperation).addAll(any());
         doAnswer(invocation -> {
             if (commitRef != null) {
@@ -1086,6 +1362,30 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         return createPublishedModule(blueprintName, version, manifestMonorepoNoComposition(), buildModuleBlueprintRepo());
     }
 
+    private ModuleBlueprint createPublishedCatalogBlueprint(
+            String blueprintName,
+            String version,
+            JsonNode manifestContent) throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String uniqueBlueprintName = blueprintName + "-" + suffix;
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(uniqueBlueprintName);
+        blueprint.setDisplayName(uniqueBlueprintName + "-display");
+        blueprint.setDescription(uniqueBlueprintName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(buildBlueprintRepo());
+
+        ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class);
+        assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createdBlueprint.getBody()).isNotNull();
+
+        createVersion(createdBlueprint.getBody(), uniqueBlueprintName, version, manifestContent);
+        return new ModuleBlueprint(createdBlueprint.getBody().getUuid(), uniqueBlueprintName, version);
+    }
+
     private ModuleBlueprint createPublishedModule(
             String blueprintName,
             String version,
@@ -1097,6 +1397,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(uniqueBlueprintName + "-display");
         blueprint.setDescription(uniqueBlueprintName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
         blueprint.setBlueprintRepo(blueprintRepo);
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
@@ -1222,6 +1523,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(uniqueBlueprintName + "-display");
         blueprint.setDescription(uniqueBlueprintName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
         blueprint.setBlueprintRepo(buildBlueprintRepo());
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(

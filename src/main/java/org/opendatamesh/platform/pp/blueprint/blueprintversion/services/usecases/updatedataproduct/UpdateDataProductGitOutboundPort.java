@@ -37,6 +37,18 @@ interface UpdateDataProductGitOutboundPort {
 
     void cleanWorkingTreePreservingGit(Path targetRepository);
 
+    /**
+     * Returns {@code true} when the working tree has staged or unstaged changes
+     * relative to the currently checked-out commit.
+     */
+    boolean hasWorkingTreeChanges(Path targetRepository);
+
+    /**
+     * Returns the SHA of the commit currently checked out (branch tip or detached
+     * HEAD after a checkpoint tag checkout). Does not require an update branch.
+     */
+    String resolveCheckedOutCommitSha(Path targetRepository);
+
     String commitAll(
             Path targetRepository,
             String branchName,

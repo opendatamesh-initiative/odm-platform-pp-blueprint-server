@@ -3,6 +3,7 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.constraints.Email;
+
 import org.opendatamesh.platform.git.model.Repository;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepoProviderType;
@@ -13,10 +14,10 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import org.opendatamesh.platform.pp.blueprint.exceptions.InternalException;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.Manifest;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestComposition;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestParameter;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRepository;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationRoot;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationEntry;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationType;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
 import org.opendatamesh.platform.pp.blueprint.manifest.parser.ManifestParserFactory;
@@ -51,22 +52,22 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
     private static final LocalValidatorFactoryBean SPRING_VALIDATOR = buildValidator();
 
     private static final String HINT_RELATIVE_PATH = "Use a relative path without '..' or a leading '/'.";
-    private static final String HINT_NON_EMPTY_ROOT_TARGETS =
-            "Add at least one instantiation.root.targets entry that references a declared repository key.";
+    private static final String HINT_NON_EMPTY_INSTANTIATION =
+            "Add at least one instantiation[] entry with type: root and non-empty targets.";
     private static final String HINT_UNUSED_KEY =
-            "Declare a route in instantiation.root.targets or composition[].targets that uses this key, or remove the unused key.";
-    private static final String HINT_UNKNOWN_REPOSITORY = "Use a key declared in instantiation.repositories[].key.";
-    private static final String HINT_DUPLICATE_DESTINATION = "Make destination (repository, path) pairs unique.";
+            "Declare a route in instantiation[].targets that uses this key, or remove the unused key.";
+    private static final String HINT_UNKNOWN_REPOSITORY = "Use a key declared in targetRepositories[].key.";
+    private static final String HINT_DUPLICATE_DESTINATION = "Make destination (repo, destinationPath) pairs unique.";
     private static final String HINT_NESTED_PATH =
             "Use sibling destinations that do not nest under each other on the same repository key.";
     private static final String HINT_SUPPLY_ALL_TARGETS =
-            "Supply targetRepositories for every instantiation.repositories[].key.";
+            "Supply targetRepositories for every targetRepositories[].key.";
     private static final String HINT_SEND_EACH_TARGET_ONCE = "Send each targetId once.";
-    private static final String HINT_MATCH_TARGET_ID = "Match targetId to instantiation.repositories[].key.";
+    private static final String HINT_MATCH_TARGET_ID = "Match targetId to targetRepositories[].key.";
     private static final String HINT_PROVIDER_MISMATCH =
             "Composition modules must use the same Git provider type and base URL as the parent.";
     private static final String HINT_ROOT_REPOSITORY =
-            "Set instantiation.root.repository to a declared instantiation.repositories[].key.";
+            "Set isRoot: true on exactly one targetRepositories[] entry.";
     private static final String HINT_STRUCTURE_CHANGE =
             "Update is content-only; keep repository keys, root key, routes, and composition slots stable between versions, or instantiate new remotes first.";
     private static final String HINT_RESOLVE_PARENT_PARAM =
@@ -126,25 +127,22 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
     public List<UpdateRoute> flattenRoutes(JsonNode nextContent) {
         Manifest manifest = parse(nextContent);
         List<UpdateRoute> routes = new ArrayList<>();
-        for (ManifestTarget target : manifest.getInstantiation().getRoot().getTargets()) {
-            routes.add(new UpdateRoute(
-                    UpdateDataProductFromBlueprintVersion.PARENT_SOURCE_ID,
-                    defaultPath(target.getSourcePath()),
-                    target.getRepository(),
-                    defaultPath(target.getPath()),
-                    true));
+        if (manifest.getInstantiation() == null) {
+            return routes;
         }
-        if (manifest.getComposition() != null) {
-            for (ManifestComposition composition : manifest.getComposition()) {
-                String alias = composition.getModule();
-                for (ManifestTarget target : composition.getTargets()) {
-                    routes.add(new UpdateRoute(
-                            alias,
-                            defaultPath(target.getSourcePath()),
-                            target.getRepository(),
-                            defaultPath(target.getPath()),
-                            false));
-                }
+        for (ManifestInstantiationEntry entry : manifest.getInstantiation()) {
+            if (entry == null || entry.getType() == null || entry.getTargets() == null) {
+                continue;
+            }
+            String sourceId = entry.getType() == ManifestInstantiationType.ROOT
+                    ? UpdateDataProductFromBlueprintVersion.PARENT_SOURCE_ID
+                    : entry.getModuleName();
+            for (ManifestTarget target : entry.getTargets()) {
+                routes.add(new UpdateRoute(
+                        sourceId,
+                        defaultPath(target.getSourcePath()),
+                        target.getRepo(),
+                        defaultPath(target.getDestinationPath())));
             }
         }
         return routes;
@@ -153,12 +151,18 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
     @Override
     public String retrieveRootTargetRepositoryKey(JsonNode nextContent) {
         Manifest manifest = parse(nextContent);
-        ManifestInstantiationRoot root = manifest.getInstantiation().getRoot();
-        if (root == null || !StringUtils.hasText(root.getRepository())) {
+        if (manifest.getTargetRepositories() == null) {
             throw new InternalException(
-                    "Cannot designate root key: instantiation.root.repository is missing after validation");
+                    "Cannot designate root key: targetRepositories is missing after validation");
         }
-        return root.getRepository().trim();
+        for (ManifestTargetRepository repository : manifest.getTargetRepositories()) {
+            if (repository != null && Boolean.TRUE.equals(repository.getIsRoot())
+                    && StringUtils.hasText(repository.getKey())) {
+                return repository.getKey().trim();
+            }
+        }
+        throw new InternalException(
+                "Cannot designate root key: no targetRepositories entry has isRoot: true after validation");
     }
 
     @Override
@@ -397,40 +401,30 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
     }
 
     private void collectNextStructuralIssues(Manifest manifest, List<UpdateValidationIssue> issues) {
-        ManifestInstantiation instantiation = manifest.getInstantiation();
-        if (instantiation == null) {
-            issues.add(new UpdateValidationIssue(
-                    "instantiation",
-                    "Manifest instantiation is required",
-                    "Declare instantiation.repositories and instantiation.root.targets."));
-            validateCompositionStructure(
-                    manifest, new LinkedHashSet<>(), new LinkedHashSet<>(), new ArrayList<>(), issues);
-            return;
-        }
-
         Set<String> declaredKeys = new LinkedHashSet<>();
-        List<ManifestInstantiationRepository> repositories = instantiation.getRepositories();
-        if (repositories == null || repositories.isEmpty()) {
+        List<ManifestTargetRepository> targetRepositories = manifest.getTargetRepositories();
+        int rootTargetRepositoryCount = 0;
+        if (targetRepositories == null || targetRepositories.isEmpty()) {
             issues.add(new UpdateValidationIssue(
-                    "instantiation.repositories",
-                    "Instantiation repositories are required",
-                    "Declare at least one instantiation.repositories[].key."));
+                    "targetRepositories",
+                    "Manifest targetRepositories is required",
+                    "Declare at least one targetRepositories[].key."));
         } else {
             Set<String> seenKeys = new HashSet<>();
-            for (int i = 0; i < repositories.size(); i++) {
-                ManifestInstantiationRepository repository = repositories.get(i);
-                String fieldPath = "instantiation.repositories[" + i + "]";
+            for (int i = 0; i < targetRepositories.size(); i++) {
+                ManifestTargetRepository repository = targetRepositories.get(i);
+                String fieldPath = "targetRepositories[" + i + "]";
                 if (repository == null) {
                     issues.add(new UpdateValidationIssue(
                             fieldPath,
-                            "Instantiation repository entry is required",
+                            "Target repository entry is required",
                             "Provide a repository object with a unique key."));
                     continue;
                 }
                 if (!StringUtils.hasText(repository.getKey())) {
                     issues.add(new UpdateValidationIssue(
                             fieldPath + ".key",
-                            "Instantiation repository key is required",
+                            "Target repository key is required",
                             "Set a non-empty unique key for this repository."));
                     continue;
                 }
@@ -438,63 +432,124 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
                 if (!seenKeys.add(key)) {
                     issues.add(new UpdateValidationIssue(
                             fieldPath + ".key",
-                            "Instantiation repository keys must be unique",
-                            "Use a distinct key for each instantiation.repositories entry."));
+                            "Target repository keys must be unique",
+                            "Use a distinct key for each targetRepositories entry."));
                 } else {
                     declaredKeys.add(key);
                 }
+                if (Boolean.TRUE.equals(repository.getIsRoot())) {
+                    rootTargetRepositoryCount++;
+                }
             }
         }
+
+        if (rootTargetRepositoryCount != 1) {
+            issues.add(new UpdateValidationIssue(
+                    "targetRepositories",
+                    "Exactly one targetRepositories[] entry must set isRoot: true",
+                    HINT_ROOT_REPOSITORY));
+        }
+
+        Set<String> compositionModules = new LinkedHashSet<>();
+        validateCompositionStructure(manifest, compositionModules, issues);
 
         Set<String> usedKeys = new LinkedHashSet<>();
         List<RouteDestination> destinations = new ArrayList<>();
+        Set<String> instantiatedModules = new LinkedHashSet<>();
+        int rootInstantiationEntryCount = 0;
 
-        ManifestInstantiationRoot root = instantiation.getRoot();
-        if (root == null) {
+        List<ManifestInstantiationEntry> instantiation = manifest.getInstantiation();
+        if (instantiation == null || instantiation.isEmpty()) {
             issues.add(new UpdateValidationIssue(
-                    "instantiation.root",
-                    "Instantiation root is required",
-                    HINT_NON_EMPTY_ROOT_TARGETS));
+                    "instantiation",
+                    "Manifest instantiation is required",
+                    HINT_NON_EMPTY_INSTANTIATION));
         } else {
-            if (!StringUtils.hasText(root.getRepository())) {
-                issues.add(new UpdateValidationIssue(
-                        "instantiation.root.repository",
-                        "instantiation.root.repository is required",
-                        HINT_ROOT_REPOSITORY));
-            } else {
-                String rootKey = root.getRepository().trim();
-                if (!declaredKeys.contains(rootKey)) {
+            for (int i = 0; i < instantiation.size(); i++) {
+                ManifestInstantiationEntry entry = instantiation.get(i);
+                String fieldPath = "instantiation[" + i + "]";
+                if (entry == null) {
                     issues.add(new UpdateValidationIssue(
-                            "instantiation.root.repository",
-                            "instantiation.root.repository must match an instantiation.repositories[].key",
-                            HINT_ROOT_REPOSITORY));
+                            fieldPath,
+                            "Instantiation entry is required",
+                            "Provide an instantiation object with type and targets."));
+                    continue;
                 }
-            }
+                if (entry.getType() == null) {
+                    issues.add(new UpdateValidationIssue(
+                            fieldPath + ".type",
+                            "Instantiation type is required",
+                            "Set type to 'root' or 'module'."));
+                    continue;
+                }
+                if (entry.getType() == ManifestInstantiationType.ROOT) {
+                    rootInstantiationEntryCount++;
+                    if (StringUtils.hasText(entry.getModuleName())) {
+                        issues.add(new UpdateValidationIssue(
+                                fieldPath + ".moduleName",
+                                "moduleName must be omitted when type is root",
+                                "Remove moduleName from root instantiation entries."));
+                    }
+                } else if (entry.getType() == ManifestInstantiationType.MODULE) {
+                    if (!StringUtils.hasText(entry.getModuleName())) {
+                        issues.add(new UpdateValidationIssue(
+                                fieldPath + ".moduleName",
+                                "moduleName is required when type is module",
+                                "Set moduleName to a composition[].module value."));
+                    } else {
+                        instantiatedModules.add(entry.getModuleName().trim());
+                    }
+                }
 
-            List<ManifestTarget> rootTargets = root.getTargets();
-            if (rootTargets == null || rootTargets.isEmpty()) {
-                issues.add(new UpdateValidationIssue(
-                        "instantiation.root.targets",
-                        "Instantiation root.targets must be non-empty",
-                        HINT_NON_EMPTY_ROOT_TARGETS));
-            } else {
-                validateTargetsList(
-                        rootTargets,
-                        "instantiation.root.targets",
-                        declaredKeys,
-                        usedKeys,
-                        destinations,
-                        issues);
+                List<ManifestTarget> targets = entry.getTargets();
+                if (targets == null || targets.isEmpty()) {
+                    issues.add(new UpdateValidationIssue(
+                            fieldPath + ".targets",
+                            "Instantiation targets are required",
+                            HINT_NON_EMPTY_INSTANTIATION));
+                } else {
+                    validateTargetsList(
+                            targets,
+                            fieldPath + ".targets",
+                            fieldPath,
+                            declaredKeys,
+                            usedKeys,
+                            destinations,
+                            issues);
+                }
             }
         }
 
-        validateCompositionStructure(manifest, declaredKeys, usedKeys, destinations, issues);
+        if (rootInstantiationEntryCount != 1) {
+            issues.add(new UpdateValidationIssue(
+                    "instantiation",
+                    "Exactly one instantiation[] entry must have type: root",
+                    HINT_NON_EMPTY_INSTANTIATION));
+        }
+
+        for (String module : compositionModules) {
+            if (!instantiatedModules.contains(module)) {
+                issues.add(new UpdateValidationIssue(
+                        "composition",
+                        "Composition module '%s' has no matching instantiation[] entry with type: module"
+                                .formatted(module),
+                        "Add an instantiation entry with type: module and moduleName: " + module + "."));
+            }
+        }
+        for (String module : instantiatedModules) {
+            if (!compositionModules.contains(module)) {
+                issues.add(new UpdateValidationIssue(
+                        "instantiation",
+                        "Instantiation moduleName '%s' does not match any composition[].module".formatted(module),
+                        "Declare the module in composition[] or remove the instantiation entry."));
+            }
+        }
 
         for (String key : declaredKeys) {
             if (!usedKeys.contains(key)) {
                 issues.add(new UpdateValidationIssue(
-                        "instantiation.repositories[key=%s]".formatted(key),
-                        "Instantiation repository key '%s' is unused".formatted(key),
+                        "targetRepositories[key=%s]".formatted(key),
+                        "Target repository key '%s' is unused".formatted(key),
                         HINT_UNUSED_KEY));
             }
         }
@@ -510,7 +565,7 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         Set<String> nextKeys = extractRepositoryKeys(nextManifest);
         if (!currentKeys.equals(nextKeys)) {
             issues.add(new UpdateValidationIssue(
-                    "instantiation.repositories",
+                    "targetRepositories",
                     "Repository keys differ between current and next versions (current=%s, next=%s)"
                             .formatted(currentKeys, nextKeys),
                     HINT_STRUCTURE_CHANGE));
@@ -520,14 +575,14 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         String nextRootKey = extractRootRepositoryKey(nextManifest);
         if (currentRootKey != null && nextRootKey != null && !currentRootKey.equals(nextRootKey)) {
             issues.add(new UpdateValidationIssue(
-                    "instantiation.root.repository",
-                    "instantiation.root.repository differs between current ('%s') and next ('%s')"
+                    "targetRepositories",
+                    "Root target repository differs between current ('%s') and next ('%s')"
                             .formatted(currentRootKey, nextRootKey),
                     HINT_STRUCTURE_CHANGE));
         }
 
-        InstantiationScenario currentScenario = safeResolveScenario(currentManifest);
-        InstantiationScenario nextScenario = safeResolveScenario(nextManifest);
+        InstantiationScenario currentScenario = resolveScenario(currentManifest);
+        InstantiationScenario nextScenario = resolveScenario(nextManifest);
         if (currentScenario != null && nextScenario != null && currentScenario != nextScenario) {
             issues.add(new UpdateValidationIssue(
                     "topology",
@@ -540,7 +595,7 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         List<TargetRouteIdentity> nextRootTargets = extractRootTargetIdentities(nextManifest);
         if (!currentRootTargets.equals(nextRootTargets)) {
             issues.add(new UpdateValidationIssue(
-                    "instantiation.root.targets",
+                    "instantiation",
                     "Root target routes differ between current and next versions",
                     HINT_STRUCTURE_CHANGE));
         }
@@ -589,8 +644,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
             }
             if (!currentSlot.targets().equals(nextSlot.targets())) {
                 issues.add(new UpdateValidationIssue(
-                        "composition[module=%s].targets".formatted(alias),
-                        "Composition targets for alias '%s' differ between current and next versions"
+                        "instantiation[moduleName=%s]".formatted(alias),
+                        "Instantiation targets for alias '%s' differ between current and next versions"
                                 .formatted(alias),
                         HINT_STRUCTURE_CHANGE));
             }
@@ -609,8 +664,9 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
             String alias = composition.getModule().trim();
             String blueprintName = composition.getBlueprintName() == null ? null : composition.getBlueprintName().trim();
             List<TargetRouteIdentity> targets = new ArrayList<>();
-            if (composition.getTargets() != null) {
-                for (ManifestTarget target : composition.getTargets()) {
+            ManifestInstantiationEntry moduleEntry = findModuleInstantiation(manifest, alias);
+            if (moduleEntry != null && moduleEntry.getTargets() != null) {
+                for (ManifestTarget target : moduleEntry.getTargets()) {
                     if (target == null) {
                         continue;
                     }
@@ -624,15 +680,11 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
 
     private List<TargetRouteIdentity> extractRootTargetIdentities(Manifest manifest) {
         List<TargetRouteIdentity> identities = new ArrayList<>();
-        ManifestInstantiation instantiation = manifest.getInstantiation();
-        if (instantiation == null || instantiation.getRoot() == null) {
+        ManifestInstantiationEntry rootEntry = findRootInstantiation(manifest);
+        if (rootEntry == null || rootEntry.getTargets() == null) {
             return identities;
         }
-        List<ManifestTarget> rootTargets = instantiation.getRoot().getTargets();
-        if (rootTargets == null) {
-            return identities;
-        }
-        for (ManifestTarget target : rootTargets) {
+        for (ManifestTarget target : rootEntry.getTargets()) {
             if (target == null) {
                 continue;
             }
@@ -641,21 +693,46 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         return identities;
     }
 
+    private ManifestInstantiationEntry findRootInstantiation(Manifest manifest) {
+        if (manifest.getInstantiation() == null) {
+            return null;
+        }
+        for (ManifestInstantiationEntry entry : manifest.getInstantiation()) {
+            if (entry != null && entry.getType() == ManifestInstantiationType.ROOT) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private ManifestInstantiationEntry findModuleInstantiation(Manifest manifest, String moduleName) {
+        if (manifest.getInstantiation() == null || !StringUtils.hasText(moduleName)) {
+            return null;
+        }
+        for (ManifestInstantiationEntry entry : manifest.getInstantiation()) {
+            if (entry != null
+                    && entry.getType() == ManifestInstantiationType.MODULE
+                    && moduleName.equals(entry.getModuleName())) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
     private TargetRouteIdentity toTargetRouteIdentity(ManifestTarget target) {
-        String repository = StringUtils.hasText(target.getRepository()) ? target.getRepository().trim() : "";
+        String repository = StringUtils.hasText(target.getRepo()) ? target.getRepo().trim() : "";
         return new TargetRouteIdentity(
                 defaultPath(target.getSourcePath()),
                 repository,
-                normalizeDestinationPath(target.getPath()));
+                normalizeDestinationPath(target.getDestinationPath()));
     }
 
     private Set<String> extractRepositoryKeys(Manifest manifest) {
         Set<String> keys = new LinkedHashSet<>();
-        ManifestInstantiation instantiation = manifest.getInstantiation();
-        if (instantiation == null || instantiation.getRepositories() == null) {
+        if (manifest.getTargetRepositories() == null) {
             return keys;
         }
-        for (ManifestInstantiationRepository repository : instantiation.getRepositories()) {
+        for (ManifestTargetRepository repository : manifest.getTargetRepositories()) {
             if (repository != null && StringUtils.hasText(repository.getKey())) {
                 keys.add(repository.getKey().trim());
             }
@@ -664,27 +741,25 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
     }
 
     private String extractRootRepositoryKey(Manifest manifest) {
-        ManifestInstantiation instantiation = manifest.getInstantiation();
-        if (instantiation == null || instantiation.getRoot() == null) {
+        if (manifest.getTargetRepositories() == null) {
             return null;
         }
-        String rootKey = instantiation.getRoot().getRepository();
-        return StringUtils.hasText(rootKey) ? rootKey.trim() : null;
+        for (ManifestTargetRepository repository : manifest.getTargetRepositories()) {
+            if (repository != null && Boolean.TRUE.equals(repository.getIsRoot())
+                    && StringUtils.hasText(repository.getKey())) {
+                return repository.getKey().trim();
+            }
+        }
+        return null;
     }
 
-    private InstantiationScenario safeResolveScenario(Manifest manifest) {
-        try {
-            return InstantiationScenarioResolver.resolve(manifest);
-        } catch (RuntimeException e) {
-            return null;
-        }
+    private InstantiationScenario resolveScenario(Manifest manifest) {
+        return InstantiationScenarioResolver.resolve(manifest);
     }
 
     private void validateCompositionStructure(
             Manifest manifest,
-            Set<String> declaredKeys,
-            Set<String> usedKeys,
-            List<RouteDestination> destinations,
+            Set<String> compositionModules,
             List<UpdateValidationIssue> issues) {
         List<ManifestComposition> compositions = manifest.getComposition();
         if (compositions == null || compositions.isEmpty()) {
@@ -699,9 +774,7 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
                     "composition[" + i + "]",
                     seenModules,
                     parentParameterKeys,
-                    declaredKeys,
-                    usedKeys,
-                    destinations,
+                    compositionModules,
                     issues);
         }
     }
@@ -711,32 +784,30 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
             String fieldPath,
             Set<String> seenModules,
             Set<String> parentParameterKeys,
-            Set<String> declaredKeys,
-            Set<String> usedKeys,
-            List<RouteDestination> destinations,
+            Set<String> compositionModules,
             List<UpdateValidationIssue> issues) {
         if (composition == null) {
             issues.add(new UpdateValidationIssue(
                     fieldPath,
                     "Composition entry is required",
-                    "Provide a composition object with module identity and targets."));
+                    "Provide a composition object with module identity."));
             return;
         }
 
-        validateCompositionModule(composition, fieldPath, seenModules, issues);
+        validateCompositionModule(composition, fieldPath, seenModules, compositionModules, issues);
         validateCompositionBlueprintIdentity(composition, fieldPath, issues);
         validateParameterMapping(
                 composition.getParameterMapping(),
                 fieldPath + ".parameterMapping",
                 parentParameterKeys,
                 issues);
-        validateCompositionTargets(composition, fieldPath, declaredKeys, usedKeys, destinations, issues);
     }
 
     private void validateCompositionModule(
             ManifestComposition composition,
             String fieldPath,
             Set<String> seenModules,
+            Set<String> compositionModules,
             List<UpdateValidationIssue> issues) {
         if (!StringUtils.hasText(composition.getModule())) {
             issues.add(new UpdateValidationIssue(
@@ -751,6 +822,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
                     fieldPath + ".module",
                     "Composition module values must be unique",
                     "Use a distinct alias for each composition[].module."));
+        } else {
+            compositionModules.add(module);
         }
     }
 
@@ -772,33 +845,10 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         }
     }
 
-    private void validateCompositionTargets(
-            ManifestComposition composition,
-            String fieldPath,
-            Set<String> declaredKeys,
-            Set<String> usedKeys,
-            List<RouteDestination> destinations,
-            List<UpdateValidationIssue> issues) {
-        List<ManifestTarget> targets = composition.getTargets();
-        if (targets == null || targets.isEmpty()) {
-            issues.add(new UpdateValidationIssue(
-                    fieldPath + ".targets",
-                    "Composition targets are required",
-                    "Add at least one composition[].targets entry that references a declared repository key."));
-            return;
-        }
-        validateTargetsList(
-                targets,
-                fieldPath + ".targets",
-                declaredKeys,
-                usedKeys,
-                destinations,
-                issues);
-    }
-
     private void validateTargetsList(
             List<ManifestTarget> targets,
             String fieldPath,
+            String instantiationEntryPath,
             Set<String> declaredKeys,
             Set<String> usedKeys,
             List<RouteDestination> destinations,
@@ -810,35 +860,36 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
                 issues.add(new UpdateValidationIssue(
                         targetPath,
                         "Target entry is required",
-                        "Provide a target with repository and path."));
+                        "Provide a target with repo and destinationPath."));
                 continue;
             }
 
             validateRelativePath(target.getSourcePath(), targetPath + ".sourcePath", issues);
-            validateRelativePath(target.getPath(), targetPath + ".path", issues);
+            validateRelativePath(target.getDestinationPath(), targetPath + ".destinationPath", issues);
 
-            if (!StringUtils.hasText(target.getRepository())) {
+            if (!StringUtils.hasText(target.getRepo())) {
                 issues.add(new UpdateValidationIssue(
-                        targetPath + ".repository",
-                        "Target repository is required",
+                        targetPath + ".repo",
+                        "Target repo is required",
                         HINT_UNKNOWN_REPOSITORY));
                 continue;
             }
 
-            String repositoryKey = target.getRepository().trim();
+            String repositoryKey = target.getRepo().trim();
             usedKeys.add(repositoryKey);
             if (!declaredKeys.isEmpty() && !declaredKeys.contains(repositoryKey)) {
                 issues.add(new UpdateValidationIssue(
-                        targetPath + ".repository",
-                        "Target repository '%s' is not a declared instantiation.repositories[].key"
+                        targetPath + ".repo",
+                        "Target repo '%s' is not a declared targetRepositories[].key"
                                 .formatted(repositoryKey),
                         HINT_UNKNOWN_REPOSITORY));
             }
 
             destinations.add(new RouteDestination(
                     repositoryKey,
-                    normalizeDestinationPath(target.getPath()),
-                    targetPath));
+                    normalizeDestinationPath(target.getDestinationPath()),
+                    targetPath,
+                    instantiationEntryPath));
         }
     }
 
@@ -868,11 +919,14 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
                 if (!left.repositoryKey().equals(right.repositoryKey())) {
                     continue;
                 }
+                if (!left.instantiationEntryPath().equals(right.instantiationEntryPath())) {
+                    continue;
+                }
                 if (left.normalizedPath().equals(right.normalizedPath())) {
                     String exactKey = left.repositoryKey() + "|" + left.normalizedPath();
                     if (reportedExact.add(exactKey)) {
                         issues.add(new UpdateValidationIssue(
-                                left.fieldPath() + ".path",
+                                left.fieldPath() + ".destinationPath",
                                 "Duplicate destination (repository='%s', path='%s')"
                                         .formatted(left.repositoryKey(), left.normalizedPath()),
                                 HINT_DUPLICATE_DESTINATION));
@@ -884,7 +938,7 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
                             + orderedPair(left.normalizedPath(), right.normalizedPath());
                     if (reportedNested.add(nestedKey)) {
                         issues.add(new UpdateValidationIssue(
-                                left.fieldPath() + ".path",
+                                left.fieldPath() + ".destinationPath",
                                 "Nested path-prefix destinations on repository key '%s' ('%s' and '%s')"
                                         .formatted(
                                                 left.repositoryKey(),
@@ -975,9 +1029,8 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
             List<UpdateDataProductTargetRepositoryDto> targetRepositories,
             List<UpdateValidationIssue> issues) {
         Set<String> declaredKeys = new LinkedHashSet<>();
-        ManifestInstantiation instantiation = manifest.getInstantiation();
-        if (instantiation != null && instantiation.getRepositories() != null) {
-            for (ManifestInstantiationRepository repository : instantiation.getRepositories()) {
+        if (manifest.getTargetRepositories() != null) {
+            for (ManifestTargetRepository repository : manifest.getTargetRepositories()) {
                 if (repository != null && StringUtils.hasText(repository.getKey())) {
                     declaredKeys.add(repository.getKey().trim());
                 }
@@ -1313,7 +1366,11 @@ class UpdateDataProductOdmBlueprintManifestOutboundPortImpl implements UpdateDat
         return left.compareTo(right) <= 0 ? left + "<>" + right : right + "<>" + left;
     }
 
-    private record RouteDestination(String repositoryKey, String normalizedPath, String fieldPath) {
+    private record RouteDestination(
+            String repositoryKey,
+            String normalizedPath,
+            String fieldPath,
+            String instantiationEntryPath) {
     }
 
     private record TargetRouteIdentity(String sourcePath, String repository, String path) {

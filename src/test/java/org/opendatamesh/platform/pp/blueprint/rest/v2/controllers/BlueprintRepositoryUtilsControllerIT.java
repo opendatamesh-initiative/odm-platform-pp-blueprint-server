@@ -38,6 +38,7 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.repository.InitRepositoryCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.repository.RepositoryContentFileRes;
@@ -129,7 +130,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenInitRepositoryContentWithValidPayloadThenReturnsOk-bp");
         blueprint.setDisplayName("whenInitRepositoryContentWithValidPayloadThenReturnsOk-display");
         blueprint.setDescription("whenInitRepositoryContentWithValidPayloadThenReturnsOk-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -228,7 +230,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenInitRepositoryContentWithEmptyResourcesThenReturnsBadRequest-bp");
         blueprint.setDisplayName("whenInitRepositoryContentWithEmptyResourcesThenReturnsBadRequest-display");
         blueprint.setDescription("whenInitRepositoryContentWithEmptyResourcesThenReturnsBadRequest-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -308,7 +311,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenRemoteRepositoryNotFoundThenReturnsBadRequest-bp");
         blueprint.setDisplayName("whenRemoteRepositoryNotFoundThenReturnsBadRequest-display");
         blueprint.setDescription("whenRemoteRepositoryNotFoundThenReturnsBadRequest-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -368,7 +372,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenGitReadRepositoryFailsThenReturnsBadRequest-bp");
         blueprint.setDisplayName("whenGitReadRepositoryFailsThenReturnsBadRequest-display");
         blueprint.setDescription("whenGitReadRepositoryFailsThenReturnsBadRequest-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -429,7 +434,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentWithBranchAndPathsThenReturnsOk-bp");
         blueprint.setDisplayName("whenReadRepositoryContentWithBranchAndPathsThenReturnsOk-display");
         blueprint.setDescription("whenReadRepositoryContentWithBranchAndPathsThenReturnsOk-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -492,7 +498,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentWithTagThenReturnsOk-bp");
         blueprint.setDisplayName("whenReadRepositoryContentWithTagThenReturnsOk-display");
         blueprint.setDescription("whenReadRepositoryContentWithTagThenReturnsOk-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -544,7 +551,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentWithCommitThenReturnsOk-bp");
         blueprint.setDisplayName("whenReadRepositoryContentWithCommitThenReturnsOk-display");
         blueprint.setDescription("whenReadRepositoryContentWithCommitThenReturnsOk-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -596,7 +604,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentWithoutPathParamsThenUsesDefaultTriple-bp");
         blueprint.setDisplayName("whenReadRepositoryContentWithoutPathParamsThenUsesDefaultTriple-display");
         blueprint.setDescription("whenReadRepositoryContentWithoutPathParamsThenUsesDefaultTriple-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -673,7 +682,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentWithBranchAndTagThenReturnsBadRequest-bp");
         blueprint.setDisplayName("whenReadRepositoryContentWithBranchAndTagThenReturnsBadRequest-display");
         blueprint.setDescription("whenReadRepositoryContentWithBranchAndTagThenReturnsBadRequest-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -722,7 +732,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentWithPathTraversalThenReturnsBadRequest-bp");
         blueprint.setDisplayName("whenReadRepositoryContentWithPathTraversalThenReturnsBadRequest-display");
         blueprint.setDescription("whenReadRepositoryContentWithPathTraversalThenReturnsBadRequest-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -767,7 +778,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentGitReadFailsThenReturnsBadRequest-bp");
         blueprint.setDisplayName("whenReadRepositoryContentGitReadFailsThenReturnsBadRequest-display");
         blueprint.setDescription("whenReadRepositoryContentGitReadFailsThenReturnsBadRequest-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -820,7 +832,8 @@ public class BlueprintRepositoryUtilsControllerIT extends BlueprintApplicationIT
         blueprint.setName("whenReadRepositoryContentFileMissingThenReturnsNotFound-bp");
         blueprint.setDisplayName("whenReadRepositoryContentFileMissingThenReturnsNotFound-display");
         blueprint.setDescription("whenReadRepositoryContentFileMissingThenReturnsNotFound-description");
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");

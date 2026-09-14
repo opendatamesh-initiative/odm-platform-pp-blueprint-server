@@ -3,15 +3,16 @@ specVersion: 1.0.0
 name: nested-destinations
 version: 1.0.0
 
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: main
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main-repository
+        destinationPath: ./
       - sourcePath: docs/
-        repository: main
-        path: data-plane/storage
+        repo: main-repository
+        destinationPath: data-plane/storage

@@ -3,15 +3,16 @@ specVersion: 1.0.0
 name: exact-overlap
 version: 1.0.0
 
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: main
+  - type: root
     targets:
       - sourcePath: ./a
-        repository: main
-        path: shared/
+        repo: main-repository
+        destinationPath: shared/
       - sourcePath: ./b
-        repository: main
-        path: shared/
+        repo: main-repository
+        destinationPath: shared/

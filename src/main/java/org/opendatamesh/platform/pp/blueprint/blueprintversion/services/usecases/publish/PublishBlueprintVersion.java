@@ -2,6 +2,7 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersionShort;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
@@ -54,6 +55,7 @@ class PublishBlueprintVersion implements UseCase {
             JsonNode filled = manifestOutboundPort.autofillManifest(blueprintVersion.getSpec(), blueprintVersion.getSpecVersion(), blueprintVersion.getContent(), blueprint.getName());
             blueprintVersion.setContent(filled);
             manifestOutboundPort.validateManifest(blueprintVersion.getSpec(), blueprintVersion.getSpecVersion(), blueprintVersion.getContent());
+            validateModulePublishTopology(blueprint, blueprintVersion);
             validateCompositionModules(blueprintVersion);
 
             String versionNumber = manifestOutboundPort.extractVersionNumber(blueprintVersion.getContent());
@@ -79,12 +81,32 @@ class PublishBlueprintVersion implements UseCase {
         }
     }
 
+    private void validateModulePublishTopology(Blueprint blueprint, BlueprintVersion blueprintVersion) {
+        if (blueprint.getBlueprintType() != BlueprintType.MODULE) {
+            return;
+        }
+        if (!manifestOutboundPort.isMonorepoNoComposition(blueprintVersion.getContent())) {
+            throw new BadRequestException(
+                    "A Blueprint module must be a monorepo with no composition. "
+                            + "Hint: Composition modules must be monorepo with no composition "
+                            + "(one repository key, empty composition).");
+        }
+    }
+
     private void validateCompositionModules(BlueprintVersion parentVersion) {
         List<String> issues = new ArrayList<>();
         for (PublishCompositionIdentity composition : manifestOutboundPort.listCompositionIdentities(parentVersion.getContent())) {
             BlueprintVersion moduleVersion = blueprintVersionPersistencePort.findModuleBlueprintVersion(composition.blueprintName(), composition.blueprintVersion());
-            //For now the only supported modules are the ones from monorepo no-composition blueprints
-            if (!manifestOutboundPort.isMonorepoNoComposition(moduleVersion.getContent())) {
+            if (!isBlueprintModule(moduleVersion)) {
+                issues.add(formatModuleIssue(
+                        composition,
+                        "Composition entry '%s' (%s@%s) references a Blueprint (root), not a Blueprint module"
+                                .formatted(
+                                        composition.moduleAlias(),
+                                        composition.blueprintName(),
+                                        composition.blueprintVersion()),
+                        "Only a Blueprint module may be composed; register and publish the child as blueprintType MODULE."));
+            } else if (!manifestOutboundPort.isMonorepoNoComposition(moduleVersion.getContent())) {
                 issues.add(formatModuleIssue(
                         composition,
                         "Composition module '%s' (%s@%s) is not a monorepo with no composition"
@@ -95,7 +117,7 @@ class PublishBlueprintVersion implements UseCase {
                         "Composition modules must be monorepo with no composition "
                                 + "(one repository key, empty composition)."));
             }
-            if (hasDescriptorTemplatePath(moduleVersion)) {
+            if (isBlueprintModule(moduleVersion) && hasDescriptorTemplatePath(moduleVersion)) {
                 issues.add(formatModuleIssue(
                         composition,
                         "Composition module '%s' (%s@%s) declares descriptorTemplatePath"
@@ -156,5 +178,11 @@ class PublishBlueprintVersion implements UseCase {
             return false;
         }
         return StringUtils.hasText(version.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath());
+    }
+
+    private boolean isBlueprintModule(BlueprintVersion version) {
+        return version != null
+                && version.getBlueprint() != null
+                && version.getBlueprint().getBlueprintType() == BlueprintType.MODULE;
     }
 }

@@ -3,9 +3,10 @@ specVersion: 1.0.0
 name: empty-root-targets
 version: 1.0.0
 
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: main
+  - type: root
     targets: []

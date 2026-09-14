@@ -2,6 +2,7 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.publish.PublishBlueprintVersionCommandRes;
@@ -74,7 +76,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -140,7 +159,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -194,7 +230,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -254,7 +307,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -314,7 +384,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -373,7 +460,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -462,7 +566,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -538,8 +659,8 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     public void whenPublishEmptyRootTargetsThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
                 "/manifest/invalid/empty-root-targets.yaml",
-                "root.targets",
-                "non-empty");
+                "targets",
+                "required");
     }
 
     /*
@@ -557,8 +678,8 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     public void whenPublishMissingRootRepositoryThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
                 "/manifest/invalid/missing-root-repository.yaml",
-                "root.repository",
-                "required");
+                "targetRepositories",
+                "isRoot");
     }
 
     /*
@@ -572,8 +693,8 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
     public void whenPublishUnknownRootRepositoryThenReturn400WithHint() throws IOException {
         assertPublishInvalidManifestReturns400WithHint(
                 "/manifest/invalid/unknown-root-repository.yaml",
-                "root.repository",
-                "match");
+                "unknown-repo",
+                "declared in targetRepositories[].key");
     }
 
     /**
@@ -721,7 +842,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -793,41 +931,44 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
 
         ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 MONOREPO_MANIFEST_RESOURCE);
-        ObjectNode root = (ObjectNode) parentManifest.at("/instantiation/root");
-        root.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+        ObjectNode rootInstantiation = (ObjectNode) parentManifest.at("/instantiation/0");
+        rootInstantiation.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
                 .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "core/")));
+                .put("repo", "main-repository")
+                .put("destinationPath", "core/")));
         ObjectNode compositionEntry = OBJECT_MAPPER.createObjectNode()
                 .put("module", "storage")
                 .put("blueprintName", composedModule.blueprintName())
                 .put("blueprintVersion", composedModule.versionNumber());
         compositionEntry.set("parameterMapping", OBJECT_MAPPER.createObjectNode()
                 .set("bucketPrefix", OBJECT_MAPPER.createObjectNode().put("$param", "environment")));
-        compositionEntry.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
-                .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "data-plane/storage")));
         parentManifest.set("composition", OBJECT_MAPPER.createArrayNode().add(compositionEntry));
+        ArrayNode instantiation = (ArrayNode) parentManifest.get("instantiation");
+        instantiation.add(OBJECT_MAPPER.createObjectNode()
+                .put("type", "module")
+                .put("moduleName", "storage")
+                .set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                        .put("sourcePath", "./")
+                        .put("repo", "main-repository")
+                        .put("destinationPath", "data-plane/storage"))));
 
         assertPublishParentWithModuleReturns400(parentManifest, composedModule, "monorepo with no composition");
         deleteStoredModule(composedModule);
     }
 
     /*
-     * Feature: Only the root blueprint may declare descriptorTemplatePath
-     * Scenario: Publishing a parent that references a module with descriptorTemplatePath fails
-     *   Given a published 1→1 module whose BlueprintRepo.descriptorTemplatePath is set
-     *   When the parent listing that module is published
-     *   Then 400 names the module and hints that only the root blueprint may have descriptorTemplatePath
+     * Feature: Only a Blueprint module may be composed
+     * Scenario: Publishing a parent that references a catalog Blueprint fails
+     *   Given a published Blueprint (root) version
+     *   When the parent listing that Blueprint in composition[] is published
+     *   Then 400 states that only a Blueprint module may be composed
      */
     @Test
-    public void whenPublishParentWithModuleDescriptorTemplatePathThenReturn400() throws IOException {
-        StoredModule moduleWithDescriptor = createStoredModule(
-                "module-with-descriptor",
+    public void whenPublishParentComposingBlueprintThenReturn400() throws IOException {
+        StoredModule composedBlueprint = createStoredCatalogBlueprint(
+                "composed-blueprint-root",
                 "1.0.0",
-                ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE),
-                buildModuleRepoWithDescriptorTemplatePath());
+                ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE));
         StoredModule servingModule = createStoredModule(
                 "valid-serving-module",
                 "1.4.0",
@@ -835,13 +976,120 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
 
         ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 "/manifest/example-2.2-monorepo-composition.yaml");
-        rewriteCompositionRef(parentManifest, "storage", moduleWithDescriptor);
+        rewriteCompositionRef(parentManifest, "storage", composedBlueprint);
         rewriteCompositionRef(parentManifest, "serving", servingModule);
 
         assertPublishParentWithModuleReturns400(
-                parentManifest, moduleWithDescriptor, "descriptorTemplatePath");
-        deleteStoredModule(moduleWithDescriptor);
+                parentManifest, composedBlueprint, "not a Blueprint module");
+        deleteStoredModule(composedBlueprint);
         deleteStoredModule(servingModule);
+    }
+
+    /*
+     * Feature: Composition and instantiate by blueprintType
+     * Scenario: Publishing a parent that composes a MODULE succeeds when the module is 1→1 empty composition
+     *   Given published MODULE versions that are monorepo with empty composition
+     *   When a parent Blueprint composing those modules is published
+     *   Then the response status is 201
+     */
+    @Test
+    public void whenPublishParentComposingModuleThenSucceed() throws IOException {
+        ObjectNode moduleManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE);
+        moduleManifest.set("parameters", OBJECT_MAPPER.createArrayNode());
+
+        StoredModule storage = createStoredModule("compose-storage-module", "3.0.1", moduleManifest);
+        StoredModule serving = createStoredModule("compose-serving-module", "1.4.0", moduleManifest);
+
+        ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                "/manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRef(parentManifest, "storage", storage);
+        rewriteCompositionRef(parentManifest, "serving", serving);
+        for (JsonNode node : parentManifest.get("composition")) {
+            ((ObjectNode) node).set("parameterMapping", OBJECT_MAPPER.createObjectNode());
+        }
+
+        String prefix = "parentComposeOk-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        BlueprintRes parentBlueprint = new BlueprintRes();
+        parentBlueprint.setName(prefix + "-bp");
+        parentBlueprint.setDisplayName(prefix + "-display");
+        parentBlueprint.setDescription(prefix + "-description");
+        parentBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        parentBlueprint.setBlueprintRepo(buildParentRepo());
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(parentBlueprint),
+                BlueprintRes.class);
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "2.1.0",
+                    parentManifest);
+
+            ResponseEntity<PublishBlueprintVersionResponseRes> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    PublishBlueprintVersionResponseRes.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getBlueprintVersion()).isNotNull();
+            rest.delete(apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + response.getBody().getBlueprintVersion().getUuid()));
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            deleteStoredModule(storage);
+            deleteStoredModule(serving);
+        }
+    }
+
+    /*
+     * Feature: Composition and instantiate by blueprintType
+     * Scenario: Publishing a Blueprint module whose content is not 1→1 empty composition returns 400
+     *   Given a catalog row with blueprintType MODULE
+     *   And the version content has composition or more than one repository key
+     *   When the client publishes that module version
+     *   Then the response status is 400
+     *   And the message states that a Blueprint module must be a monorepo with no composition
+     */
+    @Test
+    public void whenPublishModuleThatIsNotMonorepoNoCompositionThenReturn400() throws IOException {
+        String prefix = "modulePolyPublish-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        BlueprintRes moduleBlueprint = new BlueprintRes();
+        moduleBlueprint.setName(prefix + "-bp");
+        moduleBlueprint.setDisplayName(prefix + "-display");
+        moduleBlueprint.setDescription(prefix + "-description");
+        moduleBlueprint.setBlueprintType(BlueprintTypeRes.MODULE);
+        moduleBlueprint.setBlueprintRepo(buildModuleRepo());
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(moduleBlueprint),
+                BlueprintRes.class);
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                            "/manifest/example-2.3-polyrepo-no-composition.yaml"));
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("Blueprint module must be a monorepo with no composition");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
     }
 
     /*
@@ -863,22 +1111,26 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
 
         ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
                 MONOREPO_MANIFEST_RESOURCE);
-        ObjectNode root = (ObjectNode) parentManifest.at("/instantiation/root");
-        root.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+        ObjectNode rootInstantiation = (ObjectNode) parentManifest.at("/instantiation/0");
+        rootInstantiation.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
                 .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "core/")));
+                .put("repo", "main-repository")
+                .put("destinationPath", "core/")));
         ObjectNode compositionEntry = OBJECT_MAPPER.createObjectNode()
                 .put("module", "storage")
                 .put("blueprintName", module.blueprintName())
                 .put("blueprintVersion", module.versionNumber());
         compositionEntry.set("parameterMapping", OBJECT_MAPPER.createObjectNode()
                 .set("retentionDays", OBJECT_MAPPER.createObjectNode().put("value", 90)));
-        compositionEntry.set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
-                .put("sourcePath", "./")
-                .put("repository", "main")
-                .put("path", "data-plane/storage")));
         parentManifest.set("composition", OBJECT_MAPPER.createArrayNode().add(compositionEntry));
+        ArrayNode instantiation = (ArrayNode) parentManifest.get("instantiation");
+        instantiation.add(OBJECT_MAPPER.createObjectNode()
+                .put("type", "module")
+                .put("moduleName", "storage")
+                .set("targets", OBJECT_MAPPER.createArrayNode().add(OBJECT_MAPPER.createObjectNode()
+                        .put("sourcePath", "./")
+                        .put("repo", "main-repository")
+                        .put("destinationPath", "data-plane/storage"))));
 
         String prefix = "parentMissingModuleParam-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         BlueprintRes parentBlueprint = new BlueprintRes();
@@ -886,7 +1138,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         parentBlueprint.setDisplayName(prefix + "-display");
         parentBlueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        parentBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        parentBlueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(parentBlueprint),
                 BlueprintRes.class);
@@ -934,7 +1203,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -977,7 +1263,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -1042,7 +1345,24 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         parentBlueprint.setDisplayName(prefix + "-display");
         parentBlueprint.setDescription(prefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        parentBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes __repo = new BlueprintRes.BlueprintRepoRes();
+        __repo.setExternalIdentifier("ext-id");
+        __repo.setName("repo-name");
+        __repo.setDescription("repo-desc");
+        __repo.setManifestRootPath("/manifest");
+        __repo.setDescriptorTemplatePath("/template");
+        __repo.setReadmePath("/readme");
+        __repo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        __repo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        __repo.setDefaultBranch("main");
+        __repo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        __repo.setProviderBaseUrl("https://github.com");
+        __repo.setOwnerId("org");
+        __repo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        parentBlueprint.setBlueprintRepo(__repo);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(parentBlueprint),
                 BlueprintRes.class);
@@ -1074,6 +1394,50 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         return createStoredModule(blueprintName, version, manifestContent, null);
     }
 
+    private StoredModule createStoredCatalogBlueprint(
+            String blueprintName,
+            String version,
+            JsonNode manifestContent) throws IOException {
+        String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
+        String uniqueName = blueprintName + "-" + suffix;
+        ObjectNode content = (ObjectNode) manifestContent.deepCopy();
+        content.put("name", uniqueName);
+        content.put("version", version);
+
+        BlueprintRes.BlueprintRepoRes blueprintRepo = buildModuleRepoWithDescriptorTemplatePath();
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(uniqueName);
+        blueprint.setDisplayName(uniqueName + "-display");
+        blueprint.setDescription(uniqueName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(blueprintRepo);
+
+        ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class);
+        assertThat(createdBlueprint.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        BlueprintVersionRes versionRes = new BlueprintVersionRes();
+        versionRes.setName(uniqueName + "-" + version);
+        versionRes.setDescription("catalog blueprint version");
+        versionRes.setReadme("README.md");
+        versionRes.setTag("v" + version);
+        versionRes.setVersionNumber(version);
+        versionRes.setSpec("odm-blueprint-manifest");
+        versionRes.setSpecVersion("1.0.0");
+        versionRes.setBlueprint(createdBlueprint.getBody());
+        versionRes.setContent(content);
+
+        ResponseEntity<BlueprintVersionRes> createdVersion = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS),
+                new HttpEntity<>(versionRes),
+                BlueprintVersionRes.class);
+        assertThat(createdVersion.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        return new StoredModule(createdBlueprint.getBody().getUuid(), uniqueName, version);
+    }
+
     private StoredModule createStoredModule(
             String blueprintName,
             String version,
@@ -1086,10 +1450,14 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         content.put("name", uniqueName);
         content.put("version", version);
 
+        if (blueprintRepo == null) {
+            blueprintRepo = buildModuleRepo();
+        }
         BlueprintRes blueprint = new BlueprintRes();
         blueprint.setName(uniqueName);
         blueprint.setDisplayName(uniqueName + "-display");
         blueprint.setDescription(uniqueName + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
         blueprint.setBlueprintRepo(blueprintRepo);
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
@@ -1132,6 +1500,31 @@ public class BlueprintVersionsUseCaseControllerIT extends BlueprintApplicationIT
         if (module != null && module.blueprintUuid() != null) {
             rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + module.blueprintUuid()));
         }
+    }
+
+
+    private BlueprintRes.BlueprintRepoRes buildParentRepo() {
+        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprintRepo.setExternalIdentifier("ext-id");
+        blueprintRepo.setName("repo-name");
+        blueprintRepo.setDescription("repo-desc");
+        blueprintRepo.setManifestRootPath("/manifest");
+        blueprintRepo.setDescriptorTemplatePath("/template");
+        blueprintRepo.setReadmePath("/readme");
+        blueprintRepo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        blueprintRepo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        blueprintRepo.setDefaultBranch("main");
+        blueprintRepo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        blueprintRepo.setProviderBaseUrl("https://github.com");
+        blueprintRepo.setOwnerId("org");
+        blueprintRepo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        return blueprintRepo;
+    }
+
+    private BlueprintRes.BlueprintRepoRes buildModuleRepo() {
+        BlueprintRes.BlueprintRepoRes blueprintRepo = buildModuleRepoWithDescriptorTemplatePath();
+        blueprintRepo.setDescriptorTemplatePath(null);
+        return blueprintRepo;
     }
 
     private BlueprintRes.BlueprintRepoRes buildModuleRepoWithDescriptorTemplatePath() {

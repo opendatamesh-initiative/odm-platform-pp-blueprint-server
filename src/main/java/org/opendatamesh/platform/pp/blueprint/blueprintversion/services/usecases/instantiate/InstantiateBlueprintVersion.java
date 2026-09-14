@@ -1,6 +1,7 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.instantiate;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.entities.BlueprintVersion;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.BlueprintGitNamingConventions;
@@ -51,6 +52,7 @@ class InstantiateBlueprintVersion implements UseCase {
         validateCommand(command);
 
         BlueprintVersion parentBlueprintVersion = persistencyPort.findByBlueprintNameAndVersion(command.blueprintName(), command.blueprintVersion());
+        validateParentIsInstantiableBlueprint(parentBlueprintVersion);
         validateBlueprintManifest(parentBlueprintVersion);
 
         Map<String, JsonNode> parentParameters = enrichRequestParametersWithDefaultsIfNeeded(parentBlueprintVersion);
@@ -192,7 +194,7 @@ class InstantiateBlueprintVersion implements UseCase {
                         "Source workspace missing for sourceId '%s' when instantiating repository key '%s'"
                                 .formatted(route.sourceId(), targetRepositoryKey));
             }
-            Map<String, JsonNode> params = route.fromParent()
+            Map<String, JsonNode> params = isParentRoute(route)
                     ? parentParameters
                     : modulesParameters.getOrDefault(route.sourceId(), Map.of());
             templatingPort.applyRoute(sourceRoot, route.sourcePath(), targetPath, route.destinationPath(), params);
@@ -206,7 +208,7 @@ class InstantiateBlueprintVersion implements UseCase {
             Map<String, BlueprintVersion> modulesByAlias) {
         Set<String> relocatedAliases = new LinkedHashSet<>();
         for (InstantiationRoute route : routes) {
-            if (route.fromParent() || !relocatedAliases.add(route.sourceId())) {
+            if (isParentRoute(route) || !relocatedAliases.add(route.sourceId())) {
                 continue;
             }
             BlueprintVersion moduleVersion = modulesByAlias.get(route.sourceId());
@@ -256,6 +258,10 @@ class InstantiateBlueprintVersion implements UseCase {
         templatingPort.recordParentLineage(targetPath, parentBlueprintVersion, parentParameters);
     }
 
+    private boolean isParentRoute(InstantiationRoute route) {
+        return PARENT_SOURCE_ID.equals(route.sourceId());
+    }
+
     private String commitAndTagCheckpoint(Path targetPath, String checkpointBranch) {
         String commitMessage = "Populate repository from blueprint " + command.blueprintName() + "@" + command.blueprintVersion();
         String checkpointTag = BlueprintGitNamingConventions.checkpointTag(command.blueprintVersion());
@@ -296,6 +302,19 @@ class InstantiateBlueprintVersion implements UseCase {
         return modulesByAlias;
     }
 
+    private void validateParentIsInstantiableBlueprint(BlueprintVersion parentBlueprintVersion) {
+        BlueprintType blueprintType = parentBlueprintVersion.getBlueprint().getBlueprintType();
+        if (blueprintType == BlueprintType.MODULE) {
+            throw new BadRequestException(
+                    "A Blueprint module cannot be instantiated alone. "
+                            + "Hint: It can only be used when composed by a Blueprint.");
+        }
+        BlueprintRepo parentRepo = parentBlueprintVersion.getBlueprint().getBlueprintRepo();
+        if (parentRepo == null || !StringUtils.hasText(parentRepo.getDescriptorTemplatePath())) {
+            throw new BadRequestException("Descriptor template path is required for a Blueprint");
+        }
+    }
+
     private void validateModulesBlueprintVersions(BlueprintVersion rootBlueprintVersion, Map<String, BlueprintVersion> modulesByAlias) {
         List<InstantiationValidationIssue> validationIssues = new ArrayList<>();
 
@@ -305,14 +324,20 @@ class InstantiateBlueprintVersion implements UseCase {
             if (moduleBlueprintVersion == null) {
                 continue;
             }
-            if (!manifestPort.isMonorepoNoComposition(moduleBlueprintVersion.getContent())) {
+            if (!isBlueprintModule(moduleBlueprintVersion)) {
+                validationIssues.add(new InstantiationValidationIssue(
+                        composition.fieldPath(),
+                        "Composition entry '%s' (%s@%s) references a Blueprint (root), not a Blueprint module"
+                                .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
+                        "Only a Blueprint module may be composed; register and publish the child as blueprintType MODULE."));
+            } else if (!manifestPort.isMonorepoNoComposition(moduleBlueprintVersion.getContent())) {
                 validationIssues.add(new InstantiationValidationIssue(
                         composition.fieldPath(),
                         "Composition module '%s' (%s@%s) is not a monorepo with no composition"
                                 .formatted(alias, composition.blueprintName(), composition.blueprintVersion()),
                         "Composition modules must be monorepo with no composition (one repository key, empty composition)."));
             }
-            if (hasDescriptorTemplatePath(moduleBlueprintVersion)) {
+            if (isBlueprintModule(moduleBlueprintVersion) && hasDescriptorTemplatePath(moduleBlueprintVersion)) {
                 validationIssues.add(new InstantiationValidationIssue(
                         composition.fieldPath(),
                         "Composition module '%s' (%s@%s) declares descriptorTemplatePath"
@@ -328,6 +353,12 @@ class InstantiateBlueprintVersion implements UseCase {
             return false;
         }
         return StringUtils.hasText(version.getBlueprint().getBlueprintRepo().getDescriptorTemplatePath());
+    }
+
+    private boolean isBlueprintModule(BlueprintVersion version) {
+        return version != null
+                && version.getBlueprint() != null
+                && version.getBlueprint().getBlueprintType() == BlueprintType.MODULE;
     }
 
     private void validateBlueprintManifest(BlueprintVersion parentVersion) {

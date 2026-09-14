@@ -6,12 +6,12 @@ dumb_extension:
   fieldA: valueA
   fieldB: valueB
 x-prop: x-prop-value
+targetRepositories:
+  - key: main-repository
+    isRoot: true
 instantiation:
-  repositories:
-    - key: main
-  root:
-    repository: main
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main-repository
+        destinationPath: ./

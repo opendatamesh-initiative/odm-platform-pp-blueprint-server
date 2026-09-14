@@ -10,8 +10,8 @@ import java.io.IOException;
 
 public class OdmBlueprintManifestAutoFiller implements ManifestAutoFiller {
 
-    /** Default logical repository key seeded when {@code instantiation.repositories} is empty. */
-    public static final String DEFAULT_REPOSITORY_KEY = "main";
+    /** Default logical repository key seeded when {@code targetRepositories} is empty. */
+    public static final String DEFAULT_REPOSITORY_KEY = "main-repository";
 
     private final ManifestParser parser = ManifestParserFactory.getParser();
 

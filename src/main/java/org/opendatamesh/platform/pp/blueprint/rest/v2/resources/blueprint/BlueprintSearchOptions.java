@@ -16,7 +16,12 @@ public class BlueprintSearchOptions {
             schema = @Schema(type = "string")
     )
     private String uuid;
-    
+
+    @Parameter(
+            description = "Filter blueprints by blueprint type. Exact match. BLUEPRINT is the root Blueprint; MODULE is the Blueprint module (component).",
+            schema = @Schema(implementation = BlueprintTypeRes.class, allowableValues = {"BLUEPRINT", "MODULE"})
+    )
+    private BlueprintTypeRes blueprintType;
 
     public String getName() {
         return name;
@@ -32,5 +37,13 @@ public class BlueprintSearchOptions {
 
     public void setUuid(String uuid) {
         this.uuid = uuid;
+    }
+
+    public BlueprintTypeRes getBlueprintType() {
+        return blueprintType;
+    }
+
+    public void setBlueprintType(BlueprintTypeRes blueprintType) {
+        this.blueprintType = blueprintType;
     }
 }

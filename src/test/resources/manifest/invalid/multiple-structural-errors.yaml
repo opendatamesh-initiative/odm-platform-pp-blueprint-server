@@ -8,19 +8,10 @@ parameters:
     type: string
     required: true
 
-instantiation:
-  repositories:
-    - key: main
-    - key: orphan
-  root:
-    repository: main
-    targets:
-      - sourcePath: ./
-        repository: main
-        path: ./
-      - sourcePath: docs/
-        repository: main
-        path: nested/under-root
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+  - key: orphan
 
 composition:
   - module: storage
@@ -28,7 +19,19 @@ composition:
     blueprintVersion: 3.0.1
     parameterMapping:
       bucketPrefix: projectSlug
+
+instantiation:
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: data-plane/storage
+        repo: main-repository
+        destinationPath: ./
+      - sourcePath: docs/
+        repo: main-repository
+        destinationPath: nested/under-root
+  - type: module
+    moduleName: storage
+    targets:
+      - sourcePath: ./
+        repo: main-repository
+        destinationPath: data-plane/storage

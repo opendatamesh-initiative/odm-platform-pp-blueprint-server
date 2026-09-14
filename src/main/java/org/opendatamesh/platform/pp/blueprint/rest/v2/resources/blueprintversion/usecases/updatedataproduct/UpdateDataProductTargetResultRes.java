@@ -27,6 +27,12 @@ public class UpdateDataProductTargetResultRes {
     @Schema(description = "Provider web URL of the opened pull request, when createPullRequest succeeded", requiredMode = NOT_REQUIRED)
     private String pullRequestWebUrl;
 
+    @Schema(
+            description = "True when the next render matched the current checkpoint; update branch and PR were skipped; checkpoint tag still advanced",
+            requiredMode = NOT_REQUIRED
+    )
+    private Boolean contentUnchanged;
+
     public String getTargetId() {
         return targetId;
     }
@@ -73,5 +79,13 @@ public class UpdateDataProductTargetResultRes {
 
     public void setPullRequestWebUrl(String pullRequestWebUrl) {
         this.pullRequestWebUrl = pullRequestWebUrl;
+    }
+
+    public Boolean getContentUnchanged() {
+        return contentUnchanged;
+    }
+
+    public void setContentUnchanged(Boolean contentUnchanged) {
+        this.contentUnchanged = contentUnchanged;
     }
 }

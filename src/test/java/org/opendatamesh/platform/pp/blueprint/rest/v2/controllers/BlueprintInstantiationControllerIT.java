@@ -2,6 +2,7 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -19,13 +20,13 @@ import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.*;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
-import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.manifest.ManifestYamlTestSupport;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.BlueprintVersionRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprintversion.usecases.instantiate.InstantiateBlueprintVersionCommandRes;
@@ -701,19 +702,19 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     }
 
     /*
-     * Feature: Only the root blueprint may declare descriptorTemplatePath
-     * Scenario: Instantiating a parent whose module has descriptorTemplatePath fails before Git
-     *   Given the parent was stored with a module that has descriptorTemplatePath
+     * Feature: Only a Blueprint module may be composed
+     * Scenario: Instantiating a parent that composes a catalog Blueprint fails before Git
+     *   Given the parent composition references a published Blueprint (root), not a MODULE
      *   When instantiate runs
-     *   Then 400 lists the descriptorTemplatePath problem with a hint and does not clone targets
+     *   Then 400 states that only a Blueprint module may be composed and does not clone targets
      */
     @Test
-    void whenInstantiateModuleWithDescriptorTemplatePathThenReturn400() throws Exception {
-        ModuleBlueprint storage = createPublishedModule(
-                "odm-blueprint-s3-lake", "3.0.1", manifestMonorepoNoComposition(), buildBlueprintRepo());
+    void whenInstantiateComposingCatalogBlueprintThenReturn400() throws Exception {
+        BlueprintContext composedBlueprint = createBlueprintAndVersion(
+                "odm-blueprint-s3-lake", "3.0.1", manifestMonorepoNoComposition());
         ModuleBlueprint serving = createPublishedModule("odm-blueprint-api-skeleton", "1.4.0");
         ObjectNode parentManifest = (ObjectNode) manifestMonorepoWithComposition();
-        rewriteCompositionRefs(parentManifest, storage.toContext(), serving.toContext());
+        rewriteCompositionRefs(parentManifest, composedBlueprint, serving.toContext());
         BlueprintContext parent = createBlueprintAndVersion("full-stack-dp", "2.1.0", parentManifest);
 
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
@@ -733,12 +734,41 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
                 String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("declares descriptorTemplatePath");
-        assertThat(response.getBody()).contains("Only the parent (root) blueprint may have descriptorTemplatePath");
+        assertThat(response.getBody()).contains("not a Blueprint module");
+        assertThat(response.getBody()).contains("Only a Blueprint module may be composed");
         verify(mockGitOperation, never()).readRepository(any(), any(), any());
         deleteCreatedBlueprint(parent);
-        deleteCreatedBlueprint(storage.toContext());
+        deleteCreatedBlueprint(composedBlueprint);
         deleteCreatedBlueprint(serving.toContext());
+    }
+
+    /*
+     * Feature: Composition and instantiate by blueprintType
+     * Scenario: Instantiating a Blueprint module alone returns 400
+     *   Given a published MODULE version
+     *   When the client instantiates that name@version as the parent
+     *   Then the response status is 400
+     *   And the message states that a Blueprint module cannot be instantiated alone
+     */
+    @Test
+    void whenInstantiateBlueprintModuleAloneThenReturn400() throws Exception {
+        ModuleBlueprint module = createPublishedModule("odm-blueprint-s3-lake", "3.0.1");
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_INSTANTIATE),
+                HttpMethod.POST,
+                new HttpEntity<>(buildInstantiateRequest(
+                        module.blueprintName(), module.versionNumber(), "prod", 365), jsonHeaders()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("cannot be instantiated alone");
+        verify(mockGitOperation, never()).readRepository(any(), any(), any());
+        deleteCreatedBlueprint(module.toContext());
     }
 
     /*
@@ -849,17 +879,17 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
             @TempDir Path sourceDir, @TempDir Path targetDir) throws Exception {
         writePathSplitSourceFiles(sourceDir);
         ObjectNode manifest = (ObjectNode) manifestMonorepoNoComposition();
-        ObjectNode instantiation = (ObjectNode) manifest.get("instantiation");
-        ObjectNode root = (ObjectNode) instantiation.get("root");
-        root.set("targets", OBJECT_MAPPER.createArrayNode()
+        ArrayNode instantiation = (ArrayNode) manifest.get("instantiation");
+        ObjectNode rootInstantiation = (ObjectNode) instantiation.get(0);
+        rootInstantiation.set("targets", OBJECT_MAPPER.createArrayNode()
                 .add(OBJECT_MAPPER.createObjectNode()
                         .put("sourcePath", "core-src/")
-                        .put("repository", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
-                        .put("path", "core/"))
+                        .put("repo", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+                        .put("destinationPath", "core/"))
                 .add(OBJECT_MAPPER.createObjectNode()
                         .put("sourcePath", "docs-src/")
-                        .put("repository", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
-                        .put("path", "docs/")));
+                        .put("repo", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+                        .put("destinationPath", "docs/")));
 
         BlueprintContext context = createBlueprintAndVersion(
                 "analytics-lakehouse",
@@ -1234,12 +1264,13 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         Files.writeString(sourceDir.resolve("module-only-marker.txt"), "module");
 
         ObjectNode moduleManifest = (ObjectNode) manifestMonorepoNoComposition();
-        ObjectNode moduleRoot = (ObjectNode) moduleManifest.at("/instantiation/root");
+        ArrayNode moduleInstantiation = (ArrayNode) moduleManifest.get("instantiation");
+        ObjectNode moduleRoot = (ObjectNode) moduleInstantiation.get(0);
         moduleRoot.set("targets", OBJECT_MAPPER.createArrayNode()
                 .add(OBJECT_MAPPER.createObjectNode()
                         .put("sourcePath", "./")
-                        .put("repository", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
-                        .put("path", "./")));
+                        .put("repo", OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY)
+                        .put("destinationPath", "./")));
 
         ModuleBlueprint storage = createPublishedModule(
                 "odm-blueprint-s3-lake", "3.0.1", moduleManifest, buildModuleBlueprintRepo());
@@ -1289,7 +1320,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateEmptyRootTargetsThenReturn400WithHint() throws Exception {
         assertInstantiateInvalidManifestReturns400WithHint(
-                "/manifest/invalid/empty-root-targets.yaml", "root.targets", "non-empty");
+                "/manifest/invalid/empty-root-targets.yaml", "targets", "required");
     }
 
     /*
@@ -1303,7 +1334,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateMissingRootRepositoryThenReturn400WithHint() throws Exception {
         assertInstantiateInvalidManifestReturns400WithHint(
-                "/manifest/invalid/missing-root-repository.yaml", "root.repository", "required");
+                "/manifest/invalid/missing-root-repository.yaml", "targetRepositories", "isRoot");
     }
 
     /*
@@ -1316,7 +1347,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
     @Test
     void whenInstantiateUnknownRootRepositoryThenReturn400WithHint() throws Exception {
         assertInstantiateInvalidManifestReturns400WithHint(
-                "/manifest/invalid/unknown-root-repository.yaml", "root.repository", "match");
+                "/manifest/invalid/unknown-root-repository.yaml", "unknown-repo", "declared in targetRepositories[].key");
     }
 
     /*
@@ -1895,6 +1926,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
         blueprint.setBlueprintRepo(blueprintRepo);
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(
@@ -1977,6 +2009,7 @@ public class BlueprintInstantiationControllerIT extends BlueprintApplicationIT {
         blueprint.setName(uniqueBlueprintName);
         blueprint.setDisplayName(prefix + "-display");
         blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
         blueprint.setBlueprintRepo(buildBlueprintRepo(descriptorTemplatePath));
 
         ResponseEntity<BlueprintRes> createdBlueprint = rest.postForEntity(

@@ -1,13 +1,13 @@
-# Align Blueprint Manifest code to repositories / root / composition targets specification
+# Align Blueprint Manifest code to targetRepositories / typed instantiation specification
 
-> **Supersession note (2026-08-27):** Manifest shape alignment from this prompt is delivered. Runtime scope that was deferred here (all four instantiate/update topologies, route-driven render, `instantiation.root.repository`) is specified and implemented in `BDMD-4820-202608261148` / `-202608271455` and their analysis files. Treat those as the source of truth for current behavior; this document remains the phase-1 manifest-contract record.
+> Companion runtime for all four instantiate/update topologies: `BDMD-4820-202608261148` / `BDMD-4820-202608271455` and their analysis files. Authoritative schema: `src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md`.
 
 ## Requirements
 
-- Align the Blueprint Manifest contract in **blueprint-server** and **blindata-ui** with the updated specification: logical `instantiation.repositories[]`, `instantiation.root.targets[]`, and co-located `composition[].targets[]` — replacing `strategy`, `compositionLayout`, and postfix/`createPolicy` targets.
-- Keep authoring, parsing, validation, and the already-supported **single-repository, no-composition** instantiate/update path working against the new shape so blueprints can be published and applied without the obsolete vocabulary.
-- Add minimal instantiate/update target key-mapping: request targets carry **`targetId`** (manifest repository key) and are reconciled with the sole `instantiation.repositories[].key`; do not carry a request `type` enum. Do not implement multi-repo UX or composition/polyrepo runtime.
-- Treat legacy old-shape stored manifests as non-existent (hard cut; no migration/dual-read). Defer multi-key lineage-root designation and path-split render beyond today’s monorepo copy-all behavior.
+- Align the Blueprint Manifest contract in **blueprint-server** and **blindata-ui** with the specification: top-level `targetRepositories[]` (exactly one `isRoot: true`), typed `instantiation[]` routing entries (`type: root` | `type: module`), and `composition[]` for module identity + `parameterMapping` only — replacing `strategy`, `compositionLayout`, and postfix/`createPolicy` targets.
+- Keep authoring, parsing, validation, and the already-supported **single-repository, no-composition** instantiate/update path working so blueprints can be published and applied.
+- Add minimal instantiate/update target key-mapping: request targets carry **`targetId`** (manifest `targetRepositories[].key`) and are reconciled with the sole repository key; do not carry a request `type` enum. Do not implement multi-repo UX or composition/polyrepo runtime.
+- Hard cut: no dual-read/migration for old `strategy` manifests. Defer multi-key lineage-root designation and path-split render beyond today’s monorepo copy-all behavior.
 
 ## Entities
 
@@ -25,7 +25,8 @@ classDiagram
     +List~ManifestParameter~ parameters
     +List~ManifestProtectedResource~ protectedResources
     +List~ManifestComposition~ composition
-    +ManifestInstantiation instantiation
+    +List~ManifestTargetRepository~ targetRepositories
+    +List~ManifestInstantiationEntry~ instantiation
     +accept(visitor)
   }
 
@@ -34,31 +35,33 @@ classDiagram
     +String blueprintName
     +String blueprintVersion
     +Map parameterMapping
-    +List~ManifestTarget~ targets
     +accept(visitor)
   }
 
-  class ManifestInstantiation {
-    +List~ManifestInstantiationRepository~ repositories
-    +ManifestInstantiationRoot root
-    +accept(visitor)
-  }
-
-  class ManifestInstantiationRepository {
+  class ManifestTargetRepository {
     +String key
     +String description
+    +Boolean isRoot
     +accept(visitor)
   }
 
-  class ManifestInstantiationRoot {
+  class ManifestInstantiationEntry {
+    +ManifestInstantiationType type
+    +String moduleName
     +List~ManifestTarget~ targets
     +accept(visitor)
+  }
+
+  class ManifestInstantiationType {
+    <<enum>>
+    ROOT
+    MODULE
   }
 
   class ManifestTarget {
     +String sourcePath
-    +String repository
-    +String path
+    +String repo
+    +String destinationPath
     +accept(visitor)
   }
 
@@ -97,31 +100,33 @@ classDiagram
   }
 
   Manifest "1" --> "*" ManifestComposition : composition
-  Manifest "1" --> "1" ManifestInstantiation : instantiation
-  ManifestInstantiation "1" --> "*" ManifestInstantiationRepository : repositories
-  ManifestInstantiation "1" --> "1" ManifestInstantiationRoot : root
-  ManifestInstantiationRoot "1" --> "*" ManifestTarget : targets
-  ManifestComposition "1" --> "*" ManifestTarget : targets
+  Manifest "1" --> "*" ManifestTargetRepository : targetRepositories
+  Manifest "1" --> "*" ManifestInstantiationEntry : instantiation
+  ManifestInstantiationEntry "1" --> "*" ManifestTarget : targets
+  ManifestInstantiationEntry --> ManifestInstantiationType : type
+  ManifestInstantiationEntry ..> ManifestComposition : moduleName when type module
+  ManifestTarget --> ManifestTargetRepository : repo references key
 ```
 
 ## Approach
 
 1. Schema alignment (hard cut):
-   - Replace Java and JS instantiation models with `repositories` + `root.targets` + `composition.targets`.
-   - Delete obsolete types/fields: `InstantiationStrategy`, `compositionLayout`, `ManifestInstantiationCompositionLayout`, target `repositoryNamePostfix` / `createPolicy` / `module` / `targetPath`.
-   - Shared route shape (`ManifestTarget`): `sourcePath` (default `./`), `repository` (key ref), `path` (default `./`, was `targetPath`).
+   - Java and JS models use top-level `targetRepositories[]` + typed `instantiation[]` + `composition[]` (module identity + `parameterMapping` only).
+   - Remove obsolete types/fields: `InstantiationStrategy`, `compositionLayout`, `ManifestInstantiationCompositionLayout`, postfix/`createPolicy`/`targetPath` target fields.
+   - Shared route shape (`ManifestTarget`): `sourcePath` (default `./`), `repo` (key ref), `destinationPath` (default `./`).
+   - Root designation: exactly one `targetRepositories[]` entry sets `isRoot: true` (lineage / descriptor / registry primary pointer).
    - No dual-read of old manifests.
 
 2. Validation and autofill:
-   - Enforce unique repository keys, unique composition modules, repository refs resolve, multi-entry targets require explicit `sourcePath`, relative paths only (reject absolute and `..`).
-   - Autofill defaults for publish/register: if instantiation incomplete, seed one repository key (e.g. `main`) and a single root target `./` → that key → `./`; default parameter `type` to `string` as today.
-   - Empty `root.targets` is structurally valid; runtime still rejects orchestration-only / composition scenarios as unsupported.
+   - Enforce unique `targetRepositories[].key`, exactly one `isRoot: true`, unique composition modules, `repo` refs resolve, composition/instantiation module alignment (every `composition[].module` has a matching `instantiation[]` entry with `type: module`), multi-entry targets require explicit `sourcePath`, relative paths only (reject absolute and `..`).
+   - Autofill defaults for publish/register: if incomplete, seed one `targetRepositories` entry (`key: main-repository`, `isRoot: true`) and one `instantiation[]` root entry with a single target `./` → that key → `./`; default parameter `type` to `string` as today.
+   - Each `instantiation[]` entry requires non-empty `targets`; exactly one entry must have `type: root`.
 
 3. Runtime scenario + targets:
-   - Derive `InstantiationScenario` from repository-key cardinality + composition presence (not `strategy`).
-   - Phase-1 executes only `MONOREPO_NO_COMPOSITION`; others throw `UnsupportedOperationException` (HTTP 400 NotSupported) as today.
-   - Monorepo render remains copy-all via `BlueprintRenderService` (do not implement path-splitting render in this ticket).
-   - Request targets: add `targetId`; remove `BlueprintRepositoryLogicalType` / request `type`. Reconcile `targetId` ↔ sole `repositories[].key`. Phase-1 accepts exactly one target whose `targetId` equals the sole repository key. Root vs module role stays in the manifest (`instantiation.root` / `composition[]`).
+   - Derive `InstantiationScenario` from `targetRepositories` key cardinality + composition presence (not `strategy`).
+   - Full four-topology runtime is specified in companion prompts `BDMD-4820-202608261148` / `BDMD-4820-202608271455`; this prompt’s delivery scope is schema alignment plus the already-supported single-key, no-composition path.
+   - Monorepo render for that path remains copy-all via `BlueprintRenderService` (do not implement path-splitting render in this ticket).
+   - Request targets: add `targetId`; remove `BlueprintRepositoryLogicalType` / request `type`. Reconcile `targetId` ↔ sole `targetRepositories[].key`. Accept exactly one target whose `targetId` equals the sole repository key. Root vs module role stays in the manifest (`instantiation[]` entry type / `composition[]`).
 
 4. Blindata UI:
    - Mirror schema in `manifestSdk` (model, parser, serialize, traverse, visitors).
@@ -137,16 +142,17 @@ classDiagram
 ### Inheritance Relationships
 
 1. Manifest schema objects continue to extend `ManifestComponentBase` (Java) / `ManifestComponentBase` (JS) for `additionalProperties` / extensions.
-2. New `ManifestInstantiationRepository` and `ManifestInstantiationRoot` extend the same base and participate in visitors.
-3. `ManifestTarget` is the shared route type used by both `root.targets` and `composition[].targets`.
-4. Remove `ManifestInstantiationCompositionLayout`, `InstantiationStrategy`, and `BlueprintRepositoryLogicalType` from the model/API.
+2. `ManifestTargetRepository`, `ManifestInstantiationEntry`, and `ManifestTarget` extend the same base and participate in visitors.
+3. `ManifestTarget` is the shared route type used by `instantiation[].targets[]` (both `type: root` and `type: module`).
+4. `ManifestComposition` declares module identity and `parameterMapping` only; routing lives on matching `instantiation[]` module entries.
+5. Remove `ManifestInstantiationCompositionLayout`, `InstantiationStrategy`, and `BlueprintRepositoryLogicalType` from the model/API.
 
 ### Dependencies
 
-1. `ManifestParser` / extension visitor walk the new instantiation tree (repositories, root, targets; composition targets).
+1. `ManifestParser` / extension visitor walk `targetRepositories`, `instantiation[]` entries and their targets, and `composition[]`.
 2. `OdmBlueprintValidationVisitor` / `OdmBlueprintManifestAutoFillerVisitor` depend on the new model fields.
-3. `InstantiateBlueprintVersion` and `UpdateDataProductFromBlueprintVersion` resolve scenario from repositories + composition; validate targets via manifest outbound ports.
-4. `BlueprintRenderService.isMonorepoNoComposition` uses repository cardinality + empty composition (not strategy).
+3. `InstantiateBlueprintVersion` and `UpdateDataProductFromBlueprintVersion` resolve scenario from `targetRepositories` cardinality + composition; validate targets via manifest outbound ports.
+4. `BlueprintRenderService.isMonorepoNoComposition` uses `targetRepositories` cardinality + empty composition (not strategy).
 5. REST `*TargetRepositoryRes` ↔ domain `*TargetRepositoryDto` mapped in use-cases services; UI API clients send `targetId`.
 6. UI `ManifestParser` + repository step + registration templates depend on updated SDK.
 
@@ -161,74 +167,73 @@ classDiagram
 
 ## Operations
 
-### Update Manifest Model (Java) — Instantiation & Composition
+### Update Manifest Model (Java) — Target Repositories, Instantiation & Composition
 
-1. Responsibility: Make the Java manifest model match the README schema for instantiation and composition routing.
+1. Responsibility: Make the Java manifest model match the README schema for target repositories, typed instantiation routing, and composition.
 2. Changes:
-   - `ManifestInstantiation`: replace `strategy`, `compositionLayout`, `targets` with `List<ManifestInstantiationRepository> repositories` and `ManifestInstantiationRoot root`.
-   - Add `ManifestInstantiationRepository` (`key`, `description`) under `model/instantiation`.
-   - Add `ManifestInstantiationRoot` (`List<ManifestTarget> targets`).
-   - Shared route type `ManifestTarget`: fields `sourcePath`, `repository`, `path` only; remove postfix, createPolicy, module, targetPath and nested create-policy enum (replaces old `ManifestInstantiationTarget`).
-   - `ManifestComposition`: add `List<ManifestTarget> targets`.
+   - `Manifest`: add `List<ManifestTargetRepository> targetRepositories` and `List<ManifestInstantiationEntry> instantiation`; remove nested `ManifestInstantiation`.
+   - Add `ManifestTargetRepository` (`key`, `description`, `isRoot`) under `model/instantiation`.
+   - Add `ManifestInstantiationEntry` (`ManifestInstantiationType type`, optional `moduleName`, `List<ManifestTarget> targets`) and `ManifestInstantiationType` enum (`ROOT`, `MODULE`).
+   - Shared route type `ManifestTarget`: fields `sourcePath`, `repo`, `destinationPath` only; remove postfix, createPolicy, module, targetPath / `repository` / `path` and nested create-policy enum.
+   - `ManifestComposition`: module identity + `parameterMapping` only (routing lives on `instantiation[]` module entries).
    - Delete `ManifestInstantiationCompositionLayout.java` and `InstantiationStrategy` enum.
 3. Visitors:
-   - Update `ManifestInstantiationVisitor` to visit repository and root (remove compositionLayout / old target visit).
-   - Add `ManifestInstantiationRootVisitor` / `ManifestCompositionVisitor` for shared `ManifestTarget` routes.
-   - Update `ManifestVisitor` implementors, `ManifestExtensionVisitorImpl`, and any accept() wiring so composition visits its targets.
+   - Update `ManifestVisitor` to visit `ManifestTargetRepository` and `ManifestInstantiationEntry`.
+   - Add `ManifestInstantiationEntryVisitor` for shared `ManifestTarget` routes under each instantiation entry.
+   - Update `ManifestExtensionVisitorImpl` and accept() wiring so instantiation entries visit their targets.
 4. Constraints: Keep `ManifestComponentBase` extension behavior; unknown properties still land in `additionalProperties`.
 
 ### Update Manifest Validator — `OdmBlueprintValidationVisitor`
 
 1. Responsibility: Enforce new structural rules; drop strategy/compositionLayout/postfix rules.
-2. Logic on `visit(ManifestInstantiation)`:
-   - Require non-null `repositories` with ≥1 entry; each `key` non-empty; keys unique.
-   - Require non-null `root` (targets list may be empty).
-   - Collect declared keys; validate every `root.targets[].repository` and later composition targets’ `repository` against that set.
-3. Logic on targets (shared helper for root and composition targets):
-   - `repository` required and must match a key.
-   - If targets list size > 1, each entry must have explicit non-blank `sourcePath` (do not rely on default `./`).
-   - `sourcePath` / `path`: reject absolute paths and segments `..`; allow default `./` when single-entry or when explicitly set.
+2. Logic on `visit(Manifest)` (post-pass after walking children):
+   - Require non-null non-empty `targetRepositories`; each `key` non-empty; keys unique; exactly one entry with `isRoot: true`.
+   - Require non-null non-empty `instantiation`; exactly one entry with `type: root`; every `instantiation[].targets` non-empty.
+   - Align `composition[]` with `instantiation[]`: every composition module has a matching `type: module` entry (and vice versa).
+   - Collect declared keys; validate every `instantiation[].targets[].repo` against that set; reject unused keys.
+3. Logic on targets (via `ManifestInstantiationEntryVisitor`):
+   - `repo` required and must match a declared key.
+   - If targets list size > 1, each entry must have explicit non-blank `sourcePath`.
+   - `sourcePath` / `destinationPath`: reject absolute paths and segments `..`; allow default `./` when single-entry or when explicitly set.
 4. Logic on `visit(ManifestComposition)`:
    - Keep module / blueprintName / blueprintVersion required + unique modules.
-   - Require `targets` non-null and non-empty for composition entries (per spec Required).
-   - Visit each composition target with the shared target rules.
+   - Validate `parameterMapping` shape only (no targets on composition).
 5. Remove all `InstantiationStrategy` / `compositionLayout` / postfix / createPolicy validation and related state fields; adjust `OdmBlueprintManifestValidatorState` accordingly.
 
 ### Update Manifest Autofiller — `OdmBlueprintManifestAutoFillerVisitor`
 
-1. Responsibility: Seed minimal valid instantiation for incomplete manifests at publish/autofill time.
+1. Responsibility: Seed minimal valid target repositories and root instantiation for incomplete manifests at publish/autofill time.
 2. Logic:
-   - If `instantiation` is null, create one.
-   - If `repositories` empty, add `{ key: "main", description: optional }`.
-   - If `root` null or `root.targets` null, set root with one target `{ sourcePath: "./", repository: <sole or first key>, path: "./" }`.
-   - Do not invent composition or multiple repositories.
+   - If `targetRepositories` empty, add `{ key: "main-repository", description: optional, isRoot: true }`.
+   - If `instantiation` empty, add one `{ type: root, targets: [{ sourcePath: "./", repo: <sole or first key>, destinationPath: "./" }] }`.
+   - Do not invent composition, module instantiation entries, or multiple repositories.
    - Keep parameter type defaulting to `STRING` when key present and type null.
 
 ### Update Scenario Resolution & Target Validation (Instantiate / Update)
 
 1. Responsibility: Drive supported vs unsupported paths from the new topology; reconcile `targetId` with the sole repository key.
 2. Shared scenario helper (use in instantiate + update + render checks):
-   - Let `repoCount = repositories.size()` (distinct keys).
+   - Let `repoCount = targetRepositories.size()` (distinct keys).
    - `hasComposition = composition non-empty`.
    - `repoCount == 1 && !hasComposition` → `MONOREPO_NO_COMPOSITION`.
    - `repoCount == 1 && hasComposition` → `MONOREPO_WITH_COMPOSITION`.
    - `repoCount > 1 && !hasComposition` → `POLYREPO_NO_COMPOSITION`.
    - `repoCount > 1 && hasComposition` → `POLYREPO_WITH_COMPOSITION`.
-   - Missing/empty repositories → `BadRequestException`.
+   - Missing/empty `targetRepositories` → `BadRequestException`.
 3. `InstantiateBlueprintVersion` / `UpdateDataProductFromBlueprintVersion`: replace `getStrategy()` branching with the helper; keep unsupported cases throwing `UnsupportedOperationException` with the same messaging style.
 4. Domain DTOs:
    - `TargetRepositoryDto`: use `String targetId` (replace unused `id` and remove `type`) + `branch` + `repository`.
    - `UpdateDataProductTargetRepositoryDto`: use `String targetId` (replace `type`).
 5. Delete `BlueprintRepositoryLogicalType` (no longer used on request/result).
 6. Manifest outbound port validation (instantiate + update):
-   - Phase-1: exactly one target; `targetId` non-blank and equals the sole `repositories[].key`.
-   - Reject multi-target lists for now with clear BadRequest (do not implement multi-repo runtime).
+   - For this prompt’s delivery scope: exactly one target; `targetId` non-blank and equals the sole `targetRepositories[].key`.
+   - Reject multi-target lists here with clear BadRequest (multi-repo runtime is companion work).
 7. REST resources: replace `type` with `targetId` on `InstantiateBlueprintVersionTargetRepositoryRes`, update-data-product target/result res types; map in use-cases services.
-8. `BlueprintRenderService.isMonorepoNoComposition`: derive from single repository key + empty composition (remove `MONOREPO` strategy import).
+8. `BlueprintRenderService.isMonorepoNoComposition`: derive from single `targetRepositories` key + empty composition (remove `MONOREPO` strategy import).
 
 ### Update Tests & Fixtures (blueprint-server)
 
-1. Rewrite `src/test/resources/manifest/example-2.*.yaml` and `instantiate/source-repo/manifest.yaml` to the README examples (repositories + root ± composition targets).
+1. Rewrite `src/test/resources/manifest/example-2.*.yaml` and `instantiate/source-repo/manifest.yaml` to the README examples (`targetRepositories`, typed `instantiation[]`, composition without targets).
 2. Update `ManifestParserTest` assertions for new fields; remove strategy/compositionLayout expectations.
 3. Update instantiate/update ITs and any validator unit tests to send `targetId` and new manifest content (no `type` field).
 4. Ensure monorepo-no-composition happy path still passes; multi-key / composition manifests fail as unsupported at use-case level after structural validation succeeds (or validation fails only on structural errors).
@@ -236,20 +241,20 @@ classDiagram
 
 ### Update Docs (blueprint-server)
 
-1. `docs/service/blueprint-process.md` and `docs/README.md`: replace “strategy” wording with repositories/root topology; keep phase-1 monorepo-no-composition limit.
+1. `docs/service/blueprint-process.md` and `docs/README.md`: replace “strategy” wording with `targetRepositories` / typed `instantiation[]` topology.
 2. Do not change the authoritative manifest README schema (already updated); only consumer docs.
 
 ### Update Manifest SDK (blindata-ui) — Model / Parser / Traverse
 
 1. Responsibility: Mirror Java schema in `src/pages/dataops/blueprints/manifestSdk/`.
 2. Model:
-   - `ManifestInstantiation`: `repositories`, `root`; remove strategy/compositionLayout/targets.
-   - Add `ManifestInstantiationRepository.js`, `ManifestInstantiationRoot.js`.
-   - Shared route type `ManifestTarget`: `sourcePath`, `repository`, `path` (replaces `ManifestInstantiationTarget`).
-   - `ManifestComposition`: include `targets` array of targets.
-   - Remove `ManifestInstantiationCompositionLayout.js`; remove `InstantiationStrategy` / `InstantiationTargetCreatePolicy` from `constants.js`; expose helpers that derive mono vs multi from `repositories.length` (`isSingleRepositoryTopology`, `soleRepositoryKey`).
-3. `ManifestSerializationVisitor` / `parser.js`: serialize/deserialize new shape.
-4. `traverseManifest.js`: walk `instantiation.repositories`, `instantiation.root.targets`, and `composition[].targets`; stop walking compositionLayout.
+   - `Manifest`: `targetRepositories`, `instantiation[]`.
+   - Add `ManifestTargetRepository.js`, `ManifestInstantiationEntry.js`, `ManifestInstantiationType.js`.
+   - Shared route type `ManifestTarget`: `sourcePath`, `repo`, `destinationPath`.
+   - `ManifestComposition`: module identity + `parameterMapping` only (no targets).
+   - Remove `InstantiationStrategy` / `InstantiationTargetCreatePolicy` from `constants.js`; expose helpers that derive mono vs multi from `targetRepositories.length` (`isSingleRepositoryTopology`, `soleRepositoryKey`, `rootRepositoryKey` from `isRoot`).
+3. `ManifestSerializationVisitor` / `parser.js`: serialize/deserialize the schema.
+4. `traverseManifest.js`: walk `targetRepositories`, `instantiation[]` entries and their targets, and `composition[]`.
 5. Update SDK README instantiation notes if they mention strategy.
 
 ### Update Instantiation UI Flows (blindata-ui)
@@ -266,15 +271,17 @@ classDiagram
 1. `blueprintRepositoryInitTemplates.js` (and any other emitted manifest strings): replace `instantiation.strategy: monorepo` with:
 
 ```yaml
+targetRepositories:
+  - key: main-repository
+    description: Target repository for all data product assets
+    isRoot: true
+
 instantiation:
-  repositories:
-    - key: main
-      description: Target repository for all data product assets
-  root:
+  - type: root
     targets:
       - sourcePath: ./
-        repository: main
-        path: ./
+        repo: main-repository
+        destinationPath: ./
 ```
 
 2. Adjust any README/help strings in templates that mention `instantiation.strategy`.
@@ -302,12 +309,12 @@ instantiation:
    - Do not add dual-read/migration for old `strategy` manifests.
    - Do not enable `schemaRef` parameter validation.
 2. Business Rule Constraints:
-   - Validator must reject duplicate repository keys, duplicate composition modules, unknown repository refs, multi-target missing `sourcePath`, and absolute/`..` paths.
-   - Phase-1 runtime: exactly one target whose `targetId` matches the sole repository key.
-   - Empty `root.targets` validates but does not become a supported runtime scenario by itself.
+   - Validator must reject duplicate repository keys, missing/extra `isRoot`, duplicate composition modules, composition/instantiation module misalignment, unknown `repo` refs, multi-target missing `sourcePath`, and absolute/`..` paths.
+   - For this prompt’s delivery scope: exactly one target whose `targetId` matches the sole repository key.
+   - Each `instantiation[]` entry requires non-empty `targets`; exactly one `type: root` entry.
 3. API Constraints:
-   - Instantiate and update target entries MUST include `targetId` (manifest repository key).
-   - Do **not** include a request `type` / `BlueprintRepositoryLogicalType`; root vs module is defined by manifest `instantiation.root` / `composition[]`.
+   - Instantiate and update target entries MUST include `targetId` (manifest `targetRepositories[].key`).
+   - Do **not** include a request `type` / `BlueprintRepositoryLogicalType`; root vs module is defined by manifest `instantiation[]` entry type and `composition[]`.
    - List-based `targetRepositories` / `results` shapes retained for future expansion.
 4. Integration Constraints:
    - Java and JS manifest models must accept the README examples 2.1–2.4 for parse/serialize round-trip (composition examples parse even if runtime unsupported).
@@ -319,4 +326,4 @@ instantiation:
    - Remove obsolete Java/JS types rather than leaving dead strategy/`type` fields on the model/API.
    - Update all visitors/tests that reference removed types so the project compiles and tests pass.
 7. Cross-repo Constraints:
-   - Blueprint-server and blindata-ui changes ship together for this ticket; UI must not send old strategy-era manifests or omit `targetId`.
+   - Blueprint-server and blindata-ui changes ship together for this ticket; UI must not omit `targetId`.
