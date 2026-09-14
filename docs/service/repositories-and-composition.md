@@ -6,7 +6,7 @@ Related:
 
 - [Blueprint process](blueprint-process.md) — instantiate, update, and tag-based 3-way merge
 - [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — schema and YAML examples
-- [Protected resources](protected-resources.md) — publication-time integrity check (1→1 and N→1)
+- [Protected resources](protected-resources.md) — publication-time integrity across 1→1, N→1, 1→N, and N→N
 - [Git providers](git-providers.md) — remotes and auth
 
 ---

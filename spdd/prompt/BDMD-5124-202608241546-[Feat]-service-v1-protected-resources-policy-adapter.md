@@ -1,453 +1,383 @@
-# Protected-resources V1 policy reconstruction adapter
+# Protected-resources Policy V1 reconstruction adapter
 
 ## Requirements
 
-- Finish the publication gate for **today’s Policy V1**: Blueprint already has the integrity use case. Add a **removable `old/v1` adapter** so Policy can actually invoke that check (`ProtectedResourcesPolicyValidatorService`, Policy DTOs/clients, reconstruction, CREATION subscription).
-- Register the Policy engine + one policy when the Blueprint **validator is active**; bind the policy to Policy V1 **`DATA_PRODUCT_VERSION_CREATION`** only (not `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`, not Notification).
-- On evaluate, Policy sends `{ currentState, afterState }` with **no tag and no product repo**. Reconstruct the V2 nested version resource by **fetching Registry**, then call **`ProtectedResourcesPolicyValidatorService`** / `EvaluateProtectedResourcesIntegrity`.
-- Keep reconstruction isolated so Policy V2 is **delete `old/v1`** plus a thin lasting evaluate controller. Do not change Notification or Policy Service. Do not rewrite hashing, instantiate, or Git clone logic. Core must not import `old/v1`.
+- Keep the existing removable `old/v1` Policy adapter that registers a blocking-capable validator on Policy V1 `DATA_PRODUCT_VERSION_CREATION` and exposes `POST /api/v1/up/validator/evaluate-policy`.
+- Reconstruct a complete current Registry product/version context from Policy V1 `{currentState, afterState}` before invoking the lasting integrity capability.
+- Carry the final Registry contracts without reinterpretation:
+  - root repository locator from `dataProduct.dataProductRepo`;
+  - non-root locators from `dataProduct.additionalDataProductRepos[]`, keyed by `repositoryKey`;
+  - root publication ref from version `tag`;
+  - non-root refs from version `additionalTags[]`, keyed by `repositoryKey`.
+- Map Registry JSON into domain-only root and keyed additional locator/ref data while preserving duplicate, blank, and incomplete entries. Do not decide which mappings are required in the V1 adapter; the integrity use case makes that decision after reading the recorded manifest.
+- Preserve V2-shaped pass-through behavior. The current Registry V2 publication event already nests `DataProductVersionRes`; no Registry event change is required now. If a future direct Policy V2 path omits required context, extend that event then.
+- Fail closed on V1 reconstruction failures, Registry lookup failures, malformed requests, and integrity timeout without moving hashing, Git, manifest, or target-selection rules into `old/v1`.
+- Keep Notification and Policy Service unchanged and keep core packages independent of `org.opendatamesh.platform.pp.blueprint.old`.
 
 ## Entities
 
 ```mermaid
 classDiagram
-  direction TB
+direction TB
 
-  class PolicyEvaluationRequestRes {
-    <<old.v1.resources>>
-    +Long policyEvaluationId
-    +JsonNode policy
-    +JsonNode objectToEvaluate
-  }
+class PolicyEvaluationRequestRes {
+  <<old.v1 resource>>
+  +Long policyEvaluationId
+  +JsonNode policy
+  +JsonNode objectToEvaluate
+}
 
-  class PolicyEvaluationResultRes {
-    <<old.v1.resources>>
-    +Long policyEvaluationId
-    +Boolean evaluationResult
-    +OutputObject outputObject
-  }
+class PolicyEvaluationResultRes {
+  <<old.v1 resource>>
+  +Long policyEvaluationId
+  +Boolean evaluationResult
+  +OutputObject outputObject
+}
 
-  class V1EvaluatePayload {
-    +JsonNode currentState
-    +JsonNode afterState
-  }
+class V1EvaluatePayload {
+  +JsonNode currentState
+  +JsonNode afterState
+}
 
-  class DescriptorIdentity {
-    +String fqn
-    +String versionNumber
-  }
+class DescriptorIdentity {
+  +String fullyQualifiedName
+  +String versionNumber
+}
 
-  class NestedVersionResource {
-    +String uuid
-    +String tag
-    +JsonNode content
-    +ProductRepoLocator dataProductRepo
-  }
+class RegistryVersionResource {
+  +String uuid
+  +String tag
+  +JsonNode content
+  +RegistryProductResource dataProduct
+  +List~RegistryAdditionalTag~ additionalTags
+}
 
-  class ProductRepoLocator {
-    +String remoteUrlHttp
-    +String providerType
-    +String providerBaseUrl
-  }
+class RegistryProductResource {
+  +String uuid
+  +RegistryRepo dataProductRepo
+  +List~RegistryAdditionalRepo~ additionalDataProductRepos
+}
 
-  class EvaluateProtectedResourcesIntegrity {
-    <<existing use case — do not rewrite>>
-    +execute()
-  }
+class RegistryAdditionalRepo {
+  +String repositoryKey
+  +String remoteUrlHttp
+  +String providerType
+  +String providerBaseUrl
+  +String defaultBranch
+}
 
-  class ProtectedResourcesPolicyValidatorService {
-    <<old/v1 Policy adapter>>
-    +evaluate(PolicyEvaluationRequestRes)
-    +executeIntegrity(command, holder) CompletableFuture
-  }
+class RegistryAdditionalTag {
+  +String repositoryKey
+  +String tag
+}
 
-  class ReconstructPublicationRequestedService {
-    <<old/v1 @Service>>
-    +evaluate(PolicyEvaluationRequestRes)
-    +reconstructVersionResource(JsonNode)
-  }
+class ReconstructPublicationRequestedService {
+  <<old.v1 Service>>
+  +evaluate(document) PolicyEvaluationResultRes
+  +reconstructVersionResource(payload) JsonNode
+}
 
-  class ProtectedResourcesValidatorController {
-    <<old/v1 @RestController @Hidden>>
-    +evaluate(PolicyEvaluationRequestRes)
-  }
+class RegistryClient {
+  <<old.v1 port>>
+  +searchProductsByFqn(fqn)
+  +searchVersions(productUuid, versionNumber)
+  +getVersion(uuid)
+  +getProduct(uuid)
+}
 
-  class ProtectedResourcesValidatorPolicySubscriber {
-    <<old/v1 @Configuration>>
-    +init()
-  }
+class ProtectedResourcesPolicyValidatorService {
+  <<old.v1 Service>>
+  +evaluate(document) PolicyEvaluationResultRes
+  +executeIntegrity(command, holder) CompletableFuture
+}
 
-  class RegistryClient {
-    <<old/v1 only>>
-    +searchProductsByFqn(fqn)
-    +searchVersions(productUuid, versionNumber)
-    +getVersion(uuid)
-    +getProduct(uuid)
-  }
+class EvaluateProtectedResourcesIntegrityCommand {
+  <<lasting domain record>>
+  +String rootPublicationRef
+  +ProductRepoLocator rootProductRepo
+  +List~KeyedProductRepoLocator~ additionalProductRepos
+  +List~KeyedProductRepoRef~ additionalRefs
+  +String blueprintName
+  +String blueprintVersionNumber
+  +Map lineageParameters
+}
 
-  class RegistryClientsConfiguration {
-    <<old/v1 @Configuration>>
-    +registryClient()
-  }
+class ProtectedResourcesValidatorController {
+  <<old.v1 RestController>>
+  +evaluate(document) PolicyEvaluationResultRes
+}
 
-  class RegistryReconstructionException {
-    <<RuntimeException>>
-    +String message
-  }
+class ProtectedResourcesValidatorPolicySubscriber {
+  <<old.v1 Configuration>>
+  +init()
+}
 
-  PolicyEvaluationRequestRes --> V1EvaluatePayload : Policy V1 objectToEvaluate
-  V1EvaluatePayload --> DescriptorIdentity : afterState.dataProductVersion.info
-  ProtectedResourcesValidatorController --> ReconstructPublicationRequestedService
-  ReconstructPublicationRequestedService --> DescriptorIdentity : reads
-  ReconstructPublicationRequestedService --> RegistryClient : fetches
-  ReconstructPublicationRequestedService --> RegistryReconstructionException : miss / not configured
-  RegistryClientsConfiguration --> RegistryClient : real or fail-closed stub
-  RegistryClient --> NestedVersionResource : GET version
-  ReconstructPublicationRequestedService --> PolicyEvaluationRequestRes : rebuilt objectToEvaluate
-  ReconstructPublicationRequestedService --> ProtectedResourcesPolicyValidatorService : delegates
-  ProtectedResourcesPolicyValidatorService --> NestedVersionResource : extracts tag + repo + lineage
-  ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrity : existing path
+PolicyEvaluationRequestRes --> V1EvaluatePayload
+V1EvaluatePayload --> DescriptorIdentity
+ProtectedResourcesValidatorController --> ReconstructPublicationRequestedService
+ReconstructPublicationRequestedService --> RegistryClient
+RegistryClient --> RegistryVersionResource
+RegistryVersionResource --> RegistryProductResource
+RegistryProductResource "1" --> "0..*" RegistryAdditionalRepo
+RegistryVersionResource "1" --> "0..*" RegistryAdditionalTag
+ReconstructPublicationRequestedService --> ProtectedResourcesPolicyValidatorService
+ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrityCommand
+ProtectedResourcesPolicyValidatorService --> PolicyEvaluationResultRes
+ProtectedResourcesValidatorPolicySubscriber --> PolicyEvaluationRequestRes : registers adapter contract
 ```
 
 ## Approach
 
-1. Isolation (Registry `old` pattern):
-   - New package `org.opendatamesh.platform.pp.blueprint.old` with a README stating: **this package may depend on core; core must not depend on this package**; intended for deletion when Policy V2 exists.
-   - V1-only code lives under `...old.v1`: Policy subscriber (`ProtectedResourcesValidatorPolicySubscriber`), evaluate HTTP adapter (`ProtectedResourcesValidatorController`), Policy DTOs/clients, `ProtectedResourcesPolicyValidatorService`, Registry client + `RegistryClientsConfiguration`, reconstruction (`ReconstructPublicationRequestedService`).
-   - Lasting code stays: `EvaluateProtectedResourcesIntegrity*`, `InstantiateBlueprintVersionLocalGitOutboundPort`, `BlueprintValidatorProperties` / `ValidatorGitCredentialHeaders`.
-   - `old/v1` may call the integrity factory. Integrity / `validator.config` must not import `old`.
+1. Preserve V1 isolation:
+   - `old/v1` owns Policy clients/resources, subscriber, HTTP controller, Registry HTTP client, reconstruction, async execution timeout, and Policy result mapping.
+   - It may depend on the lasting integrity factory and domain records. No package outside `old` may import `old`.
+   - Delete this package when a direct Policy V2 integration supplies the same domain context.
 
-2. Do not use Notification; do not change Policy:
-   - Registry’s existing V1 bridge already calls Policy `validateInput(DATA_PRODUCT_VERSION_CREATION)`.
-   - Blueprint registers on that name. Policy already forwards `{ currentState, afterState }` to `POST {adapterUrl}/api/v1/up/validator/evaluate-policy`.
+2. Reconstruct current Registry state:
+   - Extract FQN/version from Policy V1 `afterState.dataProductVersion.info` with existing accepted aliases.
+   - Search one product, search one version, GET the full version, and GET the product only when the nested product is absent or lacks root/additional locator structure.
+   - Ensure `dataProduct.additionalDataProductRepos` and version `additionalTags` are arrays; empty arrays are valid.
+   - Do not require the root clone URL or root tag during reconstruction. A publication may protect only non-root targets, and requiredness is protection-scoped in core.
 
-3. Reconstruct, then reuse:
-   - From `afterState.dataProductVersion` (descriptor): read `info.fullyQualifiedName` (or `fullyQualifiedName`) and `info.version` (or `versionNumber`).
-   - Registry V2: search products by FQN → search versions by product uuid + version number → GET version by uuid.
-   - If GET version omits nested `dataProduct.dataProductRepo`, GET product by uuid and nest it.
-   - Pass the GET version JSON as `objectToEvaluate` into `ProtectedResourcesPolicyValidatorService` (it accepts a node with `content` + `tag`/`dataProduct`).
-   - Prefer stored Registry content over possibly 1.x-rewritten `afterState` for lineage.
+3. Map without lossy validation:
+   - `ProtectedResourcesPolicyValidatorService` extracts the nested/raw version resource.
+   - Map root locator/ref independently.
+   - Map every additional locator and additional ref entry in encounter order into domain lists using exact `repositoryKey` values.
+   - Preserve duplicates and incomplete entries so core can fail only when a referenced target is ambiguous or incomplete.
+   - Missing Blueprint lineage remains not applicable and avoids integrity invocation.
 
-4. Pass-through for already-V2-shaped payloads (`isAlreadyV2Shaped`):
-   - If `objectToEvaluate.eventContent.dataProductVersion` is an object, **skip Registry**.
-   - Else if the node (or nested `dataProductVersion`) has `content` and (`tag` or `dataProduct` or nested `dataProduct.dataProductRepo`), **skip Registry**.
-   - Call `ProtectedResourcesPolicyValidatorService.evaluate(document)` with the original request. Keeps current integrity ITs working and matches the Policy V2 call shape.
-   - Otherwise treat the body as Policy V1 `{ currentState, afterState }`.
+4. Keep pass-through:
+   - Existing `eventContent.dataProductVersion`, nested `dataProductVersion`, and raw Registry-version shapes skip Registry reconstruction.
+   - Pass-through does not claim completeness; it maps the available structures and lets integrity validate only referenced targets.
 
-5. Configuration:
-   - Lasting: `blueprint.validator.active` / `blocking` / Git credentials / Policy address — already exist.
-   - Adapter-only: `odm.product-plane.registry-service.active` + `address` (same style as Policy client). Unused after `old/v1` is deleted — intended.
-   - Local profile Registry is `http://localhost:8086`. Do not put Git tokens in this prompt or in new docs.
+5. Preserve Policy behavior:
+   - Register create-if-absent engine/policy only when validator and Policy Service are configured.
+   - Keep event `DATA_PRODUCT_VERSION_CREATION`, configured `blockingFlag`, adapter URL, and no-update-on-restart behavior.
+   - Return HTTP 200 with `evaluationResult=false` for reconstruction, timeout, infrastructure, or integrity failures. Reserve HTTP 400 for malformed evaluate payloads.
 
-6. Exception handling:
-   - Unreadable evaluate JSON → existing `BadRequestException` (HTTP 400) with message `Empty/Malformed Policy Evaluation Object`.
-   - Reconstruction / Registry miss / multiple FQN matches / missing FQN or version → catch `RegistryReconstructionException` → HTTP **200** with `evaluationResult=false` and the exception message (fail closed). Do not silent-pass.
-   - Exact reconstruction messages:
-     - missing identity: `Cannot check protected resources: the data product name or version could not be determined`
-     - missing tag/clone URL after nest: `Cannot check protected resources: the data product version is missing its Git repository or tag`
-     - 0 products: `no data product found in Registry for FQN '{fqn}'`
-     - >1 products: `multiple data products found in Registry for FQN '{fqn}'`
-     - 0 versions: `no data product version found in Registry for product '{uuid}' version '{version}'`
-     - Registry inactive/blank: `Registry not configured`
-   - Integrity outcomes stay as implemented (not-applicable pass, path-level fail, timeout fail closed).
-
-7. Policy registration:
-   - Create-if-absent engine + policy with **one** event `DATA_PRODUCT_VERSION_CREATION`.
-   - Do not overwrite `blockingFlag` on restart.
-   - Nothing has been released: no Policy-row update API, no operator delete of an old event binding.
+6. Defer Policy V2:
+   - Final Registry `EmittedEventDataProductVersionPublicationRequestedRes` contains nested `DataProductVersionRes`, whose final model contains `additionalTags` and nested product repositories.
+   - Do not modify Registry now. If direct Policy V2 later strips or omits fields, extend that event/mapping as a separate integration change.
 
 ## Structure
 
 ### Inheritance Relationships
 
-1. Existing `UseCase` / integrity / local Git port — **unchanged**
-2. `RegistryClient` interface in `old.v1` defines search/GET; `RegistryClientImpl` implements it with `RestUtils` (package-private). Inactive/blank address → anonymous fail-closed client from `RegistryClientsConfiguration` that throws `RegistryReconstructionException("Registry not configured")`
-3. `PolicyEngineClient` / `PolicyClient` live in `...old.v1.client` (Policy V1 registration API); no-op clients when Policy is inactive
-4. `RegistryReconstructionException` is package-private; mapped to 200 false by reconstruction, not by `ResponseExceptionHandler`
-5. Existing `ResponseExceptionHandler` remains the HTTP exception mapper
+1. `ProtectedResourcesValidatorController` remains a thin `@RestController` in `old.v1`.
+2. `ReconstructPublicationRequestedService` and `ProtectedResourcesPolicyValidatorService` remain `@Service` classes in `old.v1`.
+3. `ProtectedResourcesValidatorPolicySubscriber` remains `@Configuration` with `@PostConstruct`.
+4. `RegistryClient` remains the V1-only interface; `RegistryClientImpl` remains package-private and is built by `RegistryClientsConfiguration`.
+5. `RegistryReconstructionException` remains package-private and maps to a Policy false result.
+6. `ProtectedResourcesPolicyValidatorService.OutcomeHolder` remains the presenter adapter for the lasting integrity use case.
 
 ### Dependencies
 
-1. `old.v1` `ProtectedResourcesValidatorController` → `ReconstructPublicationRequestedService` → `RegistryClient` and `ProtectedResourcesPolicyValidatorService`
-2. `old.v1` `ProtectedResourcesValidatorPolicySubscriber` → `old.v1` `PolicyEngineClient` / `PolicyClient` (event name `DATA_PRODUCT_VERSION_CREATION`)
-3. `ProtectedResourcesPolicyValidatorService` → integrity factory (**must not** call Registry); `evaluate()` is require readable payload → map to integrity command → `@Async executeIntegrity` with timeout (`@Lazy` self, `@EnableAsync` on `BlueprintApplication`) → map to Policy result
-4. Core integrity / instantiate / `validator.config` **must not** import `...blueprint.old`
+1. Controller → `ReconstructPublicationRequestedService`.
+2. Reconstruction → `RegistryClient` and `ProtectedResourcesPolicyValidatorService`.
+3. Policy validator service → `EvaluateProtectedResourcesIntegrityFactory`.
+4. Subscriber → V1 `PolicyEngineClient` and `PolicyClient`.
+5. `old/v1` → lasting domain records is allowed; lasting packages → `old/v1` is forbidden.
 
 ### Layered Architecture
 
-1. Controller Layer (`old/v1`): same path `POST /api/v1/up/validator/evaluate-policy`
-2. Reconstruction Layer (`old/v1`): V1 payload → Registry fetch → V2 version resource
-3. Adapter service Layer (`old/v1` `ProtectedResourcesPolicyValidatorService`): nested version resource → integrity command
-4. Use Case Layer (existing): clones, hash, compare
-5. Registration Layer (`old/v1` subscriber): create-if-absent on `DATA_PRODUCT_VERSION_CREATION`
-6. Exception Handling Layer: existing `ResponseExceptionHandler`
+1. HTTP Layer: Observer-compatible Policy request/response resources and evaluate controller.
+2. Reconstruction Layer: V1 descriptor identity to current Registry version/product JSON.
+3. Mapping Layer: Registry-shaped JSON to domain-only integrity command.
+4. Execution Layer: async integrity invocation with one configured timeout.
+5. Registration Layer: create-if-absent Policy engine and policy.
+6. Core Layer: lasting integrity use case from the companion prompt.
 
 ## Operations
 
-### Create package isolation - `org.opendatamesh.platform.pp.blueprint.old`
+### Preserve Policy V1 registration and HTTP surface
 
-1. Responsibility: Removable compatibility layer, same idea as Registry `old`.
-2. Add `src/main/java/org/opendatamesh/platform/pp/blueprint/old/README.md` stating:
-   - Purpose: Policy V1 reconstruction for protected-resources validation
-   - Allowed: this package depends on core (integrity factory, `validator.config`, shared exceptions, `RestUtils`)
-   - Forbidden: any package outside `old` importing `old`
-   - Removal: delete this tree when Policy V2 forwards `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with nested tag + repo; add a thin lasting controller that maps Policy evaluate payloads to the integrity factory
-3. Constraints: no hashing, Git, or instantiate code in `old`.
+1. Keep `ProtectedResourcesValidatorPolicySubscriber.EVALUATION_EVENT = "DATA_PRODUCT_VERSION_CREATION"`.
+2. Keep create-if-absent engine/policy behavior, configured blocking flag, `server.baseUrl`, and inactive/unconfigured no-call behavior.
+3. Keep `POST /api/v1/up/validator/evaluate-policy` and Observer-compatible JSON fields.
+4. Keep `ProtectedResourcesValidatorController` delegation-only.
+5. Do not subscribe to Notification or add `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` to Policy V1.
 
-### Move evaluate HTTP adapter into `old.v1`
+### Update reconstruction - `ReconstructPublicationRequestedService`
 
-1. `ProtectedResourcesValidatorController` lives in `...old.v1` (class name unchanged; **keep** `POST /api/v1/up/validator/evaluate-policy`). `@Hidden`, `@RestController`, `@RequestMapping("/api/v1/up/validator/evaluate-policy")`, `@PostMapping` consumes JSON, `@ResponseStatus(OK)`.
-2. Controller still only maps HTTP → `ReconstructPublicationRequestedService.evaluate(document)`. No Registry URLs, no skip/fail matrix in the controller.
-3. Single mapping of that path (no lasting controller until `old/v1` is deleted).
-4. Existing integrity ITs (`ProtectedResourcesValidatorControllerIT`) that POST V2-shaped `objectToEvaluate` must keep passing via pass-through (see reconstruction service). V1 reconstruction ITs: `OldV1ProtectedResourcesValidatorControllerIT`, `ReconstructPublicationRequestedServiceTest`.
+1. Preserve current identity lookup:
+   - descriptor from `afterState.dataProductVersion` or `afterState`;
+   - FQN aliases `fullyQualifiedName` / `fqn`;
+   - version aliases `version` / `versionNumber`;
+   - unique product and version lookup, then GET full version.
+2. Product completeness for reconstruction means:
+   - `dataProduct` is an object;
+   - `dataProduct.dataProductRepo` may be present or absent;
+   - `dataProduct.additionalDataProductRepos` is an array after optional product GET/defaulting.
+3. If the nested product is absent, or if its root repository/additional repository array is absent, GET the current product and nest it.
+4. After nesting:
+   - default missing/non-array `additionalDataProductRepos` to `[]`;
+   - default missing/non-array version `additionalTags` to `[]`;
+   - do not invent locator or tag entries.
+5. Remove the unconditional `MISSING_CLONE_METADATA` check for root `tag` and root `dataProductRepo.remoteUrlHttp`. Core must decide whether root metadata is required from the recorded protected list.
+6. Keep malformed V1 payload, zero/multiple product/version, empty Registry response, and Registry client failures fail-closed with current safe messages.
+7. Preserve already-V2-shaped pass-through and do not call Registry for it.
 
-### Create reconstruction service - `ReconstructPublicationRequestedService` (`old.v1`)
+### Update mapping - `ProtectedResourcesPolicyValidatorService`
 
-1. Responsibility: Decide pass-through vs V1 reconstruct; never hash. `@Service`.
-2. `evaluate(PolicyEvaluationRequestRes document): PolicyEvaluationResultRes`
-   - If `objectToEvaluate` is null or not an object → `BadRequestException("Empty/Malformed Policy Evaluation Object")` (same as today).
-   - If `isAlreadyV2Shaped(objectToEvaluate)` → call `ProtectedResourcesPolicyValidatorService.evaluate(document)` unchanged (original request object).
-   - Else read `afterState` / `currentState`. If neither is a JSON object → 400 `Empty/Malformed Policy Evaluation Object`.
-   - Descriptor node = `afterState.dataProductVersion` if object, else `afterState` if it looks like a descriptor (`info` present), else `afterState`.
-   - Extract FQN + version from descriptor `info` (`fullyQualifiedName` / `fqn`; `version` / `versionNumber`), then the descriptor root. Missing either → `RegistryReconstructionException` with `Cannot check protected resources: the data product name or version could not be determined` (200 false; Registry never called).
-   - Call Registry lookup (below). On miss / multiple products / client error → `RegistryReconstructionException` → 200 false with the cause (no stack traces, no tokens).
-   - If reconstructed version has no `tag` or no `dataProduct.dataProductRepo.remoteUrlHttp` after optional product GET nest → `RegistryReconstructionException` with `Cannot check protected resources: the data product version is missing its Git repository or tag`.
-   - Build a new `PolicyEvaluationRequestRes` copying `policyEvaluationId` / `policy`, `objectToEvaluate` = GET version JSON (Jackson `ObjectNode` deep copy, possibly with nested `dataProduct` from GET product).
-   - Delegate to `ProtectedResourcesPolicyValidatorService.evaluate(...)`.
-3. Timeout: `ProtectedResourcesPolicyValidatorService` runs integrity via Spring `@Async` (`@EnableAsync` on `BlueprintApplication`, Observer `@Lazy` self-proxy, `OutcomeHolder`) and waits with `get(evaluation-timeout-seconds)`. Reconstruction fetch runs on the same request thread before that. Fail closed if Registry client throws (`RegistryReconstructionException` wrapping `ClientException`). Do not add a second hashing implementation.
-4. Jackson: `FAIL_ON_UNKNOWN_PROPERTIES = false` on a copied `ObjectMapper`.
-5. Constraints: do not call integrity factory from reconstruction except through `ProtectedResourcesPolicyValidatorService`. Catch `RegistryReconstructionException` only in `evaluate`; map to `evaluationResult=false` + `rawError.cause`.
+1. Keep lineage extraction from `content.blueprint.blueprintName`, `blueprintVersionNumber`, and `parameters`.
+2. If lineage name/version is absent, return the existing not-applicable result and do not invoke integrity.
+3. Update `mapToIntegrityCommand` to populate:
+   - `rootPublicationRef` from version `tag`;
+   - `rootProductRepo` from `dataProduct.dataProductRepo`;
+   - `additionalProductRepos` from every `dataProduct.additionalDataProductRepos[]`;
+   - `additionalRefs` from every version `additionalTags[]`;
+   - existing Blueprint identity and parameters.
+4. Map additional locators with `repositoryKey` and the same clone fields supported by root `ProductRepoLocator`.
+5. Map additional refs with exact `repositoryKey` and `tag`.
+6. Do not trim, case-fold, deduplicate, cross-join, or reject additional entries here. Preserve order, duplicates, blanks, and null mapped fields for protection-scoped core validation.
+7. Accept `providerType` and existing root alias `dataProductRepoProviderType`; use `providerType` for final additional repository resources.
+8. Keep async `executeIntegrity`, timeout sealing, interruption handling, and outcome-to-Policy mapping.
 
-### Create Registry client - `old.v1` only
+### Preserve Registry client and configuration
 
-1. Responsibility: Registry V2 HTTP using existing `RestUtils` / `RestUtilsFactory` / `RestTemplateBuilder` (same as Policy clients).
-2. Routes:
-   - `GET {address}/api/v2/pp/registry/products` with filter `fqn` (page size small, e.g. 2)
-   - `GET {address}/api/v2/pp/registry/products-versions` with `dataProductUuid` + `versionNumber`
-   - `GET {address}/api/v2/pp/registry/products-versions/{uuid}`
-   - `GET {address}/api/v2/pp/registry/products/{uuid}` only if version GET lacks nested repo
-3. Resources: minimal JavaBeans in `old.v1` matching Registry JSON (`uuid`, `fqn`, `tag`, `versionNumber`, `content`, nested `dataProduct` / `dataProductRepo` with `remoteUrlHttp`, `providerType` **or** `dataProductRepoProviderType`, `providerBaseUrl`, clone identity fields). Do **not** add these types to the integrity package.
-4. Lookup rules:
-   - 0 products or 0 versions → fail closed
-   - more than one product for FQN → fail closed
-   - more than one version for uuid+versionNumber → fail closed (should not happen; version number is unique per product)
-5. Configuration bean `RegistryClientsConfiguration` (`@Configuration`, same pattern as `PolicyClientsConfiguration`):
-   - `@Value("${odm.product-plane.registry-service.active:false}")`
-   - `@Value("${odm.product-plane.registry-service.address:}")`
-   - If inactive or address blank: anonymous `RegistryClient` whose methods throw `RegistryReconstructionException("Registry not configured")` when reconstruction is needed (pass-through V2 payloads must still work **without** Registry).
-   - Real client: `new RegistryClientImpl(RestUtils, address)` — package-private impl; page size 2 for searches; wraps `ClientException` / `ClientResourceMappingException` as `RegistryReconstructionException`.
-6. Add to `application.yml`:
+1. Keep current Registry V2 routes:
+   - `/api/v2/pp/registry/products`
+   - `/api/v2/pp/registry/products-versions`
+   - full GETs by UUID.
+2. Keep page size 2 and unique-result enforcement.
+3. Keep inactive/blank Registry client fail-closed only when V1 reconstruction actually needs Registry.
+4. Do not create new Registry persistence or V1 DTO hierarchies for additional entries; reconstruction retains full GET JSON as `JsonNode`.
+5. Keep configuration under `odm.product-plane.registry-service`.
 
-```yaml
-odm:
-  product-plane:
-    registry-service:
-      active: false
-      address:
-```
+### Keep Registry V2 event unchanged for now
 
-   In `application-localpostgres.yml` set `active: true` and `address: http://localhost:8086` next to the existing Policy block. In `application-test.yml` leave inactive/blank unless a test binds a mock.
-7. Constraints: no IdentifierStrategy / FQN-derived id; no Registry V1 version GET as the sole lookup.
+1. Verify the authoritative Registry branch maps final `DataProductVersionRes.additionalTags` and nested `DataProductRes.additionalDataProductRepos`.
+2. No Blueprint or Registry code should augment `EmittedEventDataProductVersionPublicationRequestedRes` speculatively.
+3. If future direct Policy V2 delivery proves incomplete, extend its nested resource mapping in a separate change while preserving the lasting command contract.
 
-### Move subscriber into `old.v1` and bind CREATION
-
-1. `ProtectedResourcesValidatorPolicySubscriber` is `@Configuration` in `old.v1` with `@PostConstruct init()`. Public constant `EVALUATION_EVENT = "DATA_PRODUCT_VERSION_CREATION"`.
-2. Do not register `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` or `DATA_PRODUCT_CREATION`.
-3. Still gated by `blueprint.validator.active`. If active but Policy `odm.product-plane.policy-service.active/address` is off/blank: log error and skip (do not call clients).
-4. Engine `adapterUrl` = `server.baseUrl`. Engine name/display-name from `blueprint.validator.policy-engine` (defaults `blueprint-service-validator` / `Blueprint Service Validator`). Policy name default `Protected Resources Integrity`. Policy `blockingFlag` from config at **create** only. Comment on create-if-absent: operators must change blocking in Policy Service after first create.
-5. Constraints: no Policy update API; no migration of existing rows (nothing released). Catch `RuntimeException` around registration and log error (do not crash the JVM).
-
-### Leave lasting integrity alone
-
-1. Do **not** change `EvaluateProtectedResourcesIntegrity*` digest/Git/instantiate logic.
-2. Do **not** add Registry calls to `ProtectedResourcesPolicyValidatorService`.
-3. `extractVersionResource` on that adapter supports a raw version resource — reconstruction should feed GET version JSON (`content` + `tag` / `dataProduct`).
-4. Production `InstantiateBlueprintVersionFactory.buildInstantiateBlueprintVersion` stays unchanged.
-5. `@EnableAsync` on `BlueprintApplication` is required for the adapter’s `@Async executeIntegrity`; it is lasting application config, not `old/v1`-only.
-
-## Integration Test Scenarios (Gherkin)
-
-Trace each test to a scenario below via a javadoc comment that restates the **full** Gherkin immediately above the `@Test` method. Tests: `ProtectedResourcesValidatorPolicySubscriberTest`, `ReconstructPublicationRequestedServiceTest`, `OldV1ProtectedResourcesValidatorControllerIT`. Integrity skip/fail Gherkin lives in `spdd/prompt/BDMD-5124-202608210930-[Feat]-service-protected-resources-integrity-policy-adapter.md`.
-
-### Feature: Policy engine registration (V1)
+### High-level tests (Gherkin)
 
 ```gherkin
-Scenario: Validator inactive does not register a Policy engine
-  Given blueprint.validator.active is false
-  When the Policy subscriber initializes
-  Then Policy engine and policy clients are never called
+Feature: Policy V1 registration
 
-Scenario: Validator active creates engine and policy if absent
-  Given blueprint.validator.active is true
-  And Policy Service is configured
-  And no Policy engine or policy named for this validator exists
-  When the Policy subscriber initializes
-  Then a Policy engine is created with adapterUrl equal to server.baseUrl
-  And a policy named "Protected Resources Integrity" is created
-  And the policy blockingFlag is taken from Blueprint configuration
-  And the policy evaluation events contain exactly "DATA_PRODUCT_VERSION_CREATION"
-  And the policy evaluation events do not contain "DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED"
-  And the policy evaluation events do not contain "DATA_PRODUCT_CREATION"
+  Scenario: Active validator registers the creation policy once
+    Given the Blueprint validator and Policy Service are configured
+    And the engine and policy do not exist
+    When the subscriber initializes
+    Then it creates the configured engine and policy
+    And the policy contains exactly DATA_PRODUCT_VERSION_CREATION
+    And restart does not recreate existing resources
 
-Scenario: Validator active does not recreate an existing policy
-  Given blueprint.validator.active is true
-  And Policy Service is configured
-  And the Policy engine and policy already exist
-  When the Policy subscriber initializes
-  Then createPolicyEngine is never called
-  And createPolicy is never called
+Feature: Policy V1 Registry reconstruction
 
-Scenario: Validator active but Policy Service is not configured skips registration
-  Given blueprint.validator.active is true
-  And Policy Service is inactive or has a blank address
-  When the Policy subscriber initializes
-  Then Policy engine and policy clients are never called
+  Scenario: V1 payload reconstructs full root and additional publication context
+    Given a Policy V1 afterState identifies one data product version
+    And Registry returns a root repository, keyed additional repositories, a root tag, and keyed additional tags
+    When reconstruction evaluates the request
+    Then the Policy validator receives all locator and ref arrays
+    And integrity is invoked with root and keyed additional domain entries
+
+  Scenario: Missing arrays default to empty
+    Given Registry returns a monorepo version without additionalDataProductRepos or additionalTags arrays
+    When reconstruction completes
+    Then both arrays are present and empty
+    And the Policy validator is invoked
+
+  Scenario: Missing root metadata is deferred to protection-scoped integrity
+    Given Registry returns keyed additional locator and ref data but no root tag or root clone URL
+    When reconstruction completes
+    Then reconstruction delegates to the Policy validator
+    And it does not fail solely because root metadata is absent
+
+  Scenario: Duplicate keyed entries are preserved
+    Given Registry returns duplicate additional locator or ref entries for one repositoryKey
+    When the Policy validator maps the integrity command
+    Then every duplicate entry remains in the domain lists
+    And the adapter does not silently choose one
+
+  Scenario: V2-shaped publication object skips Registry
+    Given objectToEvaluate already contains eventContent.dataProductVersion
+    When reconstruction evaluates the request
+    Then Registry is not called
+    And available root and additional context is mapped directly
+
+  Scenario: Missing V1 identity fails closed
+    Given afterState does not provide data product FQN or version
+    When reconstruction evaluates the request
+    Then evaluationResult is false
+    And integrity and Registry are not called
+
+  Scenario: Registry lookup failure fails closed
+    Given a readable V1 identity
+    And Registry returns no unique product or version
+    When reconstruction evaluates the request
+    Then evaluationResult is false
+    And the result contains a safe reconstruction reason
+
+  Scenario: Reconstructed content without Blueprint lineage is not applicable
+    Given Registry reconstructs a version whose content has no Blueprint lineage
+    When the evaluate endpoint responds
+    Then evaluationResult is true
+    And the message states the version was not created from a Blueprint
+
+  Scenario: Integrity timeout rejects the Policy evaluation
+    Given a valid reconstructed command
+    And integrity exceeds blueprint.validator.evaluation-timeout-seconds
+    When the Policy adapter waits for completion
+    Then evaluationResult is false
+    And a late outcome cannot overwrite the timeout
 ```
 
-### Feature: Reconstruct V2 publication object from Policy V1
+| Feature / Scenario | Test class | Method |
+| --- | --- | --- |
+| Registration / Active validator registers once | `ProtectedResourcesValidatorPolicySubscriberTest` | preserve `activeCreatesEngineAndPolicyIfAbsent` and `activeDoesNotRecreateExistingPolicy` |
+| Reconstruction / Full root and additional context | `ReconstructPublicationRequestedServiceTest` plus `ProtectedResourcesPolicyValidatorServiceTest` | `v1AfterStateReconstructsFullPublicationContext` and `mapsRootAndAdditionalLocatorRefLists` |
+| Reconstruction / Missing arrays default empty | `ReconstructPublicationRequestedServiceTest` | extend `missingAdditionalReposAfterGetProductDefaultsToEmptyArray` to assert `additionalTags` |
+| Reconstruction / Missing root metadata deferred | `ReconstructPublicationRequestedServiceTest` | `missingRootMetadataStillDelegatesForProtectionScopedValidation` |
+| Mapping / Duplicate entries preserved | `ProtectedResourcesPolicyValidatorServiceTest` | `duplicateAdditionalEntriesRemainVisibleToIntegrity` |
+| Reconstruction / V2 shape skips Registry | `ReconstructPublicationRequestedServiceTest` | preserve and extend `v2ShapedPayloadSkipsRegistryAndDelegates` |
+| Reconstruction / Missing identity fails | `ReconstructPublicationRequestedServiceTest` | preserve `missingFqnAndVersionReturns200FalseWithoutIntegrity` |
+| Reconstruction / Registry lookup fails | `ReconstructPublicationRequestedServiceTest` | preserve zero/multiple product/version tests |
+| Reconstruction / No lineage is not applicable | `OldV1ProtectedResourcesValidatorControllerIT` | preserve `v1AfterStateWithReconstructedContentWithoutLineageIsNotApplicable` |
+| Policy adapter / Timeout rejects | `ProtectedResourcesPolicyValidatorServiceTest` | `timeoutSealsOutcomeAndReturnsFalse` |
 
-```gherkin
-Scenario: V2-shaped payload skips Registry and delegates to the validator
-  Given a Policy evaluate request whose objectToEvaluate already has nested version content and clone metadata
-  When reconstruction evaluates the request
-  Then the Registry client is never called
-  And the policy validator is called with the original request
-
-Scenario: V1 afterState reconstructs the version resource from Registry
-  Given a Policy V1 objectToEvaluate with afterState.dataProductVersion.info fullyQualifiedName and version
-  And Registry returns exactly one product for that FQN
-  And Registry returns exactly one version for that product uuid and version number
-  And GET version returns a nested version resource with tag and product repository
-  When reconstruction evaluates the request
-  Then the policy validator is called
-  And objectToEvaluate is the GET version body including tag and nested product repository
-
-Scenario: Missing FQN and version fail closed without integrity
-  Given a Policy V1 objectToEvaluate whose afterState descriptor has no fullyQualifiedName and no version
-  When reconstruction evaluates the request
-  Then evaluationResult is false
-  And the message states the data product name or version could not be determined
-  And the Registry client is never called
-  And the policy validator is never called
-
-Scenario: No data product found in Registry fails closed
-  Given a Policy V1 objectToEvaluate with a readable FQN and version
-  And Registry search by FQN returns zero products
-  When reconstruction evaluates the request
-  Then evaluationResult is false
-  And the message states no data product was found
-  And the policy validator is never called
-
-Scenario: Multiple data products for FQN fail closed
-  Given a Policy V1 objectToEvaluate with a readable FQN and version
-  And Registry search by FQN returns more than one product
-  When reconstruction evaluates the request
-  Then evaluationResult is false
-  And the message states multiple data products were found
-  And the policy validator is never called
-
-Scenario: No data product version found in Registry fails closed
-  Given a Policy V1 objectToEvaluate with a readable FQN and version
-  And Registry returns exactly one product
-  And Registry search for versions returns zero versions
-  When reconstruction evaluates the request
-  Then evaluationResult is false
-  And the message states no data product version was found
-  And the policy validator is never called
-
-Scenario: GET version without nested repo nests the product before delegate
-  Given a Policy V1 objectToEvaluate with a readable FQN and version
-  And GET version omits dataProduct.dataProductRepo
-  And GET product returns a product with a repository
-  When reconstruction evaluates the request
-  Then the policy validator receives objectToEvaluate with nested dataProduct.dataProductRepo
-
-Scenario: Registry not configured fails closed for a V1 payload
-  Given a Policy V1 objectToEvaluate with a readable FQN and version
-  And the Registry client is not configured
-  When reconstruction evaluates the request
-  Then evaluationResult is false
-  And the message states Registry is not configured
-  And the policy validator is never called
-
-Scenario: Unreadable payload throws BadRequest
-  Given a Policy evaluate request with no objectToEvaluate
-  When reconstruction evaluates the request
-  Then a BadRequestException is thrown with message "Empty/Malformed Policy Evaluation Object"
-  And the Registry client is never called
-
-Scenario: Neither currentState nor afterState is an object throws BadRequest
-  Given a Policy evaluate request whose afterState is not a JSON object
-  When reconstruction evaluates the request
-  Then a BadRequestException is thrown with message "Empty/Malformed Policy Evaluation Object"
-  And the policy validator is never called
-
-Scenario: Reconstructed content without lineage is not applicable
-  Given a Policy V1 evaluate request with afterState identity
-  And Registry GET version returns content without blueprint lineage
-  When the evaluate endpoint is called
-  Then the response status is 200
-  And evaluationResult is true
-  And the message states the version was not created from a blueprint
-```
+Implement each new or rewritten test and copy its complete Scenario text into the test method Javadoc.
 
 ## Norms
 
-Apply the registry in `spdd/norms/README.md`. Read in this session:
-
-1. `spdd/norms/USE_CASE_IMPLEMENTATION.md` — **do not add a second integrity use case**. Reconstruction is an HTTP/adapter concern in `old/v1`, not a hexagonal domain use case. It may call `ProtectedResourcesPolicyValidatorService`. Commands/presenters/ports for hashing stay as already implemented. Controllers still have no business rules beyond delegating to the reconstruction service.
-2. `spdd/norms/GENERIC-CRUD-GUIDELINES.md` — **do not add CRUD**. Do not persist reconstructed events. Load Blueprint versions only through the existing integrity persistency port.
-
-Annotation / DI / exceptions / logging:
-
-- `old/v1` controller: `@RestController`, `@Hidden` acceptable (same as current validator controller)
-- Reconstruction + Policy subscriber: Spring `@Service` / `@Configuration` **inside `old` only** (`ReconstructPublicationRequestedService`, `ProtectedResourcesValidatorPolicySubscriber`)
-- Registry client impl: package-private class constructed from `RegistryClientsConfiguration` (same pattern as `PolicyClientsConfiguration`)
-- `RegistryReconstructionException`: package-private; HTTP 200 + false, never 5xx
-- Never log Git tokens or Registry secrets
-- Reconstruction failures that should affect publication → HTTP 200 + `evaluationResult=false`, not 500
-- Comments: why the package is deletable; why Registry is called only here
+1. [`spdd/norms/USE_CASE_IMPLEMENTATION.md`](../norms/USE_CASE_IMPLEMENTATION.md):
+   - Keep the controller delegation-only.
+   - Treat `old/v1` as an inbound/integration adapter; it may map REST/Registry resources to domain records.
+   - Do not move transport JSON or `*Res` classes into the lasting use-case package.
+   - Keep integrity business policy in the use case and Registry/JSON mechanics in V1 services.
+2. [`spdd/norms/GENERIC-CRUD-GUIDELINES.md`](../norms/GENERIC-CRUD-GUIDELINES.md):
+   - Do not add CRUD or persist reconstructed requests.
+   - Use Registry HTTP APIs through the existing V1 client.
+   - Do not alter Blueprint or BlueprintVersion generic CRUD services.
 
 ## Safeguards
 
-1. Functional Constraints:
-   - Do not rewrite integrity, local Git port, digest, or production instantiate
-   - Do not subscribe to Notification
-   - Do not change Policy Service or Registry server code
-   - Core packages must not import `org.opendatamesh.platform.pp.blueprint.old`
-   - `old/v1` must not hash, clone Git, or push
-   - Policy event name for this slice **must** be `DATA_PRODUCT_VERSION_CREATION`
-   - Create-if-absent only; no Policy update/migration of evaluation events
-2. Performance Constraints:
-   - Existing `blueprint.validator.evaluation-timeout-seconds` still bounds Git/render
-   - Registry fetch is one search products + one search versions + one GET version (optional extra product GET)
-   - Always delete temp Git dirs in the existing integrity path (unchanged)
-3. Security Constraints:
-   - Git credentials only from Blueprint configuration (already implemented)
-   - Registry client uses configured base URL only; no tokens on events
-   - Do not log PATs
-4. Integration Constraints:
-   - Evaluate URL **must** remain `POST /api/v1/up/validator/evaluate-policy`
-   - Engine `adapterUrl` = `server.baseUrl`
-   - Registry V2 paths under `/api/v2/pp/registry/products` and `/api/v2/pp/registry/products-versions`
-   - Local Registry address `http://localhost:8086`
-   - Pass-through when `isAlreadyV2Shaped`: `eventContent.dataProductVersion` is an object, or the version node has `content` and (`tag` or `dataProduct` or nested repo)
-5. Business Rule Constraints:
-   - Skip/fail matrix of the integrity use case is unchanged
-   - Reconstruction cannot obtain identity, version, tag, or repo → fail closed (not not-applicable)
-   - No lineage on reconstructed content → existing not-applicable pass (`This data product version was not created from a blueprint`)
-6. Exception Handling Constraints:
-   - Unreadable payload → HTTP 400 `BadRequestException("Empty/Malformed Policy Evaluation Object")`
-   - Registry/reconstruction failure → HTTP 200 + false + `RegistryReconstructionException` message (`Registry not configured`, missing identity, missing clone metadata, 0/>1 products or versions)
-   - Messages must not include Git tokens
-7. Technical Constraints:
-   - No IdentifierStrategy in Blueprint
-   - No Registry V1 descriptor-only GET as the source of tag/repo
-   - Prefer GET version JSON as `objectToEvaluate` for the existing extractor
-   - Do not persist hashes
-8. Data Constraints:
-   - Identity from descriptor `info` (`fullyQualifiedName`/`fqn`, `version`/`versionNumber`)
-   - Repo JSON keys: accept `providerType` or `dataProductRepoProviderType` (existing mapper)
-9. API Constraints:
-   - Policy request/response field names stay Observer-compatible
-   - Do not add sibling locator fields on Policy V1 `afterState`
+1. Functional:
+   - V1 event remains `DATA_PRODUCT_VERSION_CREATION`.
+   - No lineage remains not applicable.
+   - Reconstruction/mapping does not enforce root metadata unless integrity later determines root is protected.
+   - All raw additional locator/ref entries reach core.
+2. Isolation:
+   - Core packages must not import `old`.
+   - `old/v1` must not hash, clone Git, render, resolve manifest target coverage, or mutate repositories.
+3. Data:
+   - Use `repositoryKey`, never `manifestKey`.
+   - Additional refs come from version `additionalTags`, never inferred from root `tag`.
+   - Missing arrays become empty; missing entries are not invented.
+   - Preserve duplicate and blank keyed entries for core validation.
+4. API:
+   - Keep Observer-compatible request/response fields and evaluate URL.
+   - Malformed request → HTTP 400.
+   - Reconstruction/integrity failure → HTTP 200 with `evaluationResult=false`.
+5. Security:
+   - Do not accept or log Git credentials in Policy/Registry payloads.
+   - Sanitize client and execution errors; do not expose tokens, headers, or stack traces.
+6. Performance:
+   - Keep one product search, one version search, one version GET, and only a conditional product GET.
+   - Keep the existing single integrity timeout; do not add a second executor or timeout policy.
+7. Compatibility:
+   - Preserve V2-shaped pass-through for tests and migration.
+   - No support for `manifestKey`, same-tag fan-out, or sibling invented locator fields.
+8. Future V2:
+   - Do not change Registry events now.
+   - Extend the V2 publication event only if a future direct Policy integration demonstrably lacks required locator/ref context.

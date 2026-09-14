@@ -1,8 +1,20 @@
-# SPDD Analysis: Protected-resources integrity policy adapter (Blueprint)
+# SPDD Analysis: Protected-resources publication integrity and Policy adapter
 
-Source vision: `odm-platform-pp-blueprint-server/spdd/vision/BDMD-5124-202608201019-[Vision]-protected-resources-policy-validation.md` (Policy and Notification untouched; Blueprint `old/v1` subscribes to Policy V1 `DATA_PRODUCT_VERSION_CREATION`, fetches Registry to reconstruct the V2 version resource, then calls the existing integrity use case).
+This analysis defines the lasting publication-integrity capability and its temporary Policy V1 integration. The companion analysis `BDMD-5124-202609021721-[Analysis]-protected-resources-multi-repository-integrity.md` specializes the design for composed and multi-repository layouts.
 
-This analysis is scoped to **`odm-platform-pp-blueprint-server`**. Registry’s V2 publication event and V1 Policy bridge are consumed as-is. Notification and Policy Service are **out of scope** (no changes). Observer Blindata is a read-only pattern reference. The integrity use case is **already implemented**; this slice is the removable V1 adapter around it.
+## Authoritative baseline
+
+The feature is still under development and has not been released. The current Blueprint and Registry designs are therefore a hard baseline, not a compatibility target:
+
+- Blueprint manifests declare logical destinations in top-level `targetRepositories[]`, with exactly one destination marked `isRoot: true`.
+- Routing is expressed by typed `instantiation[]` entries. `type: root` routes the parent Blueprint; `type: module` routes a composed catalog Module. Route destinations use `repo` and `destinationPath`.
+- `composition[]` identifies catalog Modules and maps parameters; it does not contain routes.
+- Catalog type is explicit: a `BLUEPRINT` owns the data product and descriptor, while a `MODULE` is a reusable child that cannot instantiate or update a product independently.
+- Registry additional repository locators use `additionalDataProductRepos[].repositoryKey`.
+- A Registry data-product version records the root ref in `tag` and independent non-root refs in `additionalTags[]`, keyed by `repositoryKey`. Tag names may differ across repositories.
+- Registry publication validates snapshot metadata completeness but does not create or verify Git refs.
+
+Superseded manifest shapes, `manifestKey`, and the reverted same-tag fan-out design are out of scope. No parser, payload, or migration compatibility is required for them.
 
 ## Original Business Requirement
 
@@ -19,8 +31,6 @@ Blueprint service also becomes a policy adapter (as Observer already does). Clon
 Notes from earlier development:
 
 Protected Resource Policy Extensions
-
-The protected resource section in the blueprint manifest must be extended to support two additional policy types:
 
 A. File Immutability Policy
 
@@ -55,234 +65,156 @@ Ensures that:
 - The parameters declared in the metadata are correct.
 - The data product faithfully reflects the blueprint instantiation.
 
-
-
-## Initial analysis (high level)
-
-Event `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/rest/v2/resources/dataproductversion/events/emitted/EmittedEventDataProductVersionPublicationRequestedRes.java — Policy Service captures the event, dispatches it to policy engines for a validation request, engines run the validation.
-Subscribe Blueprint service to Policy Service as an adapter when protected resources is active. It receives the event, clones the repo locally, and checks whether protected resources were modified by computing and comparing hashes.
-Observer also acts as a validator; use that as a pattern for the validator package: @odm-platform-adapter-observer-blindata/src/main/java/org/opendatamesh/platform/up/metaservice/blindata/validator → add an equivalent package on Blueprint for event `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`.
-The event may need to be extended @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/rest/v2/resources/dataproductversion/events/emitted/EmittedEventDataProductVersionPublicationRequestedRes.java @odm-platform-pp-registry-server/src/main/java/org/opendatamesh/platform/pp/registry/dataproductversion/services/usecases/publish/DataProductVersionPublisherNotificationOutboundPortImpl.java to include the repo to clone so Blueprint does not have to contact Registry.
-
-Protected resources can be simple files or folders; compare hashes directly. If they are Velocity templates we may want to verify the templates were not modified: instantiate the blueprint with the data product parameters and compute hashes.
-
-For policy validation implementation: keep use case @odm-platform-pp-blueprint-server/src/main/java/org/opendatamesh/platform/pp/blueprint/blueprintversion/services/usecases/instantiate/InstantiateBlueprintVersion.java and make another identical implementation, changing only `InstantiateBlueprintVersionGitOutboundPort` with a mock (e.g. `InstantiateBlueprintVersionLocalinstantiationGitOutboundPort`), mock all pushes @odm-platform-pp-blueprint-server/src/main/java/org/opendatamesh/platform/pp/blueprint/blueprintversion/services/usecases/instantiate/InstantiateBlueprintVersionGitOutboundPort.java:53-55. Mock `pushTag` and `pushBranch`.
-
-Define two distinct packages/services:
-
-1. Service for validation with hash computation. UseCase interface for protected resources, called by the validator service.
-2. Policy subscription and validation: create a custom policy from ValidatorPolicySubscriber events, on publication event `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`, blocking policy equivalent to odm-platform-adapter-observer-blindata/src/main/java/org/opendatamesh/platform/up/metaservice/blindata/validator
-
-### Repo Slice: odm-platform-pp-blueprint-server
-
-**Repository**: `odm-platform-pp-blueprint-server`  
-**Architectural role**: API (product-plane Blueprint Server)  
-**In scope**:
-- Isolated `old/v1` package (Registry `old` pattern): subscribe to Policy V1 `DATA_PRODUCT_VERSION_CREATION`, fetch Registry, reconstruct the V2 version resource, expose/adapt the evaluate endpoint so it can call the existing integrity path
-- Existing integrity use case (already implemented; not redesigned): clone **product** repo at tag, clone **blueprint** source, re-instantiate locally, hash protected files/folders, compare
-- Reuse existing instantiate; isolate/no-op Git push
-- Monorepo, no composition only
-- Service Git credentials, validator **active**, and policy **blocking** in Blueprint configuration
-- Adapter-only Registry client configuration
-
-**Out of scope**:
-- Polyrepo and composition validation
-- Changing Registry, Notification, or Policy Service
-- Writing integrity hashes into the source blueprint manifest
-- UI
-- Lasting subscription to `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` (Policy V2 migration after deleting `old/v1`)
-
-**Upstream dependencies**:
-- Registry `old/v1` bridge calling Policy `validateInput` with `DATA_PRODUCT_VERSION_CREATION` (descriptor-only `afterState`)
-- Policy Service engine registration and evaluate protocol (Observer shape), already able to dispatch **`DATA_PRODUCT_VERSION_CREATION`**
-- Registry V2 product/version GET and search (tag, nested product repo, descriptor)
-- Blueprint version + manifest + blueprint repo pointers already stored in this service
-- Git hosts reachable with configured service credentials
-
-**Downstream consumers**:
-- Policy Service (evaluation result, including blocking failure message)
-- Indirectly Registry (approve/reject via the V1 bridge)
-
-**Boundary contracts** (this repo's perspective):
-- **Policy evaluate API**: inbound from Policy Service — existing protocol; V1 object is `{ currentState, afterState }`
-- **Policy engine/policy registration**: outbound at startup — event **`DATA_PRODUCT_VERSION_CREATION`**
-- **Registry fetch**: outbound from `old/v1` only
-- **Git clone/render**: existing capability, no-push validation path
-
-**Resolved system decisions**:
-- Combined A+B check: re-instantiate then hash
-- Policy adapter, not a Notification-only observer; blocking flag is Blueprint config
-- Current evaluation event = Policy V1 `DATA_PRODUCT_VERSION_CREATION`
-- `old/v1` fetches Registry and reconstructs the V2 nested version resource; integrity does not call Registry
-- No Git secrets on events; Git credentials, validator active, and blocking flag are Blueprint configuration
-- Two clones when applicable: product repo at publication tag (from reconstructed Registry resource) and blueprint repo (from this service’s stored pointers)
-- Two layers: removable `old/v1` vs lasting integrity use case
-- Pass (not applicable) when there is no lineage or no protected resources, once the adapter is on
-- Monorepo / no composition only
-- Notification and Policy Service unchanged
-- Core must not depend on `old/v1`
-
-**Open questions** (resolved in this analysis where possible; remainder in Risk & Gap):
-- Canonical hash algorithm — already defined for the integrity use case
-- Skip vs fail vs error — matrix under Key Business Rules
-- Registry lookup sequence from V1 `afterState` — decided below (FQN + version → V2 search/GET)
-
-**Scoped business requirement**:
-
-Finish the publication gate inside Blueprint Server for **today’s Policy V1**. This service already has the integrity use case. What is missing is a removable adapter that:
-
-- Registers as a Policy engine on **`DATA_PRODUCT_VERSION_CREATION`** when the validator is active.
-- On evaluate: reconstructs the V2 data product version resource (descriptor with blueprint lineage, Git **tag**, nested product **repository**) by fetching Registry, because the V1 payload does not contain clone metadata.
-- Then runs the existing integrity process (not-applicable short-circuit or clone both repos, re-instantiate without push, hash, compare, path-level failure messages).
-
-Do not change Notification or Policy. Do not implement polyrepo/composition. Deleting `old/v1` must be sufficient for the Policy V2 migration.
+Current scope clarification: the check must be blocking when configured as blocking, must not mutate Git repositories, and must return useful path-level failures. The current Policy V1 publication bridge must be supported without changing Notification or Policy Service. Composition and multi-repository layouts use only the final Blueprint manifest and Registry snapshot contracts described above.
 
 ## Domain Concept Identification
 
 ### Existing Concepts (from codebase)
 
-- **Blueprint / Blueprint version**: Platform record of a template repository and a released snapshot. Authoritative for `protectedResources` and instantiation strategy. Blueprint clone coordinates live here, not on the publication event.
-- **Blueprint manifest (`protectedResources`)**: Optional repository-relative paths or globs marked immutable after generation. Source manifests omit integrity values. This slice does not persist hashes.
-- **Instantiation scenario**: Only **monorepo, no composition** is implemented. Other strategies remain not-applicable for validation.
-- **Instantiate (production)**: Interactive use case. Clones blueprint source and product integration branch, renders Velocity, enriches lineage, commits, tags a checkpoint, merges, **pushes**. Git auth from caller headers.
-- **Protected-resources integrity evaluation** (already implemented): Combined File Immutability + Parameter Sanity. `execute()` is a business script: load blueprint version → `readManifest` → `refuseIfNotEvaluable` → clone the **published product tree** at the publication tag → **re-instantiate the blueprint locally** (no push) → **compare** each protected path. Git/instantiate adapters own credentials and `WorkingTree` lifetime; digest is `computeDigest(WorkingTree, path)` (SHA-256). Path-level mismatch messages use business wording (missing from the data product version / not produced by the blueprint / contents differ) — not “digest” or “re-instantiated tree”. Input command is tag + product repo locator + blueprint identity + lineage parameters — **not** a Policy DTO.
-- **Protected-resources Policy adapter** (`ProtectedResourcesPolicyValidatorService`, in `old/v1`): Maps a Policy evaluate request into the integrity command by reading a **nested version resource** (tag, `dataProduct.dataProductRepo`, descriptor `blueprint` lineage). `evaluate()` is require readable payload → map to command → run integrity → map `IntegrityOutcome` to Policy result. Timeout uses Spring `@Async` (Observer self-proxy) and still waits on the HTTP request. Reconstruction in the same package feeds this adapter a V2-shaped object so it never parses Policy V1 `{ currentState, afterState }`.
-- **Policy subscriber** (in `old/v1`): Startup create-if-absent of engine + policy, gated by validator `active` and Policy Service address. Registers **`DATA_PRODUCT_VERSION_CREATION`** only (not `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`). Nothing has been released; create-if-absent is enough (no Policy-row migration).
-- **Observer Blindata validator (external pattern)**: Same evaluate API family; registers on `DATA_PRODUCT_VERSION_CREATION` / `DATA_PRODUCT_CREATION`. Blueprint copies the shape; for this slice it also copies the **CREATION** event name.
-- **Registry `old/v1` Policy bridge (external, consumed)**: Recaptures Notification `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`, calls Policy `validateInput` with `DATA_PRODUCT_VERSION_CREATION`. `afterState` is the descriptor wrapped as `{ dataProductVersion: <content> }`. `dataProductId` is the FQN-derived legacy id; `dataProductVersion` is the version number. Policy **does not forward those two fields** to the engine: `objectToEvaluate` is only `{ currentState, afterState }`.
-- **Registry V2 APIs (external, consumed by `old/v1`)**: Search products by FQN (returns uuid + nested product repo). Search versions by data-product uuid + version number (returns uuid + tag; version number is unique per product). GET version by uuid (full version resource, including nested product and descriptor content). Registry V1 product GET accepts FQN-derived ids but returns a V1 DTO without repo/tag — **not** sufficient alone.
-- **Descriptor lineage**: `content.blueprint` on the stored version (blueprint name, version, resolved parameters). Written at instantiate; present on the Registry version and inside V1 `afterState` content (when parser passes content through).
-- **Git provider factory / Blueprint validator configuration**: Service Git credentials, `active`, `blocking`, evaluation timeout in `validator/config` (lasting; integrity adapters resolve credentials). Registry address is adapter-only (`odm.product-plane.registry-service.*` in `old/v1`).
-- **Use-case / factory / outbound-port pattern**: Integrity stays a `UseCase`. `old/v1` is an adapter, not a second integrity implementation.
-- **Isolation pattern to copy**: Registry `old` README — the compatibility package may depend on core; **core must not depend on it**; intended to be deleted.
+- **Catalog Blueprint**: The data-product-owning template identity. It has catalog type `BLUEPRINT`, owns the descriptor template, and may be instantiated or used to update a product.
+- **Catalog Module**: A reusable composition child with catalog type `MODULE`. It has no descriptor template, publishes only a one-destination/no-composition manifest, and cannot instantiate or update a product independently.
+- **Blueprint version**: A published source snapshot containing the authoritative manifest for that release. Data-product lineage identifies the parent Blueprint version and resolved parent parameters used for generation.
+- **Blueprint manifest**: Declares parameters, parent-owned protected resources, composition identities and parameter mappings, logical target repositories, the explicit root target, and typed source-to-destination routes.
+- **Protected-resource policy**: A list owned by the parent Blueprint manifest. Each item identifies a post-instantiation destination path that must match the Blueprint-generated result at publication.
+- **Instantiation layout**: Derived from target-repository cardinality and composition presence: one or many source components rendered into one or many destination repositories.
+- **Instantiate pipeline**: Resolves parent and Module sources, maps parameters, applies typed routes, relocates Module sidecars, writes parent lineage and the descriptor only on the root destination, and produces one rendered result per target key.
+- **Registry product repository aggregate**: `dataProductRepo` is the unkeyed root locator; `additionalDataProductRepos[]` contains non-root locators keyed by `repositoryKey`.
+- **Registry version snapshot**: `tag` identifies the root repository snapshot; `additionalTags[]` identifies each non-root snapshot by `repositoryKey`. These are metadata assertions and are not proof that Git refs exist.
+- **Policy V1 publication bridge**: Dispatches `DATA_PRODUCT_VERSION_CREATION` with `{currentState, afterState}` rather than the complete Registry V2 version resource.
+- **Policy evaluation outcome**: A blocking or non-blocking pass/fail result returned to Policy. “Not applicable” is a successful result with an explicit reason.
+- **Service Git credentials**: Blueprint-managed credentials used for source and published-target reads. Credentials do not travel in events or Policy payloads.
 
 ### New Concepts Required
 
-- **Blueprint `old/v1` Policy reconstruction adapter**: Temporary, isolated package. Responsibilities: (1) register the policy on `DATA_PRODUCT_VERSION_CREATION`; (2) accept the V1 evaluate payload; (3) fetch Registry; (4) rebuild the V2 nested version resource; (5) call `ProtectedResourcesPolicyValidatorService` → integrity use case; (6) return the Policy result. Policy evaluate DTOs, Policy HTTP clients, evaluate controller, and the Policy adapter service live here. No hashing, no Git clone, no instantiate.
-- **Reconstructed V2 evaluation object**: The object `ProtectedResourcesPolicyValidatorService` already understands: a data product version resource with `tag`, nested `dataProduct.dataProductRepo`, and `content` (descriptor + lineage). This is what Policy V2 would have forwarded. Reconstruction’s job is to make it look as if that had happened.
-- **Adapter-only Registry client**: Outbound port used solely by `old/v1`, configured with a Registry base URL that will not be used after the package is removed.
+- **Destination-scoped protection**: Every protected path resolves to exactly one logical target repository from the parent manifest. Source repository identity and Module identity are not destination scope.
+- **Published target snapshot set**: The logical-keyed set of published repository trees selected by combining Registry product locators with Registry version refs.
+- **Expected target snapshot set**: One locally rendered tree per logical target key, produced through the same semantics as production instantiate without using or mutating live product targets.
+- **Complete evaluation context**: Parent Blueprint identity/version and parameters, the full parent manifest, and the logical-keyed published locator/ref information required by the protected paths.
+- **Registry reconstruction adapter**: Temporary Policy V1 boundary that reconstructs the complete evaluation context from Registry. It performs Registry I/O but no hashing, rendering, or Git mutation.
 
 ### Key Business Rules
 
-- Publication governance stays on Policy V1 + Registry’s V1 bridge. Blueprint only **evaluates** integrity. Blocking vs not is Blueprint config, honored by Policy aggregation.
-- **This slice’s subscription is `DATA_PRODUCT_VERSION_CREATION`.** Blueprint does not subscribe to Notification and does not register on `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` until Policy V2 exists.
-- **`old/v1` may call Registry. The integrity use case must not.** Product clone coordinates come from the reconstructed version resource. Blueprint clone coordinates come from this service’s store.
-- **Two clones** when the check is applicable: product repo at publication tag; blueprint source at recorded version tag.
-- No Git secrets on events. Policy-path clones use **service credentials from Blueprint configuration**.
-- File Immutability and Parameter Sanity remain **one** policy. **`InstantiateBlueprintVersion`** with the local Git port still produces the expected tree.
-- Hashes are computed **at evaluation time on both trees** (SHA-256 canonical rule already implemented). Failure messages list each affected path and why in business terms (missing from the data product version, not produced by the blueprint, contents differ).
-- First slice: **monorepo, no composition** only.
-- Protected paths must be **deterministic**.
-- Skip vs fail:
-  - Validator **off** → engine/policy not registered.
-  - Validator **on**, no blueprint lineage → **pass (not applicable)**.
-  - Validator **on**, lineage present, no / empty `protectedResources` → **pass (not applicable)**.
-  - Validator **on**, lineage present, strategy is not monorepo-without-composition → **pass (not applicable)** with an explicit unsupported message.
-  - Validator **on**, check is applicable, but reconstruction cannot obtain product repo or publication tag → **fail closed**.
-  - Applicable, but recorded blueprint version is unknown to this service, or blueprint repo pointers are missing → **fail**.
-  - Applicable, clone / auth / timeout / render / Registry fetch error → **fail closed**.
-  - Malformed V1 payload that cannot even be read → transport/error, not a silent pass.
-  - Applicable, any protected path missing on either tree, or hashes differ → **fail** with path-level reasons.
-- Testable Gherkin for this matrix lives in `spdd/prompt/BDMD-5124-202608210930-[Feat]-service-protected-resources-integrity-policy-adapter.md` (integrity evaluate) and `spdd/prompt/BDMD-5124-202608241546-[Feat]-service-v1-protected-resources-policy-adapter.md` (Policy registration + V1 reconstruction). Each scenario is implemented as a test whose javadoc restates the full Gherkin.
-- `.odm/blueprint/` and the descriptor **may** appear in `protectedResources`; expected tree must apply the same lineage enrichment and relocation.
-- Git mutations during validation are forbidden.
-- **Isolation**: `old/v1` may depend on core integrity and `validator/config`. Core must not import `old/v1`. Deleting the package is the V2 migration, plus a thin lasting evaluate controller bound to `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`.
+- Publication integrity is based on **re-instantiation and comparison**, not on stored manifest digest values.
+- The parent catalog `BLUEPRINT` owns the policy. Protected-resource declarations from catalog `MODULE` versions are not inherited into a parent.
+- Catalog `MODULE` versions must reject a non-empty `protectedResources` list. Accepting declarations that can never govern publication would be misleading.
+- `protectedResources[].repository` is optional. A present value selects a logical `targetRepositories[].key`; omission or blank selects the sole target marked `isRoot: true`. Root shorthand is intentional because root protection is expected to be the common case.
+- Protected paths use **post-instantiation destination coordinates**, after route placement, Module sidecar relocation, and root-only descriptor/lineage generation.
+- The root target is the `targetRepositories[]` entry marked `isRoot: true`; it is never inferred from ordering or a reserved name.
+- Each publication is governed only by the protected-resource list in its recorded parent Blueprint version. Later Blueprint versions may add, remove, or retarget protection without an additional cross-version invariant.
+- Registry locators and refs form separate mappings:
+  - root target key → `dataProductRepo` + version `tag`;
+  - non-root target key → matching `additionalDataProductRepos[].repositoryKey` + matching `additionalTags[].repositoryKey`.
+- Non-root refs must never fall back to the root `tag`. Each repository is cloned at its own recorded ref.
+- Only target keys referenced by the effective protected-resource list must have complete Registry locator/ref mappings, and only those targets are cloned. Unreferenced manifest targets and Registry entries do not affect evaluation.
+- Registry publication success is not evidence that a ref exists. Missing metadata, blank refs, clone failures, authentication failures, rendering failures, and timeouts fail closed whenever the policy is applicable.
+- Integrity core must not call Registry. Registry lookup and Policy V1 payload reconstruction remain isolated in `old/v1`.
+- Git validation is read-only. Local expected targets are disposable and no branches, commits, tags, or pull requests are pushed.
+- The same hashing and path-safety semantics apply to published and expected trees. Failures distinguish missing published content, content not produced by the Blueprint, differing content, invalid paths, symlinks, and unsupported algorithms.
+- No Blueprint lineage or an empty parent protected-resource list is not applicable. A declared policy that cannot be fully evaluated is a failure, not a silent pass.
+- Current contracts are a hard cut. Superseded manifest fields, Registry `manifestKey`, and shared-tag behavior receive no compatibility handling.
 
 ## Strategic Approach
 
 ### Solution Direction
 
-Keep the implemented integrity use case. Insert a **removable `old/v1` adapter** in front of it, modeled on Registry `old`: Policy DTOs, Policy clients, evaluate controller, `ProtectedResourcesPolicyValidatorService`, reconstruction, and CREATION subscription.
+Keep one lasting integrity capability behind a removable Policy V1 adapter:
 
-Policy V1 calls the evaluate API with `{ currentState, afterState }`. Reconstruction extracts identity from the descriptor in `afterState`, fetches Registry V2 until it has a full version resource (tag + nested product repo + content), and invokes `ProtectedResourcesPolicyValidatorService` as if Policy V2 had sent that object.
+1. Policy invokes the Blueprint validator on the publication governance path.
+2. The V1 adapter resolves product/version identity from the descriptor payload and retrieves the full Registry version and product information.
+3. The adapter constructs a complete, logical-target-keyed evaluation context and invokes core integrity.
+4. Core loads the recorded parent Blueprint version and validates whether the policy applies.
+5. Core obtains published target snapshots only for target keys selected by the protected list.
+6. Core locally re-instantiates the parent Blueprint and its referenced Modules into disposable target trees.
+7. Each protected path is compared only within its resolved target key.
+8. Core returns a domain outcome that the adapter maps to the Policy protocol.
 
-Subscription is `DATA_PRODUCT_VERSION_CREATION`. Git credentials / active / blocking stay in lasting `validator/config`. Registry address is adapter-only config.
-
-Do not change Notification or Policy. Do not reimplement hashing or instantiate in `old/v1`.
+The design supports all four layouts through one target-keyed model. Delivery may be incremental, but no phase may introduce a contract that assumes one product repository, one source clone, or one shared publication tag.
 
 ### Key Design Decisions
 
-- **Event name for this slice**: Policy V1 only selects engines by `DATA_PRODUCT_VERSION_CREATION` on the publication path (Registry bridge). → Register that name. The V2 Notification name is not dispatched to engines today.
+- **Current designs are authoritative**: Use only the final Blueprint manifest/catalog contracts and Registry `repositoryKey` plus per-version `additionalTags`. No compatibility code or analysis for superseded WIP shapes.
+- **One combined integrity policy**: File immutability and parameter sanity are two outcomes of the same reconstruction-and-compare process.
+- **Parent-owned policy**: Only the parent `BLUEPRINT` policy controls the data product. Module-originated files are protected by declaring their final destination paths on the parent.
+- **Same rendering semantics as instantiate**: Reuse the production instantiation behavior through a read-only local target mechanism so parameter mapping, routing, relocations, descriptor rendering, and lineage cannot drift.
+- **Target-keyed core boundary**: Core consumes logical-keyed published snapshot information and produces/uses logical-keyed expected trees. Policy and Registry DTO shapes remain outside core.
+- **Separate locator and ref authority**: Product repository records answer “where”; version snapshot fields answer “which ref.” Joining them is explicit and exact.
+- **Policy V1 isolation**: Registry searches/GETs and V1 payload adaptation stay under `old/v1`. Removal for Policy V2 must not change hashing or reconstruction semantics.
+- **Service credentials**: Continue using Blueprint validator configuration rather than propagating secrets through Registry or Policy events.
+- **Fail closed on incomplete applicable checks**: Registry metadata-only validation does not weaken the integrity gate; cloneability is established by the evaluator.
+- **Recorded-version policy**: Evaluate exactly the recorded parent Blueprint version, including its protected list. Do not compare protection declarations across Blueprint versions.
+- **Referenced-target coverage**: Require locator/ref completeness only for effective protected target keys and clone only those published targets.
+- **Publication-time guarantee**: Current product locators are sufficient for the immediate publication gate. Repeatable historical re-evaluation after locator changes is not part of this feature.
+- **Policy V2 deferred**: The current V1 adapter performs any required Registry enrichment. No lasting V2 enrichment abstraction is required now; if a future direct V2 event lacks required locator/ref data, augment that Registry event contract then.
 
-- **Where reconstruction and the Policy adapter live**: Entire Policy-facing behaviour (CREATION subscription, Policy clients/DTOs, Registry client, payload mapping, evaluate controller, `ProtectedResourcesPolicyValidatorService`) lives in `old/v1`. The HTTP path stays `POST /api/v1/up/validator/evaluate-policy`. The V2 migration adds a thin controller in core that maps Policy V2 evaluate payloads to the integrity use case and deletes `old/v1`. Core still must not import `old/v1`.
+### Resolved Decisions for REASONS
 
-- **Registry lookup sequence (resolved)**: Policy does not forward `dataProductId`. Do not require the old FQN-derived identifier or IdentifierStrategy in Blueprint. From `afterState.dataProductVersion` (descriptor content): read FQN and version number from descriptor `info`. Then:
-  1. Search Registry V2 products by FQN → product uuid + nested product repo.
-  2. Search Registry V2 versions by product uuid + version number → version uuid + tag (version number is unique per product).
-  3. GET Registry V2 version by uuid → full version resource used as the reconstructed object (authoritative tag, nested product including repo, stored descriptor/lineage).
-  If FQN/version cannot be read, or any step returns nothing / multiple products, **fail closed**. Do not use Registry V1 version GET (descriptor string only, no tag/repo). Prefer the GET in step 3 as the object passed into `ProtectedResourcesPolicyValidatorService` so lineage is the stored descriptor, not a possibly 1.x-rewritten `afterState`.
-
-- **What `old/v1` must not do**: Hash, clone Git, instantiate, push, or interpret `protectedResources`. That remains the integrity use case.
-
-- **Policy registration (resolved)**: Create-if-absent of engine + policy with **one** evaluation event `DATA_PRODUCT_VERSION_CREATION`. Do not overwrite `blockingFlag` on restart (same rule as today). Nothing has been released, so there is no existing Policy-row migration to design.
-
-- **Timeouts**: `ProtectedResourcesPolicyValidatorService` runs integrity on Spring `@Async` (Observer `@Lazy` self-proxy) and waits with `get(evaluation-timeout-seconds)`. Reconstruction fetch runs on the request thread before that. Fail closed on timeout.
-
-- **Registry client configuration**: New `odm.product-plane.registry-service` active/address (same style as Policy client). Used only by `old/v1`. When the package is deleted, this config is unused — that is intended.
-
-- **Canonical digest / skip-fail / local instantiate / Git credentials**: Unchanged from the implemented integrity slice (SHA-256 file/folder/glob rule; skip/fail matrix above; `InstantiateBlueprintVersion` + local Git port; service credentials from config).
-
-- **V2 removal path**: Delete `old/v1`. Add a thin lasting evaluate controller that maps Policy’s nested version resource to the integrity factory. Register `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`. No Registry client.
+- **Optional target with root shorthand**: Keep the existing `repository` property. A non-blank value must match `targetRepositories[].key`; omission or blank resolves to the explicit `isRoot: true` target. This favors the common root-only declaration without weakening root semantics.
+- **Reject Module declarations**: Publishing a catalog `MODULE` with non-empty `protectedResources` is invalid. Modules cannot own product publication policy; the parent must declare final paths for any Module-originated output it wants to protect.
+- **Recorded-version policy only**: Evaluate the list from the recorded parent Blueprint version. A subsequent Blueprint version may remove or retarget protection; no monotonic-protection check is added.
+- **Referenced keys only**: Require complete locator/ref data only for target keys selected by protected declarations and clone only those targets. Empty protection is not applicable; a subset protects and evaluates only that subset.
+- **Immediate publication only**: Current Registry product locators are authoritative for the publication being evaluated. Locator snapshots and repeatable later evaluation are deferred.
+- **No Policy V2 requirement now**: Keep Registry enrichment in the Policy V1 adapter. If direct V2 delivery later lacks complete locator/ref information, extend `EmittedEventDataProductVersionPublicationRequestedRes` (or its then-current successor) rather than adding speculative infrastructure now.
 
 ### Alternatives Considered
 
-- **Subscribe Blueprint to Notification `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`**: Requires Policy to consume V2 events to close the approve/reject loop, or races the V1 bridge. Rejected; Policy and Notification stay untouched.
-- **Extend Policy to dispatch the V2 event name**: Explicitly out of scope for this discussion. Rejected for this slice.
-- **Leave the V1 bridge on and also run a V2 Notification path**: Race: bridge can approve first. Rejected.
-- **Project clone metadata onto Policy V1 `afterState`**: Changes V1 payloads; risks Observer/OPA. Rejected.
-- **Call Registry from the integrity use case**: Would leak the band-aid into lasting domain logic. Rejected; fetch stays in `old/v1`.
-- **Use Registry V1 version GET only**: No tag, no product repo. Rejected as the sole lookup.
-- **Reimplement hashing/instantiate inside `old/v1`**: Defeats removal. Rejected.
-- **Two Policy policies for A and B / polyrepo in this slice / hash Velocity sources**: Still rejected.
-- **Fail unsupported strategies**: Would block polyrepo/composition publications this slice cannot check. Still not-applicable pass with an explicit message.
+- **Persist hashes in `protectedResources[].integrity`**: Rejected. Dynamic reconstruction verifies both source version and parameters and avoids stale embedded digests.
+- **Hash source templates directly**: Rejected. Protected paths describe generated destination content, not Velocity source files.
+- **Use Blueprint checkpoint tags as publication refs**: Rejected. Checkpoints represent pure generation baselines, not necessarily the product commits being published.
+- **Infer non-root refs from the root tag**: Rejected. Final Registry explicitly records independent per-repository refs.
+- **Clone only the root in a polyrepo layout**: Rejected. Partial evaluation could approve tampering in a protected secondary repository.
+- **Call Registry from integrity core**: Rejected. It couples lasting domain behavior to the temporary Policy V1 transport gap.
+- **Create a separate renderer for integrity**: Rejected. Rendering drift would create false passes or false failures.
+- **Carry Git credentials in events**: Rejected for security and ownership reasons.
+- **Require every target to be protected**: Rejected. A Blueprint may intentionally protect no targets or only a subset; unrelated locator/ref entries are outside the check.
+- **Enforce monotonic protection across versions**: Rejected for current scope. The recorded Blueprint version is the complete policy authority for its publication.
+- **Snapshot repository locators per version now**: Rejected as unnecessary for the immediate publication gate. Revisit if historical re-evaluation becomes a requirement.
 
 ## Risk & Gap Analysis
 
-### Requirement Ambiguities
+### Accepted Boundaries and Deferred Concerns
 
-- **Descriptor `info` field names in `afterState`**: Lookup uses FQN + version from descriptor `info` only to find the Registry row; the reconstructed object is the V2 GET body. If `afterState` was rewritten by the old 1.x parser, FQN/version should still be present (`fullyQualifiedName` / `version`). If they are missing, fail closed — do not invent a second identifier strategy unless a later test proves it necessary (Registry V1 product GET can resolve FQN-derived ids, but that is a fallback, not the primary path).
-- **Nested repo on version GET**: Assumed MapStruct maps the eager product association including `dataProductRepo`. If GET omits the repo, reconstruction must GET the product by uuid as well and nest it. Verify in implementation tests; if omitted, fail closed rather than clone nothing.
-- **Exact Registry client DTO field names**: `providerType` vs `dataProductRepoProviderType` already handled in the integrity mapper. Reconstruction should pass the GET JSON through to that mapper rather than invent a third DTO family in core.
-- **Evaluate URL**: Remains the Observer-compatible validator path. Exact path stays as implemented; only the package that owns the controller may move into `old/v1`.
-- **Glob dialect**: Unchanged; same matcher on both trees.
+- **Root shorthand is implicit by design**: An omitted `repository` always means the explicit `isRoot: true` target; it must never be inferred from order or name.
+- **Protection may evolve**: A later Blueprint version may weaken or retarget protection. This is intentional unless a separate future update invariant is introduced.
+- **Historical locator drift is accepted**: Product locators may change after publication. This feature guarantees the immediate publication decision, not repeatable historical evaluation.
+- **Policy V2 transport is deferred**: The V1 adapter supplies complete context today. Extend the Registry V2 publication event only if a future direct integration needs more fields.
 
 ### Edge Cases
 
-- **Product never from a blueprint**: No lineage on reconstructed content → not applicable pass.
-- **Blueprint lineage present but this Blueprint Server does not store that version**: fail.
-- **Registry fetch 404 / timeout / multiple FQN matches**: fail closed (applicable check cannot run).
-- **Version is PENDING**: Expected; publication requested persists the version before the bridge calls Policy. GET must still see it.
-- **Observer also on CREATION**: Policy fans out per matching policy. Blueprint must not alter V1 `afterState`. Harmless peer.
-- **Validator on before Registry address is configured**: fail closed / do not register — same idea as Policy address missing today.
-- **Product and blueprint on different Git hosts**: two credential sets from Blueprint config. Missing creds → fail closed.
-- **Non-deterministic protected files / path traversal / symlinks**: same integrity rules as already implemented.
-- **Policy inactive on Registry / V1 bridge off (`policy-service.version` not 1)**: this adapter never runs. Operational dependency.
+- Root target is not the first declared target.
+- Root `tag` is blank even though Registry accepts the publication.
+- A non-root locator exists without a matching version ref, or vice versa.
+- A referenced Registry key is missing or duplicated, while unrelated extra or missing target mappings exist.
+- Two logical target keys resolve to the same physical remote.
+- A protected path exists under the same relative name on multiple targets.
+- A Module is routed to multiple destinations or aliases.
+- A protected glob matches nothing on one or both trees.
+- A published ref exists but points to unintended content; Registry does not verify provenance.
+- Mixed providers require different configured service credentials.
+- Evaluation times out after some source or target clones; all temporary trees still require cleanup.
 
 ### Technical Risks
 
-- **False rejects from render drift**: Still mitigated by reusing `InstantiateBlueprintVersion` with the local Git port.
-- **Duration vs Policy HTTP timeout**: Extra Registry RTT on a path that already clones twice. Mitigation: monorepo-only; one evaluation timeout; fail closed.
-- **Working-copy leaks**: Unchanged; temp clones cleaned on all paths.
-- **Core accidentally importing `old/v1`**: Would make deletion a refactor. Mitigation: package rule matching Registry `old` README; tests/architecture check if the repo has one, otherwise review.
-- **GET omits nested repo**: Reconstruction would fail closed until the client nests product GET. Verify against a real local Registry before calling the slice done.
+- **Cross-service join drift**: Blueprint code outside this feature may trim logical keys while Registry uses exact strings. New integrity joins must follow Registry’s exact semantics without expanding into cross-service normalization cleanup.
+- **Metadata-only Registry snapshots**: Clone failures remain possible after successful publication. Preserve fail-closed behavior and actionable messages.
+- **Source/target confusion**: Composition adds source repositories independently of destination repository count. Keep these dimensions separate in contracts and tests.
+- **Render-semantic drift**: Any integrity-only copy/relocation logic can diverge from instantiate. Maintain one render path.
+- **Temporary-resource growth**: Composed polyrepo evaluation may clone several sources and published targets. Ensure bounded timeout and deterministic cleanup.
+- **Policy V1 latency**: Registry round trips plus Git operations occur on a blocking governance path. Keep one explicit evaluation timeout and report infrastructure failures clearly.
+- **Repository locator drift**: Immediate publication validation is reliable against current locators; delayed re-evaluation may not be.
 
 ### Acceptance Criteria Coverage
 
-System ACs from the vision, assessed for **this repository**.
-
 | AC# | Description | Addressable? | Gaps/Notes |
 |-----|-------------|--------------|------------|
-| 1 | Protected-resource constraints are evaluated during data product **version publication** | Partial | Blueprint evaluates when Policy dispatches `DATA_PRODUCT_VERSION_CREATION` via the Registry V1 bridge. Trigger and aggregation stay Registry/Policy. |
-| 2 | Blueprint Server acts as a **policy adapter** comparable to Observer’s validator | Yes | Engine + policy + evaluate API; this slice also uses Observer’s event name. |
-| 3 | Adapter clones the **data product repository at the version tag** | Yes | Tag + repo come from Registry fetch in `old/v1`, then the existing integrity clone. Missing after reconstruction → fail. |
-| 4 | Adapter reads **protected resources**, computes hashes, verifies they still match | Yes | Already implemented in the integrity use case. |
-| 5 | **File immutability** | Yes | Already implemented; requires both clones. |
-| 6 | **Parameter sanity** | Yes | Already implemented via `InstantiateBlueprintVersion` + local Git port. |
-| 7 | Integrity does **not** call Registry; `old/v1` **does** (temporary) | Yes | Reconstruction only. Removed with the package. |
-| 8 | Custom **blocking** policy on the publication evaluation path | Yes | Register on `DATA_PRODUCT_VERSION_CREATION`; blocking from config. Policy already dispatches that name. |
-| 9 | Subscription / reconstruction separate from hash/integrity | Yes | `old/v1` vs existing integrity package. |
-| 10 | Reuse instantiate; **do not push** | Yes | Already implemented. |
-| 11 | Enable adapter when validation is **active** | Yes | Lasting config: active + blocking. Adapter-only: Registry address. |
-| 12 | First slice: **monorepo, no composition** only | Yes | Other strategies: not-applicable with explicit message. |
-| 13 | Do **not** change Notification or Policy | Yes | Consumed contracts only. |
-| 14 | `old/v1` is removable without rewriting integrity | Yes | Isolation rule; V2 migration is delete + rebind event name. |
+| 1 | Protected resources are evaluated during data-product-version publication | Yes | Policy V1 continues through its existing bridge |
+| 2 | Blueprint acts as a blocking Policy adapter when configured | Yes | Blocking remains Policy configuration |
+| 3 | Evaluation reconstructs the recorded Blueprint output with recorded parameters | Yes | Uses current instantiate semantics |
+| 4 | Published and expected protected paths are compared with SHA-256 and path-level outcomes | Yes | Existing digest policy remains valid |
+| 5 | Parent `BLUEPRINT` owns protection; Module lists are not inherited | Yes | Non-empty Module lists are rejected |
+| 6 | All manifest layouts use destination-keyed evaluation | Yes | Optional `repository`; omission or blank means explicit root |
+| 7 | Root and non-root repositories use their own Registry-recorded refs | Yes | Root blank-tag validation must be enforced by Blueprint |
+| 8 | Referenced Registry metadata gaps and Git failures fail closed | Yes | Unreferenced targets do not affect evaluation |
+| 9 | Integrity core remains independent of Registry and Policy V1 DTOs | Yes | V1 reconstruction stays in `old/v1` |
+| 10 | Validation performs no Git mutations | Yes | Disposable expected targets and read-only published clones |
+| 11 | Notification and Policy Service require no changes for Policy V1 | Yes | Extend a future V2 Registry event only if direct delivery lacks required context |
+| 12 | Superseded WIP schemas and payloads receive no compatibility handling | Yes | Explicit hard-cut decision |

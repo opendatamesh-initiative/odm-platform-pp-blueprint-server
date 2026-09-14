@@ -47,7 +47,7 @@ How instantiate / update work under the hood: [Blueprint process](docs/service/b
 | **Evolve with new versions** | Roll a new blueprint version onto products that already exist (details in the process guide) |
 | **Git providers** | GitHub, GitLab, Bitbucket, Azure DevOps via shared `git-utils` |
 | **Manifest & Velocity** | Parameterized templates driven by the blueprint manifest |
-| **Protected resources** | Declare immutable paths in the manifest; on publication, compare the product repo with a local re-instantiation |
+| **Protected resources** | Declare destination-scoped immutable paths; on publication, compare each protected product repository with a local re-instantiation |
 | **Notifications** | Optional client to the ODM Notification Server |
 
 ---

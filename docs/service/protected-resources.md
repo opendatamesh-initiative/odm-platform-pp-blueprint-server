@@ -20,7 +20,7 @@ On **publication**, Policy asks this service to **SHA-256-hash** those paths in 
 
 Digests are computed at evaluation time. They are **not** stored on `protectedResources[].integrity`. That optional object is leftover schema: **omit it**. Evaluation **ignores** `integrity.value`. If `integrity.algorithm` is present and is not `sha256`, that path fails.
 
-**1→1** (monorepo, no composition) and **N→1** (monorepo with composition) are evaluated. **Polyrepo** layouts (more than one destination repository) are **not applicable yet** — hashing more than one published remote is a later slice.
+The same model applies to **1→1**, composed **N→1**, split **1→N**, and composed **N→N** layouts. Composition changes the source trees used for re-instantiation; multiple destination repositories change the published and expected tree pairs. Each protected destination is still compared independently.
 
 ---
 
@@ -28,7 +28,7 @@ Digests are computed at evaluation time. They are **not** stored on `protectedRe
 
 Each `protectedResources[].path` is relative to a **destination repository root after instantiate**, not the source blueprint tree.
 
-Optional `protectedResources[].repository` names an `instantiation.repositories[].key`. When the field is **omitted**, evaluation falls back to `instantiation.root.repository` — today’s monorepo behaviour (the sole destination for 1→1 and N→1). When the field is **present**, it must be a declared repository key.
+Optional `protectedResources[].repository` names a `targetRepositories[].key`. When the field is omitted or blank, it means the single target marked `isRoot: true`. This root shorthand is intentional because protecting the primary repository is expected to be the most common case. When the field is non-blank, it must exactly match a declared target key.
 
 Instantiate relocates two **parent** files onto the **root** destination only:
 
@@ -45,12 +45,21 @@ The checker **does not** rewrite source paths to `.odm/blueprint/`. To protect p
 
 On **N→1**, parent routes and module destinations share one repository. Composition destinations (for example `data-plane/storage/**`) and module sidecars (`.odm/<alias>/`) are valid protected paths. `.odm/blueprint/` exists only on the root.
 
-The spec example (manifest §2.1) protects files that stay in place **and exist in that example repo**:
+The monorepo spec example (manifest §2.1) uses root shorthand for files that stay in place **and exist in that example repo**:
 
 ```yaml
 protectedResources:
   - path: infrastructure/core/**
   - path: docs/architecture.md
+```
+
+In a polyrepo manifest, add `repository` only for a non-root target (which must also be declared in `targetRepositories[]`):
+
+```yaml
+protectedResources:
+  - path: infrastructure/core/** # root shorthand
+  - path: deployment/**
+    repository: operations-repo
 ```
 
 The Blindata **starter blueprint** (new repo from registration) ships only the manifest, README, and descriptor template. Those first two are relocated, and it does not create `infrastructure/`. Its default is therefore an **empty** `protectedResources` list so publication is not applicable until authors add real files and matching paths.
@@ -61,9 +70,9 @@ The Blindata **starter blueprint** (new repo from registration) ships only the m
 
 Only the **parent** blueprint’s `protectedResources` list is evaluated.
 
-A module’s own list is **ignored** when that blueprint is composed into a parent. Standalone instantiate of the module as 1→1 still uses the module’s list.
+A catalog `MODULE` must not declare a non-empty list; Module publication rejects it. Modules cannot instantiate or govern a data product independently, so retaining an inert policy would be misleading.
 
-This is a deliberate product rule: the parent owns the data product, and inheriting a child’s list would require rewriting paths through `composition[].targets` and `.odm/<alias>/` (and would break if the same module is placed at different destinations). Inheritance through `composition[].targets` is a possible future change, not current behaviour. Authors who want a module file protected on the product list that destination path on the parent.
+This is a deliberate product rule: the parent owns the data product, and inheriting a child’s list would require rewriting paths through typed instantiation routes and `.odm/<alias>/` (and would be ambiguous if the same Module were routed to different destinations). Inheritance is a possible future change, not current behaviour. Authors who want Module-originated output protected must list its final destination path and target on the parent.
 
 ---
 
@@ -71,15 +80,25 @@ This is a deliberate product rule: the parent owns the data product, and inherit
 
 When a data product version is published and the validator is **active**:
 
-1. Policy calls Blueprint (`POST /api/v1/up/validator/evaluate-policy`) with the published version, including its Git repository and tag.
+1. Policy calls Blueprint (`POST /api/v1/up/validator/evaluate-policy`) for the published version. The Policy V1 adapter obtains the complete Registry product/version context needed by the check.
 2. If the version has **no blueprint lineage**, evaluation **passes** (not applicable).
 3. If the recorded **parent** blueprint has **no** `protectedResources`, evaluation **passes** (not applicable) — including composed parents.
-4. If the layout is **polyrepo** (more than one destination repository), evaluation **passes** (not applicable) until polyrepo hashing is applied. The message names that gap; it does not say composition is unsupported.
-5. Otherwise the service clones the **one published root** product repo at the publication tag, clones the **blueprint** source (and composed **module** sources for N→1), re-instantiates locally (same render as instantiate, **no push**, no live product-branch clone), and SHA-256-compares each parent protected path. Stored `integrity.value` is not part of that comparison.
+4. Each item resolves to its explicit `repository` or to the manifest’s `isRoot: true` target. The resulting distinct keys are the **protection coverage set**.
+5. For each protected root target, the service uses Registry `dataProductRepo` and the version’s root `tag`. For each protected non-root target, it joins `additionalDataProductRepos[].repositoryKey` with `additionalTags[].repositoryKey`.
+6. The service clones only those published targets at their own recorded refs, clones the parent Blueprint and any composed Module sources needed for re-instantiation, and renders disposable expected targets with the production instantiate semantics.
+7. It SHA-256-compares every parent protected path within the published and expected trees for the same target key. Stored `integrity.value` is not part of that comparison.
 
-N→1 adds **source** clones (modules), not extra product remotes. Extra `additionalDataProductRepos` on a monorepo product are ignored for cloning in this slice and do not fail the check merely by existing.
+N→1 adds **source** clones (Modules), not extra product remotes. In 1→N and N→N, each protected destination adds a published tree pair; unprotected destinations are not cloned for this policy.
 
-A mismatch fails with a business-facing message (file missing from the data product version, not produced by the blueprint, or contents differ). Clone, auth, timeout, and render errors **fail closed**.
+A mismatch fails with a business-facing message (file missing from the data product version, not produced by the Blueprint, or contents differ). Missing, blank, duplicate, or conflicting Registry locator/ref data for a **referenced** target also fails closed before Git access. Unreferenced target mappings do not affect the result. Clone, auth, timeout, and render errors fail closed, and evaluation may stop at the first conclusive failure.
+
+## Deliberate scope decisions
+
+- Each publication uses only the protected-resource list from its recorded parent Blueprint version. A later version may add, remove, or retarget entries without a cross-version protection check.
+- Registry keys introduced or joined by this feature use Registry’s exact-string matching. The integrity feature does not add broader trimming or case-normalization behavior.
+- Two logical targets may resolve to the same physical remote. No alias check is performed; each protected logical target is cloned and compared independently.
+- The guarantee is the immediate publication decision. Repository locators are not snapshotted per version, so repeatable historical evaluation after a locator change is outside the current scope.
+- The current Policy V1 adapter enriches its context from Registry. If future direct Policy V2 delivery lacks required locators or refs, the Registry publication event can be extended then.
 
 ---
 

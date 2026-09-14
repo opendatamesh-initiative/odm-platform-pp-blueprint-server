@@ -92,8 +92,9 @@ The manifest must define a list of **Protected Resources** (specific files, dire
 - Each `path` is relative to an **instantiated destination repository root after render**, not the source blueprint
   tree. Instantiation relocates the parent README and writes a lineage snapshot under `.odm/blueprint/` on the
   **root** key only — do not protect `README.md` or `manifest.yaml` at their source paths. Optional `repository`
-  names `targetRepositories[].key`; when omitted, the path is on the target marked `isRoot: true`. Only the
-  **parent** list is evaluated when a blueprint is composed. The service guide
+  names `targetRepositories[].key`; when omitted or blank, the path is on the target marked `isRoot: true`. This
+  root shorthand is intentional for the common case. Only the **parent `BLUEPRINT`** list is evaluated when a
+  blueprint is composed; catalog `MODULE` publication rejects a non-empty list. The service guide
   [Protected resources](../../../../../../../../docs/service/protected-resources.md) covers the publication-time
   integrity check.
 
@@ -204,7 +205,8 @@ integrations.
     or `.odm/blueprint/**`). To protect a composed module’s relocated README/manifest, declare `.odm/<alias>/...`
     on the key that received that module. The checker does not rewrite source paths to `.odm/blueprint/`.
   - `repository` (String, Optional): Logical destination key; must match `targetRepositories[].key` when present.
-    Omit the field to use the target marked `isRoot: true`. Blank is treated as omitted.
+    Omit the field to use the target marked `isRoot: true`. Blank is treated as omitted. Integrity requires
+    Registry locator/ref data and clones only for target keys selected by protected-resource declarations.
   - `integrity` (Object, Optional): Leftover digest object. **Omit it.** Instantiate does **not** populate hashes on the
     product copy of the manifest. Publication evaluation **ignores** `value` and SHA-256-hashes the published tree
     against a local re-instantiation instead. If `algorithm` is present and is not `sha256` (case-insensitive), that
@@ -268,6 +270,8 @@ The orchestrator must enforce the following rules when validating a manifest:
 - Every `repo` reference in `instantiation[].targets[]` must match an existing `targetRepositories[].key`.
 - When `protectedResources[].repository` is present, it must match an existing `targetRepositories[].key`.
   Omitted or blank `repository` means the target marked `isRoot: true`.
+- A catalog `MODULE` manifest must have no protected resources or an empty `protectedResources` list. Protection is
+  owned by the parent `BLUEPRINT`, which names final Module-originated paths after routing.
 - `protectedResources[].integrity` is optional leftover schema and should be omitted. If the object is present,
   `algorithm` and `value` must be non-empty; evaluation still ignores `value`.
 - Exact duplicate `(repo, normalized destinationPath)` destinations across all routes are rejected.
