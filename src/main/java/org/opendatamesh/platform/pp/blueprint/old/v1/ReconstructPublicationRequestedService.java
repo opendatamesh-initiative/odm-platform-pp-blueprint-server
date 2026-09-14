@@ -21,7 +21,7 @@ import java.util.List;
  * Policy V1 evaluate adapter: reconstruct a V2 nested version resource from Registry, then
  * delegate to {@link ProtectedResourcesPolicyValidatorService}. Registry is called only here so this
  * package can be deleted when Policy V2 forwards {@code DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED}
- * with tag + repo.
+ * with complete root and additional locator/ref context.
  */
 @Service
 public class ReconstructPublicationRequestedService {
@@ -98,13 +98,13 @@ public class ReconstructPublicationRequestedService {
         }
 
         ObjectNode reconstructed = (ObjectNode) version.deepCopy();
-        if (!hasNestedRepo(reconstructed) || !hasAdditionalReposArray(reconstructed)) {
+        if (!hasNestedProductObject(reconstructed)
+                || !hasNestedRepo(reconstructed)
+                || !hasAdditionalReposArray(reconstructed)) {
             nestProduct(reconstructed, product.getUuid());
         }
         ensureAdditionalReposArray(reconstructed);
-        if (!hasText(reconstructed, "tag") || !hasCloneUrl(reconstructed)) {
-            throw new RegistryReconstructionException(MISSING_CLONE_METADATA);
-        }
+        ensureAdditionalTagsArray(reconstructed);
         return reconstructed;
     }
 
@@ -214,6 +214,11 @@ public class ReconstructPublicationRequestedService {
         return firstNonBlank(text(descriptor, "version"), text(descriptor, "versionNumber"));
     }
 
+    private static boolean hasNestedProductObject(JsonNode version) {
+        JsonNode dataProduct = version.get("dataProduct");
+        return dataProduct != null && dataProduct.isObject();
+    }
+
     private static boolean hasNestedRepo(JsonNode version) {
         JsonNode repo = version.path("dataProduct").path("dataProductRepo");
         return repo.isObject();
@@ -234,8 +239,10 @@ public class ReconstructPublicationRequestedService {
         }
     }
 
-    private static boolean hasCloneUrl(JsonNode version) {
-        return StringUtils.hasText(text(version.path("dataProduct").path("dataProductRepo"), "remoteUrlHttp"));
+    private static void ensureAdditionalTagsArray(ObjectNode version) {
+        if (!version.path("additionalTags").isArray()) {
+            version.set("additionalTags", version.arrayNode());
+        }
     }
 
     private static boolean hasText(JsonNode node, String field) {

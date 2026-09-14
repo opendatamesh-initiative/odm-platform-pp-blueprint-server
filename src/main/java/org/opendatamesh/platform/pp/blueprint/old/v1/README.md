@@ -22,10 +22,10 @@ Registry’s own `old/v1` bridge already translates V2 publication into Policy V
 2. Registry’s Policy V1 bridge calls Policy `validateInput` with `DATA_PRODUCT_VERSION_CREATION` and `{ currentState, afterState }`.
 3. Policy dispatches to engines registered on `DATA_PRODUCT_VERSION_CREATION`, including Blueprint.
 4. Blueprint `POST /api/v1/up/validator/evaluate-policy` receives the V1 object.
-5. This package reads FQN + version from `afterState`, fetches Registry (`/api/v2/pp/registry/products`, `/products-versions`), and rebuilds a nested version resource (descriptor + tag + product repo).
+5. This package reads FQN + version from `afterState`, fetches Registry (`/api/v2/pp/registry/products`, `/products-versions`), and rebuilds a nested version resource (descriptor, root `dataProductRepo`/`tag`, `additionalDataProductRepos[]`, and `additionalTags[]`).
 6. `ProtectedResourcesPolicyValidatorService` maps the reconstructed object to `EvaluateProtectedResourcesIntegrity` and returns a Policy result.
 
-If reconstruction fails (missing identity, Registry down, no tag/repo), evaluation **fails closed**.
+If reconstruction fails (missing identity, Registry down, empty Registry response), evaluation **fails closed**. Missing root tag or root clone URL is not a reconstruction failure; the integrity use case requires those fields only when the recorded parent protects the root target.
 
 ## Components
 

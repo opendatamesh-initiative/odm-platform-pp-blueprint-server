@@ -7,6 +7,8 @@ import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.EvaluateProtectedResourcesIntegrityFactory;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.EvaluateProtectedResourcesIntegrityPresenter;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.IntegrityOutcome;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.KeyedProductRepoLocator;
+import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.KeyedProductRepoRef;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.ProductRepoLocator;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.ProtectedResourceMismatch;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
@@ -20,6 +22,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -94,8 +97,8 @@ public class ProtectedResourcesPolicyValidatorService {
         return new EvaluateProtectedResourcesIntegrityCommand(
                 versionResource == null ? null : text(versionResource, "tag"),
                 mapProductRepo(versionResource),
-                List.of(),
-                List.of(),
+                mapAdditionalProductRepos(versionResource),
+                mapAdditionalRefs(versionResource),
                 blueprintName,
                 blueprintVersionNumber,
                 mapParameters(blueprint)
@@ -152,6 +155,46 @@ public class ProtectedResourcesPolicyValidatorService {
         }
         JsonNode dataProduct = versionResource.get("dataProduct");
         JsonNode repo = dataProduct == null ? null : dataProduct.get("dataProductRepo");
+        return mapLocator(repo);
+    }
+
+    private List<KeyedProductRepoLocator> mapAdditionalProductRepos(JsonNode versionResource) {
+        JsonNode dataProduct = versionResource == null ? null : versionResource.get("dataProduct");
+        JsonNode additionalRepos = dataProduct == null ? null : dataProduct.get("additionalDataProductRepos");
+        if (additionalRepos == null || !additionalRepos.isArray()) {
+            return List.of();
+        }
+        List<KeyedProductRepoLocator> locators = new ArrayList<>();
+        for (JsonNode entry : additionalRepos) {
+            locators.add(mapAdditionalLocator(entry));
+        }
+        return locators;
+    }
+
+    private KeyedProductRepoLocator mapAdditionalLocator(JsonNode entry) {
+        if (entry == null || !entry.isObject()) {
+            return new KeyedProductRepoLocator(null, null);
+        }
+        return new KeyedProductRepoLocator(text(entry, "repositoryKey"), mapLocator(entry));
+    }
+
+    private List<KeyedProductRepoRef> mapAdditionalRefs(JsonNode versionResource) {
+        JsonNode additionalTags = versionResource == null ? null : versionResource.get("additionalTags");
+        if (additionalTags == null || !additionalTags.isArray()) {
+            return List.of();
+        }
+        List<KeyedProductRepoRef> refs = new ArrayList<>();
+        for (JsonNode entry : additionalTags) {
+            if (entry == null || !entry.isObject()) {
+                refs.add(new KeyedProductRepoRef(null, null));
+                continue;
+            }
+            refs.add(new KeyedProductRepoRef(text(entry, "repositoryKey"), text(entry, "tag")));
+        }
+        return refs;
+    }
+
+    private ProductRepoLocator mapLocator(JsonNode repo) {
         if (repo == null || repo.isNull() || !repo.isObject()) {
             return null;
         }

@@ -54,11 +54,11 @@ class ReconstructPublicationRequestedServiceTest {
     /**
      * Feature: Reconstruct V2 publication object from Policy V1
      *
-     * Scenario: V2-shaped payload skips Registry and delegates to the validator
-     *   Given a Policy evaluate request whose objectToEvaluate already has nested version content and clone metadata
+     * Scenario: V2-shaped publication object skips Registry
+     *   Given objectToEvaluate already contains eventContent.dataProductVersion
      *   When reconstruction evaluates the request
-     *   Then the Registry client is never called
-     *   And the policy validator is called with the original request
+     *   Then Registry is not called
+     *   And available root and additional context is mapped directly
      */
     @Test
     void v2ShapedPayloadSkipsRegistryAndDelegates() {
@@ -75,24 +75,30 @@ class ReconstructPublicationRequestedServiceTest {
     }
 
     /**
-     * Feature: Reconstruct V2 publication object from Policy V1
+     * Feature: Policy V1 Registry reconstruction
      *
-     * Scenario: V1 afterState reconstructs the version resource from Registry
-     *   Given a Policy V1 objectToEvaluate with afterState.dataProductVersion.info fullyQualifiedName and version
-     *   And Registry returns exactly one product for that FQN
-     *   And Registry returns exactly one version for that product uuid and version number
-     *   And GET version returns a nested version resource with tag and product repository
+     * Scenario: V1 payload reconstructs full root and additional publication context
+     *   Given a Policy V1 afterState identifies one data product version
+     *   And Registry returns a root repository, keyed additional repositories, a root tag, and keyed additional tags
      *   When reconstruction evaluates the request
-     *   Then the policy validator is called
-     *   And objectToEvaluate is the GET version body including tag and nested product repository
+     *   Then the Policy validator receives all locator and ref arrays
+     *   And integrity is invoked with root and keyed additional domain entries
      */
     @Test
-    void v1AfterStateReconstructsAndDelegatesGetVersionBody() {
+    void v1AfterStateReconstructsFullPublicationContext() {
         stubUniqueLookup();
         ObjectNode versionFromRegistry = v2VersionResource(true, true);
         versionFromRegistry.put("uuid", VERSION_UUID);
+        ObjectNode additionalRepo = OBJECT_MAPPER.createObjectNode();
+        additionalRepo.put("repositoryKey", "infra-repo");
+        additionalRepo.put("remoteUrlHttp", "https://github.com/org/infra.git");
+        additionalRepo.put("providerType", "GITHUB");
         ((ObjectNode) versionFromRegistry.path("dataProduct"))
-                .set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode());
+                .set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode().add(additionalRepo));
+        ObjectNode additionalTag = OBJECT_MAPPER.createObjectNode();
+        additionalTag.put("repositoryKey", "infra-repo");
+        additionalTag.put("tag", "infra-v9");
+        versionFromRegistry.set("additionalTags", OBJECT_MAPPER.createArrayNode().add(additionalTag));
         when(registryClient.getVersion(VERSION_UUID)).thenReturn(versionFromRegistry);
 
         PolicyEvaluationResultRes expected = passed(7L);
@@ -107,10 +113,15 @@ class ReconstructPublicationRequestedServiceTest {
         verify(validatorService).evaluate(captor.capture());
         PolicyEvaluationRequestRes delegated = captor.getValue();
         assertThat(delegated.getPolicyEvaluationId()).isEqualTo(7L);
-        assertThat(delegated.getObjectToEvaluate().path("uuid").asText()).isEqualTo(VERSION_UUID);
-        assertThat(delegated.getObjectToEvaluate().path("tag").asText()).isEqualTo("v1.2.0");
-        assertThat(delegated.getObjectToEvaluate().path("dataProduct").path("dataProductRepo").path("remoteUrlHttp").asText())
+        JsonNode object = delegated.getObjectToEvaluate();
+        assertThat(object.path("uuid").asText()).isEqualTo(VERSION_UUID);
+        assertThat(object.path("tag").asText()).isEqualTo("v1.2.0");
+        assertThat(object.path("dataProduct").path("dataProductRepo").path("remoteUrlHttp").asText())
                 .isEqualTo("https://github.com/org/customer360.git");
+        assertThat(object.path("dataProduct").path("additionalDataProductRepos").get(0).path("repositoryKey").asText())
+                .isEqualTo("infra-repo");
+        assertThat(object.path("additionalTags").get(0).path("repositoryKey").asText()).isEqualTo("infra-repo");
+        assertThat(object.path("additionalTags").get(0).path("tag").asText()).isEqualTo("infra-v9");
     }
 
     /**
@@ -255,7 +266,7 @@ class ReconstructPublicationRequestedServiceTest {
         when(registryClient.getVersion(VERSION_UUID)).thenReturn(versionWithoutExtras);
         ObjectNode product = productWithRepo();
         product.set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode()
-                .add(OBJECT_MAPPER.createObjectNode().put("manifestKey", "infra-repo")));
+                .add(OBJECT_MAPPER.createObjectNode().put("repositoryKey", "infra-repo")));
         when(registryClient.getProduct(PRODUCT_UUID)).thenReturn(product);
         when(validatorService.evaluate(any())).thenReturn(passed(1L));
 
@@ -266,18 +277,18 @@ class ReconstructPublicationRequestedServiceTest {
         JsonNode extras = captor.getValue().getObjectToEvaluate().path("dataProduct").path("additionalDataProductRepos");
         assertThat(extras.isArray()).isTrue();
         assertThat(extras).hasSize(1);
-        assertThat(extras.get(0).path("manifestKey").asText()).isEqualTo("infra-repo");
+        assertThat(extras.get(0).path("repositoryKey").asText()).isEqualTo("infra-repo");
         verify(registryClient).getProduct(PRODUCT_UUID);
     }
 
     /**
-     * Feature: Reconstruct V2 publication object from Policy V1
+     * Feature: Policy V1 Registry reconstruction
      *
-     * Scenario: Missing extras after GET product become an empty array
-     *   Given GET version and GET product both omit `additionalDataProductRepos`
-     *   When reconstruction evaluates the request
-     *   Then the nested product has `additionalDataProductRepos` as an empty array
-     *   And the policy validator is still called
+     * Scenario: Missing arrays default to empty
+     *   Given Registry returns a monorepo version without additionalDataProductRepos or additionalTags arrays
+     *   When reconstruction completes
+     *   Then both arrays are present and empty
+     *   And the Policy validator is invoked
      */
     @Test
     void missingAdditionalReposAfterGetProductDefaultsToEmptyArray() {
@@ -292,10 +303,61 @@ class ReconstructPublicationRequestedServiceTest {
 
         ArgumentCaptor<PolicyEvaluationRequestRes> captor = ArgumentCaptor.forClass(PolicyEvaluationRequestRes.class);
         verify(validatorService).evaluate(captor.capture());
-        JsonNode extras = captor.getValue().getObjectToEvaluate().path("dataProduct").path("additionalDataProductRepos");
+        JsonNode object = captor.getValue().getObjectToEvaluate();
+        JsonNode extras = object.path("dataProduct").path("additionalDataProductRepos");
         assertThat(extras.isArray()).isTrue();
         assertThat(extras).isEmpty();
+        JsonNode additionalTags = object.path("additionalTags");
+        assertThat(additionalTags.isArray()).isTrue();
+        assertThat(additionalTags).isEmpty();
         verify(registryClient).getProduct(PRODUCT_UUID);
+        verify(validatorService).evaluate(any());
+    }
+
+    /**
+     * Feature: Policy V1 Registry reconstruction
+     *
+     * Scenario: Missing root metadata is deferred to protection-scoped integrity
+     *   Given Registry returns keyed additional locator and ref data but no root tag or root clone URL
+     *   When reconstruction completes
+     *   Then reconstruction delegates to the Policy validator
+     *   And it does not fail solely because root metadata is absent
+     */
+    @Test
+    void missingRootMetadataStillDelegatesForProtectionScopedValidation() {
+        stubUniqueLookup();
+        ObjectNode version = OBJECT_MAPPER.createObjectNode();
+        version.put("uuid", VERSION_UUID);
+        ObjectNode content = version.putObject("content");
+        content.putObject("info").put("fullyQualifiedName", FQN);
+        ObjectNode dataProduct = version.putObject("dataProduct");
+        dataProduct.put("uuid", PRODUCT_UUID);
+        dataProduct.set("dataProductRepo", OBJECT_MAPPER.createObjectNode());
+        ObjectNode additionalRepo = OBJECT_MAPPER.createObjectNode();
+        additionalRepo.put("repositoryKey", "infra-repo");
+        additionalRepo.put("remoteUrlHttp", "https://github.com/org/infra.git");
+        additionalRepo.put("providerType", "GITHUB");
+        dataProduct.set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode().add(additionalRepo));
+        ObjectNode additionalTag = OBJECT_MAPPER.createObjectNode();
+        additionalTag.put("repositoryKey", "infra-repo");
+        additionalTag.put("tag", "infra-v9");
+        version.set("additionalTags", OBJECT_MAPPER.createArrayNode().add(additionalTag));
+        when(registryClient.getVersion(VERSION_UUID)).thenReturn(version);
+        when(validatorService.evaluate(any())).thenReturn(passed(1L));
+
+        PolicyEvaluationResultRes result = service.evaluate(request(v1Payload(FQN, VERSION_NUMBER)));
+
+        assertThat(result.getEvaluationResult()).isTrue();
+        ArgumentCaptor<PolicyEvaluationRequestRes> captor = ArgumentCaptor.forClass(PolicyEvaluationRequestRes.class);
+        verify(validatorService).evaluate(captor.capture());
+        JsonNode object = captor.getValue().getObjectToEvaluate();
+        assertThat(object.path("tag").isMissingNode() || object.path("tag").isNull() || object.path("tag").asText().isBlank())
+                .isTrue();
+        assertThat(object.path("dataProduct").path("dataProductRepo").path("remoteUrlHttp").asText("")).isBlank();
+        verify(registryClient, never()).getProduct(any());
+        assertThat(object.path("dataProduct").path("additionalDataProductRepos").get(0).path("repositoryKey").asText())
+                .isEqualTo("infra-repo");
+        assertThat(object.path("additionalTags").get(0).path("tag").asText()).isEqualTo("infra-v9");
     }
 
     /**

@@ -502,6 +502,11 @@ targetRepositories:
     description: Target repository for application code
     isRoot: true
 
+protectedResources:
+  - path: application/** # root shorthand → app-repo
+  - path: terraform/**
+    repository: infra-repo
+
 instantiation:
   - type: root
     targets:
@@ -541,6 +546,11 @@ targetRepositories:
     isRoot: true
   - key: api-repo
     description: Target repository for API serving components
+
+protectedResources:
+  - path: pipelines/batch/** # root shorthand → pipeline-repo
+  - path: services/consumer/**
+    repository: api-repo
 
 composition:
   - module: ingest

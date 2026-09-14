@@ -77,7 +77,8 @@ class InstantiateBlueprintVersionLocalGitOutboundPortTest {
         Repository targetRepository = new Repository();
         targetRepository.setCloneUrlHttp("https://github.com/org/product.git");
         targetRepository.setDefaultBranch("main");
-        TargetRepositoryDto target = new TargetRepositoryDto("main", "main", targetRepository);
+        TargetRepositoryDto target = new TargetRepositoryDto("app-repo", "main", targetRepository);
+        TargetRepositoryDto infra = new TargetRepositoryDto("infra-repo", "main", targetRepository);
 
         AtomicReference<Path> targetPathSeen = new AtomicReference<>();
         port.openSources(blueprint, List.of(source), sourcePaths -> {
@@ -86,6 +87,13 @@ class InstantiateBlueprintVersionLocalGitOutboundPortTest {
                 targetPathSeen.set(dst);
                 try {
                     Files.writeString(dst.resolve("rendered.txt"), "expected");
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            port.openTarget(infra, "main", dst -> {
+                try {
+                    Files.writeString(dst.resolve("infra.txt"), "infra");
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -104,11 +112,15 @@ class InstantiateBlueprintVersionLocalGitOutboundPortTest {
         verify(gitOperation, never()).pushTag(any(), any());
         verify(gitOperation, never()).createAndCheckoutOrphanBranch(any(), anyString());
 
-        Path expectedTree = snapshot.getExpectedTree("main");
+        Path expectedTree = snapshot.getExpectedTree("app-repo");
+        Path infraTree = snapshot.getExpectedTree("infra-repo");
         assertThat(expectedTree).isNotNull();
         assertThat(expectedTree.resolve("rendered.txt")).exists();
+        assertThat(infraTree).isNotNull();
+        assertThat(infraTree.resolve("infra.txt")).exists();
         assertThat(Files.exists(expectedTree.resolve(".git"))).isFalse();
         InstantiateBlueprintVersionLocalGitOutboundPort.deleteRecursively(expectedTree);
+        InstantiateBlueprintVersionLocalGitOutboundPort.deleteRecursively(infraTree);
     }
 
     /**

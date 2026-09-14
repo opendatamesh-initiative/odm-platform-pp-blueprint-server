@@ -767,6 +767,59 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
     /**
      * Feature: Protected-resource manifest ownership
      *
+     * Scenario: Omitted repository resolves to the explicit root
+     *   Given a valid manifest whose root target is not first
+     *   And a protected resource omits repository
+     *   When the manifest is published and integrity is evaluated
+     *   Then publication accepts the declaration
+     *   And integrity compares it on the target marked isRoot true
+     */
+    @Test
+    public void whenRepositoryOmittedThenUseIsRootTarget() throws IOException {
+        String prefix = "pubProtOmitRepo";
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(buildParentRepo());
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            ObjectNode content = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                    "/manifest/example-2.3-polyrepo-no-composition.yaml");
+            ArrayNode protectedResources = content.putArray("protectedResources");
+            protectedResources.addObject().put("path", "application/**");
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "0.5.0",
+                    content
+            );
+
+            ResponseEntity<PublishBlueprintVersionResponseRes> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    PublishBlueprintVersionResponseRes.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(response.getBody()).isNotNull();
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /**
+     * Feature: Protected-resource manifest ownership
+     *
      * Scenario: Module with protected resources is rejected
      *   Given a catalog MODULE manifest with a non-empty protectedResources list
      *   When the Module version is published

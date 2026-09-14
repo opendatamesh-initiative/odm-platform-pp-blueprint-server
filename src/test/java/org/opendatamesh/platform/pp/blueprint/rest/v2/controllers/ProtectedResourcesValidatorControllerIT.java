@@ -12,7 +12,9 @@ import org.mockito.Mockito;
 import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.Commit;
 import org.opendatamesh.platform.git.model.Repository;
+import org.opendatamesh.platform.git.model.RepositoryPointer;
 import org.opendatamesh.platform.git.model.RepositoryPointerBranch;
+import org.opendatamesh.platform.git.model.RepositoryPointerTag;
 import org.opendatamesh.platform.git.model.Tag;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
@@ -41,6 +43,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -50,6 +53,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -636,7 +640,7 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
                 productRepoNode()
         );
         ObjectNode extra = OBJECT_MAPPER.createObjectNode();
-        extra.put("manifestKey", "infra-repo");
+        extra.put("repositoryKey", "infra-repo");
         extra.put("remoteUrlHttp", "https://github.com/org/extra-remote.git");
         ((ObjectNode) event.path("eventContent").path("dataProductVersion").path("dataProduct"))
                 .set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode().add(extra));
@@ -652,11 +656,236 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         deleteCreatedBlueprint(context);
     }
 
+    /**
+     * Feature: Multi-destination integrity
+     *
+     * Scenario: 1→N protects only root and ignores unrelated metadata gaps
+     *   Given a 1→N Blueprint protects only the root target
+     *   And an unprotected additional target lacks locator or ref metadata
+     *   When integrity is evaluated
+     *   Then only the root published repository is cloned
+     *   And the unrelated gap does not fail the policy
+     */
+    @Test
+    void whenPolyrepoProtectsOnlyRootThenCloneOnlyRoot(
+            @TempDir Path sourceDir, @TempDir Path rootProduct) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        writeSafeDescriptor(sourceDir);
+        copyRootProtectedPublishedFiles(sourceDir, rootProduct);
+        ObjectNode manifest = polyrepoNoCompositionManifestForIntegrity();
+        manifest.set("protectedResources", OBJECT_MAPPER.createArrayNode()
+                .add(OBJECT_MAPPER.createObjectNode().put("path", "docs/architecture.md")));
+        BlueprintContext context = createBlueprintAndVersion("poly-root-only", "1.0.0", manifest);
+        GitOperation gitOperation = stubPublishedGit(sourceDir, sourceDir, Map.of("customer360", rootProduct));
+
+        ObjectNode event = publicationEvent(
+                "publication-v1",
+                polyrepoLineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode());
+        ObjectNode incomplete = OBJECT_MAPPER.createObjectNode();
+        incomplete.put("repositoryKey", "infra-repo");
+        ((ObjectNode) event.path("eventContent").path("dataProductVersion").path("dataProduct"))
+                .set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode().add(incomplete));
+
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(evaluationRequest(event));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+        verify(gitOperation, never()).readRepository(
+                argThat(repo -> repo != null && repo.getCloneUrlHttp() != null && repo.getCloneUrlHttp().contains("infra-repo")),
+                any(),
+                any());
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Multi-destination integrity
+     *
+     * Scenario: 1→N protects only an additional target
+     *   Given a 1→N Blueprint protects only "infra-repo"
+     *   And root publication metadata is absent
+     *   And "infra-repo" has one locator and its own ref
+     *   When integrity is evaluated
+     *   Then only "infra-repo" is cloned and compared
+     *   And root metadata absence does not fail the policy
+     */
+    @Test
+    void whenPolyrepoProtectsOnlyAdditionalTargetThenRootMetadataNotRequired(
+            @TempDir Path sourceDir, @TempDir Path infraProduct) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        writeSafeDescriptor(sourceDir);
+        copyInfraProtectedPublishedFiles(sourceDir, infraProduct);
+        ObjectNode manifest = polyrepoNoCompositionManifestForIntegrity();
+        manifest.set("protectedResources", OBJECT_MAPPER.createArrayNode()
+                .add(OBJECT_MAPPER.createObjectNode()
+                        .put("path", "infrastructure/core/**")
+                        .put("repository", "infra-repo")));
+        BlueprintContext context = createBlueprintAndVersion("poly-infra-only", "1.0.0", manifest);
+        GitOperation gitOperation = stubPublishedGit(sourceDir, sourceDir, Map.of("infra-repo", infraProduct));
+
+        ObjectNode event = OBJECT_MAPPER.createObjectNode();
+        ObjectNode version = event.putObject("eventContent").putObject("dataProductVersion");
+        version.set("content", polyrepoLineageContent(context.blueprintName, context.versionNumber));
+        ObjectNode dataProduct = version.putObject("dataProduct");
+        dataProduct.set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode().add(additionalRepoNode("infra-repo")));
+        version.set("additionalTags", OBJECT_MAPPER.createArrayNode().add(additionalTagNode("infra-repo", "infra-v9")));
+
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(evaluationRequest(event));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+        verify(gitOperation, never()).readRepository(
+                argThat(repo -> repo != null && repo.getCloneUrlHttp() != null && repo.getCloneUrlHttp().contains("customer360")),
+                any(),
+                any());
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Multi-destination integrity
+     *
+     * Scenario: Different root and additional refs are honored
+     *   Given root and "infra-repo" are both protected
+     *   And each has a different recorded ref
+     *   When integrity is evaluated
+     *   Then each repository is cloned at its own ref
+     */
+    @Test
+    void whenMultipleTargetsProtectedThenCloneEachRecordedRef(
+            @TempDir Path sourceDir, @TempDir Path rootProduct, @TempDir Path infraProduct) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        writeSafeDescriptor(sourceDir);
+        copyRootProtectedPublishedFiles(sourceDir, rootProduct);
+        copyInfraProtectedPublishedFiles(sourceDir, infraProduct);
+        ObjectNode manifest = polyrepoNoCompositionManifestForIntegrity();
+        manifest.set("protectedResources", OBJECT_MAPPER.createArrayNode()
+                .add(OBJECT_MAPPER.createObjectNode().put("path", "docs/architecture.md"))
+                .add(OBJECT_MAPPER.createObjectNode()
+                        .put("path", "infrastructure/core/**")
+                        .put("repository", "infra-repo")));
+        BlueprintContext context = createBlueprintAndVersion("poly-both", "1.0.0", manifest);
+        GitOperation gitOperation = stubPublishedGit(
+                sourceDir, sourceDir, Map.of("customer360", rootProduct, "infra-repo", infraProduct));
+
+        ObjectNode event = publicationEvent(
+                "root-v3",
+                polyrepoLineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode());
+        attachAdditionalPublication(event, "infra-repo", "infra-v9");
+
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(evaluationRequest(event));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+
+        org.mockito.ArgumentCaptor<Repository> repoCaptor = org.mockito.ArgumentCaptor.forClass(Repository.class);
+        org.mockito.ArgumentCaptor<RepositoryPointer> pointerCaptor =
+                org.mockito.ArgumentCaptor.forClass(RepositoryPointer.class);
+        verify(gitOperation, atLeastOnce()).readRepository(repoCaptor.capture(), pointerCaptor.capture(), any());
+        List<Repository> repos = repoCaptor.getAllValues();
+        List<RepositoryPointer> pointers = pointerCaptor.getAllValues();
+        assertThat(productRef(repos, pointers, "customer360")).isEqualTo("root-v3");
+        assertThat(productRef(repos, pointers, "infra-repo")).isEqualTo("infra-v9");
+        deleteCreatedBlueprint(context);
+    }
+
+    /**
+     * Feature: Multi-destination integrity
+     *
+     * Scenario: N→N compares parent and Module output by destination
+     *   Given a parent Blueprint and Modules route protected output across root and additional targets
+     *   And every published target matches its same-key expected tree
+     *   When integrity is evaluated
+     *   Then evaluationResult is true
+     *   And no target is compared against another target tree
+     */
+    @Test
+    void whenPolyrepoWithCompositionMatchesThenPass(
+            @TempDir Path parentSource,
+            @TempDir Path moduleSource,
+            @TempDir Path pipelineProduct,
+            @TempDir Path apiProduct) throws Exception {
+        writeSourceBlueprintFiles(parentSource);
+        writeSafeDescriptor(parentSource);
+        writeSourceBlueprintFiles(moduleSource);
+        writeSafeDescriptor(moduleSource);
+        Files.writeString(moduleSource.resolve("module-only.txt"), "from-module\n");
+        copyNnProtectedPublishedFiles(moduleSource, pipelineProduct, apiProduct);
+
+        BlueprintContext ingest = createPublishedModule("odm-blueprint-ingest-batch", "2.0.0", MODULE_STORAGE_CLONE_URL);
+        BlueprintContext consume = createPublishedModule("odm-blueprint-consumer-api", "1.1.0", MODULE_SERVING_CLONE_URL);
+        ObjectNode parentManifest = (ObjectNode) readYamlManifestResource("manifest/example-2.4-polyrepo-composition.yaml");
+        rewritePolyrepoCompositionRefs(parentManifest, ingest, consume);
+        parentManifest.set("protectedResources", OBJECT_MAPPER.createArrayNode()
+                .add(OBJECT_MAPPER.createObjectNode().put("path", "pipelines/batch/module-only.txt"))
+                .add(OBJECT_MAPPER.createObjectNode()
+                        .put("path", "services/consumer/module-only.txt")
+                        .put("repository", "api-repo")));
+        BlueprintContext parent = createBlueprintAndVersion("mesh-polyrepo-parent", "1.3.0", parentManifest);
+        stubPublishedGit(parentSource, moduleSource, Map.of("customer360", pipelineProduct, "api-repo", apiProduct));
+
+        ObjectNode event = publicationEvent(
+                "publication-v1",
+                polyrepoComposedLineageContent(parent.blueprintName, parent.versionNumber),
+                productRepoNode());
+        attachAdditionalPublication(event, "api-repo", "api-v4");
+
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(evaluationRequest(event));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isTrue();
+        assertThat(response.getBody().getOutputObject().getMessage())
+                .contains("Protected resources match the blueprint");
+        deleteCreatedBlueprint(parent);
+        deleteCreatedBlueprint(ingest);
+        deleteCreatedBlueprint(consume);
+    }
+
+    /**
+     * Feature: Update checkpoint isolation
+     *
+     * Scenario: Reused unchanged checkpoint does not bypass publication integrity
+     *   Given a Blueprint update reuses an unchanged pure-render checkpoint
+     *   And the product snapshot being published contains tampering under a protected path
+     *   When protected-resources integrity is evaluated
+     *   Then evaluationResult is false
+     *   And the comparison uses the published product ref rather than treating checkpoint reuse as approval
+     */
+    @Test
+    void whenUnchangedCheckpointIsReusedThenTamperedPublicationStillFailsIntegrity(
+            @TempDir Path sourceDir, @TempDir Path productDir) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        copyProtectedPublishedFiles(sourceDir, productDir);
+        Files.writeString(productDir.resolve("infrastructure/core/network.tf"), "tampered after checkpoint reuse\n");
+        BlueprintContext context = createBlueprintAndVersion(
+                "checkpoint-isolation", "1.2.0", manifestMonorepoNoComposition());
+        GitOperation gitOperation = stubGit(sourceDir, productDir);
+
+        PolicyEvaluationRequestRes request = evaluationRequest(publicationEvent(
+                "publication-v1",
+                lineageContent(context.blueprintName, context.versionNumber),
+                productRepoNode()));
+        ResponseEntity<PolicyEvaluationResultRes> response = evaluate(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getEvaluationResult()).isFalse();
+        assertThat(response.getBody().getOutputObject().getMessage()).contains("network.tf");
+
+        org.mockito.ArgumentCaptor<RepositoryPointer> pointerCaptor =
+                org.mockito.ArgumentCaptor.forClass(RepositoryPointer.class);
+        verify(gitOperation, atLeastOnce()).readRepository(any(), pointerCaptor.capture(), any());
+        assertThat(pointerCaptor.getAllValues())
+                .anyMatch(pointer -> pointer instanceof RepositoryPointerTag
+                        && "publication-v1".equals(pointer.getRefValue()));
+        assertThat(pointerCaptor.getAllValues())
+                .noneMatch(pointer -> pointer.getRefValue() != null && pointer.getRefValue().startsWith("blueprint-v"));
+        deleteCreatedBlueprint(context);
+    }
+
     private GitOperation stubGit(Path sourceDir, Path productDir) {
         return stubGit(sourceDir, sourceDir, productDir);
     }
 
     private GitOperation stubGit(Path parentSource, Path moduleSource, Path productDir) {
+        return stubPublishedGit(parentSource, moduleSource, Map.of("customer360", productDir));
+    }
+
+    private GitOperation stubPublishedGit(Path parentSource, Path moduleSource, Map<String, Path> productTreesByUrlFragment) {
         GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
         GitOperation mockGitOperation = Mockito.mock(GitOperation.class);
         when(mockGitProvider.gitOperation()).thenReturn(mockGitOperation);
@@ -665,13 +894,19 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
             Repository repository = invocation.getArgument(0);
             Consumer<File> consumer = invocation.getArgument(2);
             String cloneUrl = repository.getCloneUrlHttp();
-            if (cloneUrl != null && cloneUrl.contains("customer360")) {
-                consumer.accept(productDir.toFile());
-            } else if (cloneUrl != null && cloneUrl.contains("module-")) {
-                consumer.accept(moduleSource.toFile());
-            } else {
-                consumer.accept(parentSource.toFile());
+            if (cloneUrl != null) {
+                for (Map.Entry<String, Path> productTree : productTreesByUrlFragment.entrySet()) {
+                    if (cloneUrl.contains(productTree.getKey())) {
+                        consumer.accept(productTree.getValue().toFile());
+                        return null;
+                    }
+                }
+                if (cloneUrl.contains("module-")) {
+                    consumer.accept(moduleSource.toFile());
+                    return null;
+                }
             }
+            consumer.accept(parentSource.toFile());
             return null;
         }).when(mockGitOperation).readRepository(any(), any(), any());
         doNothing().when(mockGitOperation).createAndCheckoutOrphanBranch(any(), anyString());
@@ -724,6 +959,45 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         return repo;
     }
 
+    private ObjectNode additionalRepoNode(String repositoryKey) {
+        ObjectNode repo = OBJECT_MAPPER.createObjectNode();
+        repo.put("repositoryKey", repositoryKey);
+        repo.put("remoteUrlHttp", "https://github.com/org/" + repositoryKey + ".git");
+        repo.put("providerType", "GITHUB");
+        repo.put("providerBaseUrl", "https://github.com");
+        repo.put("name", repositoryKey);
+        repo.put("defaultBranch", "main");
+        repo.put("ownerId", "org");
+        repo.put("externalIdentifier", repositoryKey + "-id");
+        return repo;
+    }
+
+    private ObjectNode additionalTagNode(String repositoryKey, String tag) {
+        ObjectNode node = OBJECT_MAPPER.createObjectNode();
+        node.put("repositoryKey", repositoryKey);
+        node.put("tag", tag);
+        return node;
+    }
+
+    private void attachAdditionalPublication(ObjectNode event, String repositoryKey, String tag) {
+        ObjectNode version = (ObjectNode) event.path("eventContent").path("dataProductVersion");
+        ObjectNode dataProduct = (ObjectNode) version.path("dataProduct");
+        dataProduct.set("additionalDataProductRepos", OBJECT_MAPPER.createArrayNode().add(additionalRepoNode(repositoryKey)));
+        version.set("additionalTags", OBJECT_MAPPER.createArrayNode().add(additionalTagNode(repositoryKey, tag)));
+    }
+
+    private String productRef(List<Repository> repos, List<RepositoryPointer> pointers, String urlFragment) {
+        for (int i = 0; i < repos.size(); i++) {
+            Repository repository = repos.get(i);
+            if (repository != null
+                    && repository.getCloneUrlHttp() != null
+                    && repository.getCloneUrlHttp().contains(urlFragment)) {
+                return pointers.get(i).getRefValue();
+            }
+        }
+        return null;
+    }
+
     private ObjectNode lineageContent(String blueprintName, String versionNumber) {
         ObjectNode content = OBJECT_MAPPER.createObjectNode();
         ObjectNode blueprint = content.putObject("blueprint");
@@ -746,6 +1020,46 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
         return content;
     }
 
+    private ObjectNode polyrepoLineageContent(String blueprintName, String versionNumber) {
+        ObjectNode content = OBJECT_MAPPER.createObjectNode();
+        ObjectNode blueprint = content.putObject("blueprint");
+        blueprint.put("blueprintName", blueprintName);
+        blueprint.put("blueprintVersionNumber", versionNumber);
+        ObjectNode parameters = blueprint.putObject("parameters");
+        parameters.put("awsRegion", "eu-west-1");
+        return content;
+    }
+
+    private ObjectNode polyrepoComposedLineageContent(String blueprintName, String versionNumber) {
+        ObjectNode content = OBJECT_MAPPER.createObjectNode();
+        ObjectNode blueprint = content.putObject("blueprint");
+        blueprint.put("blueprintName", blueprintName);
+        blueprint.put("blueprintVersionNumber", versionNumber);
+        ObjectNode parameters = blueprint.putObject("parameters");
+        parameters.put("dataDomain", "sales");
+        return content;
+    }
+
+    private ObjectNode polyrepoNoCompositionManifestForIntegrity() throws Exception {
+        ObjectNode manifest = (ObjectNode) readYamlManifestResource("manifest/example-2.3-polyrepo-no-composition.yaml");
+        ObjectNode instantiation = OBJECT_MAPPER.createObjectNode();
+        instantiation.put("type", "root");
+        instantiation.set("targets", OBJECT_MAPPER.createArrayNode()
+                .add(route("infrastructure/", "infra-repo", "infrastructure/"))
+                .add(route("docs/", "app-repo", "docs/"))
+                .add(route("templates/", "app-repo", "templates/")));
+        manifest.set("instantiation", OBJECT_MAPPER.createArrayNode().add(instantiation));
+        return manifest;
+    }
+
+    private ObjectNode route(String sourcePath, String repo, String destinationPath) {
+        ObjectNode target = OBJECT_MAPPER.createObjectNode();
+        target.put("sourcePath", sourcePath);
+        target.put("repo", repo);
+        target.put("destinationPath", destinationPath);
+        return target;
+    }
+
     private JsonNode n1ProtectedResources() {
         return OBJECT_MAPPER.createArrayNode()
                 .add(OBJECT_MAPPER.createObjectNode().put("path", "data-plane/storage/module-only.txt"))
@@ -766,14 +1080,20 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     }
 
     private void rewriteCompositionRefs(ObjectNode parentManifest, BlueprintContext storage, BlueprintContext serving) {
+        rewriteCompositionModuleRefs(parentManifest, Map.of("storage", storage, "serving", serving));
+    }
+
+    private void rewritePolyrepoCompositionRefs(ObjectNode parentManifest, BlueprintContext ingest, BlueprintContext consume) {
+        rewriteCompositionModuleRefs(parentManifest, Map.of("ingest", ingest, "consume", consume));
+    }
+
+    private void rewriteCompositionModuleRefs(ObjectNode parentManifest, Map<String, BlueprintContext> modules) {
         for (JsonNode node : parentManifest.get("composition")) {
             ObjectNode composition = (ObjectNode) node;
-            if ("storage".equals(composition.get("module").asText())) {
-                composition.put("blueprintName", storage.blueprintName);
-                composition.put("blueprintVersion", storage.versionNumber);
-            } else if ("serving".equals(composition.get("module").asText())) {
-                composition.put("blueprintName", serving.blueprintName);
-                composition.put("blueprintVersion", serving.versionNumber);
+            BlueprintContext module = modules.get(composition.get("module").asText());
+            if (module != null) {
+                composition.put("blueprintName", module.blueprintName);
+                composition.put("blueprintVersion", module.versionNumber);
             }
         }
     }
@@ -842,13 +1162,36 @@ public class ProtectedResourcesValidatorControllerIT extends BlueprintApplicatio
     }
 
     private void copyProtectedPublishedFiles(Path sourceDir, Path productDir) throws IOException {
+        copyInfraProtectedPublishedFiles(sourceDir, productDir);
+        copyRootProtectedPublishedFiles(sourceDir, productDir);
+    }
+
+    private void copyRootProtectedPublishedFiles(Path sourceDir, Path productDir) throws IOException {
+        Path docs = productDir.resolve("docs");
+        Files.createDirectories(docs);
+        Files.copy(sourceDir.resolve("docs/architecture.md"), docs.resolve("architecture.md"), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private void copyInfraProtectedPublishedFiles(Path sourceDir, Path productDir) throws IOException {
         Path core = productDir.resolve("infrastructure/core");
         Files.createDirectories(core);
         Files.copy(sourceDir.resolve("infrastructure/core/network.tf"), core.resolve("network.tf"), StandardCopyOption.REPLACE_EXISTING);
         Files.copy(sourceDir.resolve("infrastructure/core/iam.tf"), core.resolve("iam.tf"), StandardCopyOption.REPLACE_EXISTING);
-        Path docs = productDir.resolve("docs");
-        Files.createDirectories(docs);
-        Files.copy(sourceDir.resolve("docs/architecture.md"), docs.resolve("architecture.md"), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private void copyNnProtectedPublishedFiles(Path moduleSource, Path pipelineProduct, Path apiProduct) throws IOException {
+        Path pipelineDestination = pipelineProduct.resolve("pipelines/batch");
+        Files.createDirectories(pipelineDestination);
+        Files.copy(
+                moduleSource.resolve("module-only.txt"),
+                pipelineDestination.resolve("module-only.txt"),
+                StandardCopyOption.REPLACE_EXISTING);
+        Path apiDestination = apiProduct.resolve("services/consumer");
+        Files.createDirectories(apiDestination);
+        Files.copy(
+                moduleSource.resolve("module-only.txt"),
+                apiDestination.resolve("module-only.txt"),
+                StandardCopyOption.REPLACE_EXISTING);
     }
 
     private void writeSourceBlueprintFiles(Path sourceDir) throws IOException {
