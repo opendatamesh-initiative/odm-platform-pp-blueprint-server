@@ -122,3 +122,18 @@ Full `./mvnw test` was not run; Slice 2 ITs were not added.
 - Catalog REST cannot represent “Blueprint with no repository” after `BlueprintType` became required. The lasting prompt’s IT mapping for that scenario is no longer executable as an HTTP fixture.
 - `unknown-protected-resource-repository.yaml` still used the deleted object-shaped instantiation model; it was rewritten to the final manifest. Other invalid fixtures in this repo were already final-shaped.
 - No code/prompt conflict required a REASONS change. Absolute-path digest rejection and symlink preservation were implemented as specified.
+
+## Gate correction (close order)
+
+Phase 1 gate: `TargetWorkingTrees` promised deterministic close, but `Map.copyOf(trees)` does not preserve `LinkedHashMap` encounter order.
+
+**Fix:** constructor now stores `Collections.unmodifiableMap(new LinkedHashMap<>(trees))`, so `close()` and `keys()` follow insertion order. Every tree is still attempted; the first `RuntimeException` is rethrown after the remaining closes.
+
+**Test:** `TargetWorkingTreesTest.closeFollowsInsertionOrderAndContinuesAfterFailure` — non-sorted insertion (`gamma`, `alpha`, `beta`); middle close throws; all three close in insertion order; first failure is rethrown.
+
+Targeted tests — **pass**:
+
+| Command | Result |
+| --- | --- |
+| `TargetWorkingTreesTest` | pass |
+| `EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImplTest` | pass |

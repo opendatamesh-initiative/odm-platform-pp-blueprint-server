@@ -1,5 +1,6 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -12,7 +13,9 @@ final class TargetWorkingTrees implements AutoCloseable {
     private final Map<String, WorkingTree> trees;
 
     TargetWorkingTrees(Map<String, WorkingTree> trees) {
-        this.trees = trees == null ? Map.of() : Map.copyOf(trees);
+        this.trees = trees == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(trees));
     }
 
     WorkingTree get(String repositoryKey) {
