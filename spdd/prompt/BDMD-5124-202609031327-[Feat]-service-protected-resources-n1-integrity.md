@@ -3,11 +3,9 @@
 ## Requirements
 
 - Retain the original Slice 1 filename for SPDD traceability. Treat `spdd/analysis/BDMD-5124-202609021721-[Analysis]-protected-resources-multi-repository-integrity.md` as authoritative, `spdd/prompt/BDMD-5124-202608210930-[Feat]-service-protected-resources-integrity-policy-adapter.md` as the lasting domain contract, and `spdd/prompt/BDMD-5124-202608241546-[Feat]-service-v1-protected-resources-policy-adapter.md` as the Registry reconstruction/mapping contract.
-- Preserve the partially implemented Slice 1 (1→1 and composed N→1 local rendering), repair it for the final manifest, and complete Slice 2 (1→N and N→N).
-- Restore the existing protected-resources implementation after the final Blueprint manifest redesign: top-level `targetRepositories[]`, exactly one `isRoot: true`, typed `instantiation[]`, route `repo`, and composition without route fields.
-- Preserve the working Slice 1 foundations: optional `ManifestProtectedResource.repository`, protected-target validation, `RenderedTreeSnapshot` keyed by logical target, and local `openSources`/`openTarget` instantiation with no remote target clone or push.
-- Evaluate 1→1 and composed N→1 on the final manifest without old `instantiation.repositories` or `instantiation.root.repository` references.
-- Complete 1→N and N→N by comparing every target in the parent protection coverage set against its own published locator/ref and same-key expected tree.
+- Evaluate 1→1, composed N→1, split 1→N, and composed N→N on the final Blueprint manifest: top-level `targetRepositories[]`, exactly one `isRoot: true`, typed `instantiation[]`, route `repo`, and composition without route fields.
+- Keep the implemented foundations: optional `ManifestProtectedResource.repository`, protected-target validation, `RenderedTreeSnapshot` keyed by logical target, local `openSources`/`openTarget` instantiation with no remote target clone or push, and target-keyed `TargetWorkingTrees`.
+- Compare every target in the parent protection coverage set against its own published locator/ref and same-key expected tree. Do not use removed `instantiation.repositories` or `instantiation.root.repository`.
 - Keep `protectedResources[].repository` optional. Omission or blank means the explicit root target; a present value must resolve to `targetRepositories[].key`.
 - Enforce parent-only policy authoring: reject a non-empty protected-resource list when publishing a catalog `MODULE`; parent Blueprints protect Module-originated output by naming final routed paths.
 - Require Registry metadata only for protected targets and clone only those published targets. Unprotected target mappings do not affect this policy.
@@ -118,48 +116,41 @@ ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrity
 
 ## Approach
 
-1. Treat current code selectively:
-   - Preserve implemented Slice 1 pieces that already match the final direction:
-     - `ManifestProtectedResource.repository`;
-     - `OdmBlueprintValidationVisitor` and instantiate manifest validation against `targetRepositories[].key`;
-     - `RenderedTreeSnapshot` map;
-     - `InstantiateBlueprintVersionLocalGitOutboundPort.openSources/openTarget`;
-     - `InstantiateBlueprintVersionFactory.buildInstantiateBlueprintVersionForLocalValidation`;
-     - existing 1→1/N→1, reconstruction, and local Git tests.
-   - Rewrite stale integrations rather than adapting deleted models:
-     - `EvaluateProtectedResourcesIntegrity` still imports `ManifestInstantiationRepository`;
-     - `EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl` still reads `instantiation.root.repository`;
-     - the root-only integrity command/Policy mapper cannot carry additional locators/refs;
-     - polyrepo still returns not applicable.
+1. Implemented end state against the final manifest:
+   - Optional `ManifestProtectedResource.repository` with omitted/blank meaning the sole `isRoot: true` target.
+   - `OdmBlueprintValidationVisitor` and instantiate-time validation against `targetRepositories[].key`.
+   - `RenderedTreeSnapshot` keyed by logical target.
+   - `InstantiateBlueprintVersionLocalGitOutboundPort.openSources/openTarget` with no-op `pushBranch`/`pushTag`.
+   - `InstantiateBlueprintVersionFactory.buildInstantiateBlueprintVersionForLocalValidation`.
+   - `EvaluateProtectedResourcesIntegrity` reads only `Manifest.getTargetRepositories()` and typed `instantiation[]`; it does not import deleted `ManifestInstantiationRepository` or object-shaped instantiation.
+   - `EvaluateProtectedResourcesIntegrityCommand` carries root locator/ref plus raw keyed additional locator/ref lists.
+   - `EvaluateProtectedResourcesIntegrityInstantiateOutboundPort.reinstantiateBlueprintLocally(...)` returns `TargetWorkingTrees`.
+   - All four layouts are evaluated when their protected targets have complete metadata. Polyrepo is never not-applicable solely because there are multiple destinations.
 
-2. Phase 1 — repair and verify Slice 1:
-   - Compile exclusively against final `Manifest.getTargetRepositories()` and typed instantiation.
-   - Resolve root from the sole `ManifestTargetRepository.isRoot`.
-   - Adapt local snapshots to target-keyed `TargetWorkingTrees`.
-   - Re-run 1→1 and N→1 with parent plus Module sources and one destination.
-   - Replace the old “Module list is ignored” authoring scenario with Module publication rejection.
-
-3. Phase 2 — complete multi-destination integrity:
-   - Use the lasting command from the base prompt and V1 mapping from the adapter prompt.
-   - Build disposable target DTOs for every manifest destination so the unchanged production instantiate use case renders the complete expected output.
-   - Require no physical Registry locator for unprotected local expected targets; synthetic DTO repository metadata is sufficient because the local Git port never clones targets.
-   - Clone published trees only for protected target keys, each at its own ref.
+2. Layout evaluation:
+   - Resolve the root from the sole `ManifestTargetRepository.isRoot`.
+   - Empty parent protection is not applicable before Registry metadata checks.
+   - Build disposable target DTOs for every declared destination so production instantiate renders the complete expected output.
+   - Unprotected local expected targets need no physical Registry locator; synthetic DTO repository metadata is sufficient because the local Git port never clones targets.
+   - Clone published trees only for protected target keys, each at its own recorded ref.
    - Compare declarations grouped by key and close every published/expected tree.
 
-4. Parent-only authoring:
+3. Parent-only authoring:
    - Generic manifest validation remains catalog-type-agnostic.
-   - `PublishBlueprintVersion` already knows `BlueprintType`; extend its Module publication checks to reject non-empty protection.
-   - Also reject a parent publication that references an inconsistent persisted Module version with a non-empty list, using the existing aggregated composition issue path. This is defense in depth, not a migration or compatibility path.
+   - `PublishBlueprintVersion.validateModulePublishTopology(...)` rejects a catalog `MODULE` with a non-empty protected-resource list.
+   - `validateCompositionModules(...)` also aggregates an issue if a referenced persisted Module version has a non-empty list. This is defense in depth, not a migration or compatibility path.
+   - Integrity never loads or merges Module lists.
 
-5. Key behavior:
-   - Preserve existing Blueprint manifest normalization where it already exists; this task does not refactor it.
+4. Key behavior:
+   - Preserve existing Blueprint manifest normalization where it already exists; this contract does not refactor it.
    - Once manifest keys are resolved through existing Blueprint parsing/validation helpers, join them to Registry `repositoryKey` values with exact equality and no additional trimming/case folding.
    - Missing/duplicate/conflicting metadata fails only when its target is protected.
+   - Non-root refs never fall back to the root tag.
+   - A reused Blueprint update checkpoint never bypasses publication comparison.
 
-6. Tests before extension:
-   - First make `mvn clean compile` and existing Slice 1 tests pass on the final manifest.
-   - Then add root-only, additional-only, mixed-target, 1→N, N→N, duplicate/missing metadata, independent-ref, and aliasing coverage.
-   - Ensure parent fixtures use catalog `BLUEPRINT` and composition children use explicit catalog `MODULE`; do not rely on pre-redesign type inference.
+5. Tests:
+   - Parent fixtures use catalog `BLUEPRINT` and composition children use explicit catalog `MODULE`; do not rely on pre-redesign type inference.
+   - Keep coverage for root-only, additional-only, mixed-target, 1→N, N→N, duplicate/missing metadata, independent-ref, aliasing, Module rejection, local Git, digest safety, and checkpoint isolation.
 
 ## Structure
 
@@ -198,13 +189,13 @@ ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrity
 1. Keep `ManifestProtectedResource.repository` optional with its current getter/setter.
 2. Keep `OdmBlueprintValidationVisitor` collection/post-pass validation and `OdmBlueprintManifestValidatorState.ProtectedResourceRepository`.
 3. Keep instantiate-time `validateProtectedResourceRepositories(...)` in `InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortImpl`.
-4. Validation wording must name `targetRepositories[].key` and root `isRoot: true`; remove stale test Javadocs referring to `instantiation.repositories` or `instantiation.root.repository`.
+4. Validation wording must name `targetRepositories[].key` and root `isRoot: true`; do not restore stale test Javadocs referring to `instantiation.repositories` or `instantiation.root.repository`.
 5. Blank `repository` is root shorthand and is not auto-filled into stored manifest content.
 6. Do not add Registry-key validation to generic manifest parsing.
 
 ### Enforce Module policy ownership at publish
 
-1. Add `boolean hasProtectedResources(JsonNode content)` to `PublishBlueprintVersionManifestOutboundPort`.
+1. Keep `boolean hasProtectedResources(JsonNode content)` on `PublishBlueprintVersionManifestOutboundPort`.
 2. Implement it with `ManifestParserFactory` and return true only for a non-null, non-empty list.
 3. In `PublishBlueprintVersion.validateModulePublishTopology(...)`, when `blueprintType == MODULE`, reject a non-empty list with:
    - problem: `A Blueprint module must not declare protectedResources`;
@@ -212,21 +203,21 @@ ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrity
 4. In `validateCompositionModules(...)`, add an aggregated issue if a referenced Module version has non-empty protection. Keep loading and issue aggregation through existing ports.
 5. Do not reject an empty/omitted list and do not inspect Module lists during integrity evaluation.
 
-### Repair final-manifest use in `EvaluateProtectedResourcesIntegrity`
+### Evaluate against the final manifest in `EvaluateProtectedResourcesIntegrity`
 
-1. Remove deleted `ManifestInstantiationRepository` and all object-shaped instantiation access.
+1. Do not import deleted `ManifestInstantiationRepository` or object-shaped instantiation access.
 2. Use final `ManifestTargetRepository` declarations to:
    - collect declared logical keys;
    - resolve the sole explicit root;
    - resolve each protected declaration to explicit key or root shorthand.
-3. Remove `POLYREPO_NOT_APPLICABLE_MESSAGE` and topology refusal. `InstantiationScenarioResolver` may remain for tests/diagnostics, but no valid scenario is skipped.
+3. Do not skip any valid layout. `POLYREPO_NOT_APPLICABLE_MESSAGE` and topology refusal are removed. `InstantiationScenarioResolver` may remain for instantiate/update diagnostics, but integrity does not use it to skip evaluation.
 4. Keep empty parent protection not applicable before Registry metadata checks.
 5. Apply the target-keyed domain resolution and comparison flow from the base integrity prompt.
 6. Use only parent protected resources; do not load or merge Module lists.
 
-### Update local re-instantiation adapter
+### Local re-instantiation adapter
 
-1. Change `EvaluateProtectedResourcesIntegrityInstantiateOutboundPort` to return `TargetWorkingTrees`.
+1. `EvaluateProtectedResourcesIntegrityInstantiateOutboundPort.reinstantiateBlueprintLocally(...)` returns `TargetWorkingTrees`.
 2. In `EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl`:
    - parse the stored final manifest;
    - collect every `targetRepositories[].key`;
@@ -238,16 +229,16 @@ ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrity
    - adapt every `RenderedTreeSnapshot` entry into one closeable keyed result.
 3. Do not require Registry locator/ref data for unprotected local expected targets.
 4. A missing rendered tree for a routed/protected key fails closed. Delete all snapshots on construction failure.
-5. Remove JSON walking of `instantiation.root.repository` and the single-entry fallback.
+5. Do not walk JSON of `instantiation.root.repository` or fall back to a single-entry tree.
 
 ### Keep update checkpoints separate from publication integrity
 
 1. Do not modify `UpdateDataProductFromBlueprintVersion` or `contentUnchanged` to serve as an integrity result.
 2. A reused pure-render checkpoint is only an update baseline; the Policy publication path must still clone the version’s recorded product refs and compare protected content.
-3. Add regression coverage showing that tampering on a product snapshot fails publication integrity even when a no-op Blueprint update reused an existing checkpoint.
-4. Update stale `InstantiationScenario` and test Javadocs that still describe removed manifest repository paths.
+3. Keep regression coverage showing that tampering on a product snapshot fails publication integrity even when a no-op Blueprint update reused an existing checkpoint.
+4. Keep `InstantiationScenario` and test Javadocs describing current `targetRepositories[]` / `isRoot` paths; do not restore removed `instantiation.repositories` or `instantiation.root.repository` wording.
 
-### Preserve and harden Slice 1 local Git
+### Preserve and harden local Git for expected trees
 
 1. Keep `InstantiateBlueprintVersionLocalGitOutboundPort.openSources(...)` cloning all routed parent/Module sources at release tags.
 2. Keep `openTarget(...)` creating a throwaway repository per `target.targetId()`, running the unchanged instantiate callback, and snapshotting by logical key.
@@ -256,7 +247,7 @@ ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrity
 5. Preserve symbolic links in the snapshot without following them so the digest layer can reject protected symlinks.
 6. Keep deterministic best-effort cleanup and replacement cleanup in `RenderedTreeSnapshot.putExpectedTree`.
 
-### Complete published multi-target evaluation
+### Published multi-target evaluation
 
 1. Consume root/additional domain lists defined by the base prompt and populated by the V1 prompt.
 2. Derive the protection coverage set after root fallback.
@@ -269,13 +260,13 @@ ProtectedResourcesPolicyValidatorService --> EvaluateProtectedResourcesIntegrity
 7. Compare each declaration only against published and expected trees for its resolved key.
 8. Never reuse root tag for non-root repositories.
 
-### Align Policy V1 reconstruction
+### Policy V1 reconstruction
 
-1. Implement the companion V1 prompt in the same delivery:
+1. Keep the companion V1 prompt implemented:
    - retain/fetch `additionalDataProductRepos[]`;
    - retain/default `additionalTags[]`;
    - map `repositoryKey` locators and refs without deduplication;
-   - remove unconditional root-metadata rejection.
+   - do not reject reconstruction solely because root metadata is absent.
 2. Do not add Registry HTTP calls to integrity core.
 3. No Registry V2 event change is required unless direct V2 delivery is later proven incomplete.
 
@@ -409,8 +400,8 @@ Feature: Update checkpoint isolation
 
 | Feature / Scenario | Test class | Method |
 | --- | --- | --- |
-| Manifest / Omitted repository resolves root | `BlueprintVersionsUseCaseControllerIT` and `EvaluateProtectedResourcesIntegrityTest` | update root-key Javadocs and add `whenRepositoryOmittedThenUseIsRootTarget` |
-| Manifest / Unknown key rejected | `BlueprintVersionsUseCaseControllerIT` and `InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest` | preserve tests, replace stale terminology |
+| Manifest / Omitted repository resolves root | `BlueprintVersionsUseCaseControllerIT` and `EvaluateProtectedResourcesIntegrityTest` | `whenRepositoryOmittedThenPublishAcceptsExplicitRootShorthand` and `whenRepositoryOmittedThenUseIsRootTarget` (`whenRepositoryOmittedThenResolveExplicitRootEvenIfNotFirst`) |
+| Manifest / Unknown key rejected | `BlueprintVersionsUseCaseControllerIT` and `InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest` | preserve tests (`whenUnknownProtectedResourceRepositoryThenIssueWithHint`); replace stale terminology |
 | Manifest / Module list rejected | `BlueprintVersionsUseCaseControllerIT` | `whenPublishModuleWithProtectedResourcesThenReturn400` |
 | Integrity / 1→1 root shorthand passes | `ProtectedResourcesValidatorControllerIT` | preserve `applicableMatchingTreesPass` |
 | Integrity / N→1 reconstruction passes | `ProtectedResourcesValidatorControllerIT` | preserve/fix `whenMonorepoWithCompositionProtectedPathsMatchThenPass` |
@@ -427,9 +418,9 @@ Feature: Update checkpoint isolation
 | Local Git / Sources and targets remain local | `InstantiateBlueprintVersionLocalGitOutboundPortTest` | preserve `openSourcesClonesTagsAndOpenTargetDoesNotCloneProduct` and extend to multiple targets |
 | Local snapshots / Every target retained and closed | `EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImplTest` | `whenManifestHasMultipleTargetsThenReturnAllExpectedTreesAndCleanup` |
 
-Implement each new or rewritten test and copy its complete Scenario text into the test method Javadoc. Replace the old polyrepo-not-applicable and Module-list-ignored scenarios; they assert superseded behavior.
+Keep each scenario implemented and copy its complete Scenario text into the test method Javadoc. Do not restore the old polyrepo-not-applicable and Module-list-ignored scenarios; they assert superseded behavior.
 
-All composition fixtures used by these tests must explicitly create parent rows with `BlueprintType.BLUEPRINT` and child rows with `BlueprintType.MODULE`. Update existing Slice 1 helpers that currently omit the child type.
+All composition fixtures used by these tests must explicitly create parent rows with `BlueprintType.BLUEPRINT` and child rows with `BlueprintType.MODULE`.
 
 ## Norms
 
@@ -449,9 +440,9 @@ All composition fixtures used by these tests must explicitly create parent rows 
 1. Final manifest:
    - Use only top-level `targetRepositories[]`, `isRoot`, typed `instantiation[]`, `repo`, and `destinationPath`.
    - No references to removed object-shaped instantiation APIs.
-2. Slice preservation:
-   - Keep the implemented `repository` field, validators, snapshot map, local `openSources/openTarget`, and N→1 semantics.
-   - Repair rather than discard working Slice 1 tests and adapters.
+2. Implemented foundations:
+   - Keep the `repository` field, validators, snapshot map, local `openSources/openTarget`, target-keyed expected trees, and 1→1/N→1/1→N/N→N semantics.
+   - Keep the implemented tests and adapters; do not discard working layout coverage.
 3. Parent ownership:
    - Reject non-empty Module protection at publication.
    - Integrity reads only the recorded parent list.
@@ -474,6 +465,18 @@ All composition fixtures used by these tests must explicitly create parent rows 
    - Infrastructure failure may stop on the first target.
    - Messages name logical key/path and never expose credentials or local paths.
    - Missing expected/published content and content differences remain distinct.
+   - Exact user-facing messages include:
+     - not applicable: `This blueprint does not declare protected resources`;
+     - pass: `Protected resources match the blueprint`;
+     - unknown key: `Cannot check protected resources: protected resource '%s' names unknown repository key '%s'`;
+     - missing root locator/ref: `Cannot check protected resources: the data product version is missing its Git repository or tag`;
+     - missing/blank/duplicate non-root metadata: `Cannot check protected resources: publication metadata for repository key '%s' is missing, blank, or duplicated`;
+     - missing expected tree: `Cannot check protected resources: expected tree for repository key '%s' was not produced`;
+     - invalid stored root: `Cannot check protected resources: the blueprint manifest does not declare exactly one root target repository`;
+     - missing Blueprint version: `Cannot check protected resources: blueprint '%s' version '%s' was not found`;
+     - missing source repo: `Cannot check protected resources: the blueprint repository is not configured`;
+     - failed local rebuild: `Cannot check protected resources: failed to rebuild the expected files from the blueprint`;
+     - token sanitization: `Cannot complete the protected-resource check`.
 8. Performance:
    - Re-instantiate once.
    - Clone only protected published targets.

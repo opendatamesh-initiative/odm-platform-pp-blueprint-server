@@ -4,7 +4,7 @@ This analysis extends `BDMD-5124-202608201150-[Analysis]-protected-resources-int
 
 ## Authoritative baseline
 
-The Blueprint and Registry multi-repository features are unreleased work in progress. Their current designs are treated as the final contract for this analysis:
+The Blueprint and Registry multi-repository contracts are treated as the final contract for this analysis:
 
 - A parent manifest declares destination keys in top-level `targetRepositories[]`; exactly one entry has `isRoot: true`.
 - A parent manifest routes sources through typed `instantiation[]` entries:
@@ -186,7 +186,7 @@ The end state supports all four layouts. Work can be delivered in coherent phase
 - **Require an explicit target on every item**: Rejected. Omission or blank intentionally means the explicit root, reducing noise for the common case without relying on target order or naming.
 - **Use one shared publication tag for every locator**: Rejected. It contradicts the final Registry version model.
 - **Use Blueprint checkpoint tags for non-root repositories**: Rejected. Checkpoints are generation baselines, not publication snapshots.
-- **Validate only the root until polyrepo support is complete**: Rejected as a final behavior. A temporary not-applicable state is acceptable only before multi-target delivery and must never be reported as a successful check.
+- **Validate only the root until polyrepo support is complete**: Rejected. Multi-target delivery is implemented; a polyrepo publication is never approved after a root-only partial check, and polyrepo is never reported as not-applicable solely because there are multiple destinations.
 - **Clone or validate all declared published repositories unconditionally**: Rejected. Targets outside the protection coverage set do not affect this policy.
 - **Read Module protected-resource lists and rewrite them through routes**: Rejected for this feature. It changes ownership and creates ambiguous results when a Module is routed more than once.
 - **Store per-target hashes in the manifest**: Rejected. Re-instantiation remains the source of expected content.
@@ -258,15 +258,15 @@ The end state supports all four layouts. Work can be delivered in coherent phase
 | 13 | Blueprint checkpoint reuse does not replace publication comparison | Yes | Update optimization remains separate |
 | 14 | Superseded WIP manifest/Registry contracts are discarded | Yes | No compatibility layer |
 
-## Delivery Boundary for REASONS
+## Implemented REASONS contract
 
-The next REASONS Canvas can treat the decisions above as fixed and define implementation operations for the final end state, even if implementation is staged:
+The REASONS canvases document the implemented end state. The following decisions are fixed and landed:
 
-1. implement optional `repository` with explicit-root fallback and reject non-empty Module lists;
-2. align manifest validation and documentation with the current Blueprint model;
-3. define complete Policy V1 reconstruction for Registry locators and per-version refs;
-4. establish target-keyed published and expected snapshot boundaries;
-5. restore 1→1 and N→1 evaluation on current composition semantics;
-6. implement 1→N and N→N without shared-tag or root-only assumptions;
-7. preserve version-local policy and the immediate-publication-only guarantee;
-8. verify all layouts, referenced mapping failures, subset protection, clone failures, and no-op update behavior.
+1. optional `repository` with explicit-root fallback and rejection of non-empty Module lists;
+2. manifest validation and documentation aligned with the current Blueprint model;
+3. complete Policy V1 reconstruction for Registry locators and per-version refs;
+4. target-keyed published and expected snapshot boundaries;
+5. 1→1 and N→1 evaluation on current composition semantics;
+6. 1→N and N→N without shared-tag or root-only assumptions;
+7. version-local policy and the immediate-publication-only guarantee;
+8. verification of all layouts, referenced mapping failures, subset protection, clone failures, and no-op update behavior.

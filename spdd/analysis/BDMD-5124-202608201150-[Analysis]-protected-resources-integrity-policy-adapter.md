@@ -4,7 +4,7 @@ This analysis defines the lasting publication-integrity capability and its tempo
 
 ## Authoritative baseline
 
-The feature is still under development and has not been released. The current Blueprint and Registry designs are therefore a hard baseline, not a compatibility target:
+The feature is implemented against the current Blueprint and Registry designs. Those contracts are a hard baseline, not a compatibility target:
 
 - Blueprint manifests declare logical destinations in top-level `targetRepositories[]`, with exactly one destination marked `isRoot: true`.
 - Routing is expressed by typed `instantiation[]` entries. `type: root` routes the parent Blueprint; `type: module` routes a composed catalog Module. Route destinations use `repo` and `destinationPath`.
@@ -157,6 +157,7 @@ The design supports all four layouts through one target-keyed model. Delivery ma
 
 ### Alternatives Considered
 
+- **`git diff` the publication ref against the Blueprint checkpoint tag**: After instantiate/update, each product repository already has a `blueprint-v{version}` tag on the pure render. A path-scoped `git diff` between that tag and the recorded publication ref could detect protected-path drift without hashing or a local re-instantiation, and it would work per destination in polyrepo as well. Feasible, but rejected. The checkpoint lives in the data product repository, so the product owner can retag or rewrite it and make the “clean” side of the diff untrustworthy. Local re-instantiation from the recorded parent Blueprint version and parameters keeps the expected tree outside that Git history and still verifies parameter sanity rather than trusting a prior render tag.
 - **Persist hashes in `protectedResources[].integrity`**: Rejected. Dynamic reconstruction verifies both source version and parameters and avoids stale embedded digests.
 - **Hash source templates directly**: Rejected. Protected paths describe generated destination content, not Velocity source files.
 - **Use Blueprint checkpoint tags as publication refs**: Rejected. Checkpoints represent pure generation baselines, not necessarily the product commits being published.

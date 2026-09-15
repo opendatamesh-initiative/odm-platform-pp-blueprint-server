@@ -1,5 +1,7 @@
 # SPDD Vision: Protected Resources policy validation at data product version publication
 
+> **Implemented status (post-delivery `/spdd-sync`):** The lasting integrity use case and Policy V1 `old/v1` adapter are implemented. Evaluation covers all four layouts (1→1, N→1, 1→N, N→N), parent-only Module rejection, and Registry root plus `additionalDataProductRepos` / `additionalTags` reconstruction. Historical “first slice: monorepo, no composition” language below is superseded by that delivery.
+
 ## Original Business Requirement
 
 # [Blueprint 2.0] Support for Protected Resources
@@ -72,7 +74,7 @@ Define two distinct packages/services:
 
 | Project | Role | In-scope summary | Analysis needed? |
 |---------|------|------------------|------------------|
-| `odm-platform-pp-blueprint-server` | Product-plane API: blueprints, instantiate, Git | Integrity use case (already implemented). Temporary isolated `old/v1` adapter: subscribe to Policy V1 `DATA_PRODUCT_VERSION_CREATION`, fetch Registry to reconstruct the V2 version resource (tag + product repo), then call the integrity use case. | **Yes** (this remaining adapter slice) |
+| `odm-platform-pp-blueprint-server` | Product-plane API: blueprints, instantiate, Git | Lasting integrity use case plus temporary isolated `old/v1` adapter: subscribe to Policy V1 `DATA_PRODUCT_VERSION_CREATION`, fetch Registry to reconstruct the V2 version resource (root and additional locators/refs), then call integrity. | **Implemented** (adapter + all four layouts) |
 | `odm-platform-pp-registry-server` | Product-plane API: data products, publish lifecycle, Policy V1 compatibility bridge | V2 `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` already nests tag + product repo on the version resource. V1 bridge unchanged: it recaptures that Notification event and calls Policy `validateInput` with `DATA_PRODUCT_VERSION_CREATION` (descriptor-only). Blueprint will **read** existing Registry GET/search APIs; no Registry code change for this band-aid. | **No** (contract already in place; GET APIs exist) |
 | `odm-platform-pp-notification-server` | Event bus | Continues delivering `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` to Registry’s V1 bridge (and other observers). Blueprint does **not** subscribe to Notification. | **Out of scope** — do not change |
 | Policy Service (product-plane, not a workspace root) | Governance gate: registers engines, dispatches evaluation, aggregates blocking results | Unchanged. Blueprint registers as an engine on Policy V1 **`DATA_PRODUCT_VERSION_CREATION`** (same enum Observer uses). Policy already dispatches that name to engines. | **Out of scope** — do not change |
@@ -179,9 +181,9 @@ Keep publication governance on the **existing Policy V1 gate** and the **existin
 
 Blueprint Server becomes a **policy adapter** in the same way Observer already is: register a policy engine + a policy (blocking flag from config), expose an evaluate endpoint. For this slice the registered evaluation event is Policy V1 **`DATA_PRODUCT_VERSION_CREATION`**.
 
-Because that V1 payload cannot clone a Git tag, introduce an **isolated Blueprint `old/v1` package** (Registry `old` pattern): reconstruct the V2 publication object by fetching Registry, then call the **already implemented** integrity use case. That use case stays V2-shaped: clone product repo at tag, re-instantiate the blueprint locally without pushing, hash protected paths, compare.
+Because that V1 payload cannot clone a Git tag, an **isolated Blueprint `old/v1` package** (Registry `old` pattern) reconstructs the V2 publication object by fetching Registry, then calls the integrity use case. That use case stays V2-shaped: clone each protected product repository at its own recorded ref, re-instantiate the blueprint locally without pushing, hash protected paths, compare.
 
-Treat File Immutability (A) and Parameter Sanity (B) as **one check**. First delivery remains **monorepo, no composition**.
+Treat File Immutability (A) and Parameter Sanity (B) as **one check**. Delivery evaluates **all four layouts** (1→1, N→1, 1→N, N→N), not monorepo-only.
 
 The V2 target is unchanged: Policy V2 will forward `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` with the nested version resource; Blueprint will subscribe to that name and call the integrity use case directly. The only deletion required is `old/v1` (reconstruction + CREATION subscription + Registry client + Policy adapter types). Then add a thin lasting evaluate controller.
 
@@ -203,7 +205,7 @@ The V2 target is unchanged: Policy V2 will forward `DATA_PRODUCT_VERSION_PUBLICA
 
 1. **`odm-platform-pp-registry-server`**: V2 publication contract (nested tag + product repo) is **already done**. V1 bridge stays. No further Registry work for this band-aid.
 2. **Policy Service / Notification**: **No changes.**
-3. **`odm-platform-pp-blueprint-server`**: Add isolated `old/v1` (CREATION subscription, Registry fetch, reconstruct V2 object, call existing integrity use case). Keep Git credentials / active / blocking config. Integrity use case already implemented.
+3. **`odm-platform-pp-blueprint-server`**: Isolated `old/v1` (CREATION subscription, Registry fetch of root and additional locators/refs, reconstruct V2 object, call existing integrity use case) is implemented. Git credentials / active / blocking config remain. Integrity evaluates every protected destination independently.
 4. **Later (Policy V2)**: Delete Blueprint `old/v1`. Subscribe the remaining adapter to `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`. No Registry fetch.
 
 Rationale: avoid changing Policy and Notification; keep V2 integrity logic; isolate the compatibility hop so it can be thrown away.
@@ -217,15 +219,15 @@ Rationale: avoid changing Policy and Notification; keep V2 integrity logic; isol
 - **Git credentials on the event**: Secrets on the bus. Rejected.
 - **Hash at blueprint publish time only**: Fails for Velocity. Rejected.
 - **Two separate Policy policies for A and B**: Premature. Rejected.
-- **Polyrepo/composition in v1**: Out of first slice.
+- **Polyrepo/composition in the original first slice**: Historical constraint only. Current delivery evaluates composition and polyrepo; see the multi-repository analysis.
 - **UI or Builder changes**: Not in the business requirement. Rejected.
 
 ## System Risk & Gap Analysis
 
 ### Requirement Ambiguities
 
-- **How to identify the Registry version from the V1 evaluate payload (open)**: Policy forwards `{ currentState, afterState }` to engines, **not** `dataProductId` / `dataProductVersion`. Reconstruction must read identity from the descriptor in `afterState` (FQN + version) and resolve it via Registry search/GET. Confirm descriptor always has those fields on publication. Analysis must pick the exact lookup path.
-- **Skip vs fail**: Unspecified originally for: no blueprint lineage; empty protected resources; missing tag/repo; polyrepo/composition; clone failure vs hash mismatch. Shared rule: adapter off → not registered; no lineage / empty protected resources / unsupported strategy → **pass (not applicable)**; applicable but cannot reconstruct or clone → **fail closed**; hash mismatch → **fail** with path-level reasons.
+- **How to identify the Registry version from the V1 evaluate payload (resolved)**: Reconstruction reads identity from the descriptor in `afterState` (FQN + version aliases) and resolves it via Registry search then GET. See `ReconstructPublicationRequestedService`.
+- **Skip vs fail**: Unspecified originally for: no blueprint lineage; empty protected resources; missing tag/repo; polyrepo/composition; clone failure vs hash mismatch. Shared rule: adapter off → not registered; no lineage / empty protected resources → **pass (not applicable)**; applicable but cannot reconstruct or clone → **fail closed**; hash mismatch → **fail** with path-level reasons. Polyrepo/composition is applicable evaluation, not a skip.
 - **Feature flag**: Blueprint configuration: validator **active**; **blocking** flag. Registry address is required when the V1 adapter is used.
 - **Folder/glob hashing**: Canonical SHA-256 rule is defined in the Blueprint analysis (unchanged).
 - **Non-deterministic protected files**: Protected paths must be deterministic, or they must be excluded.
@@ -234,8 +236,8 @@ Rationale: avoid changing Policy and Notification; keep V2 integrity logic; isol
 ### Integration Risks
 
 - **V1 payload drop**: Policy V1 never forwards tag/repo. Mitigation: Blueprint `old/v1` fetches Registry; fail closed if lookup fails.
-- **Nested repo missing on GET**: Event emit may populate associations that a GET omits. Mitigation: analysis must use APIs that return tag + product repo (full version GET, or product GET + version search). Tests assert reconstruction.
-- **Synchronous gate latency**: Registry bridge → Policy → Blueprint → Registry GET → two Git clones. May exceed Policy/HTTP timeouts. Mitigation: monorepo-only; evaluation timeout includes the fetch; fail closed on timeout.
+- **Nested repo missing on GET**: Event emit may populate associations that a GET omits. Mitigation: reconstruction uses version GET then a conditional product GET, and defaults missing additional arrays to empty. Tests assert reconstruction.
+- **Synchronous gate latency**: Registry bridge → Policy → Blueprint → Registry GET → source clones plus one published clone per protected target. May exceed Policy/HTTP timeouts. Mitigation: one configured evaluation timeout including the fetch; fail closed on timeout; clone only protected published targets.
 - **Version skew of engines**: Observer and OPA stay on `DATA_PRODUCT_VERSION_CREATION` and descriptor-only `afterState`. Blueprint is an additional engine on the same event; it must not require V1 payload changes.
 - **Git auth in async path**: Blueprint configuration holds service Git credentials; fail closed if clone is unauthorized.
 - **False rejects**: Re-instantiate must match production instantiate. Mitigation: reuse instantiate; no-op push only.
@@ -258,7 +260,7 @@ The source document has no numbered ACs. The following are the testable intents 
 | 9 | Validator **subscription / reconstruction** is separate from **hash/integrity** logic | Blueprint | No | `old/v1` vs integrity use case; deleting `old/v1` must not rewrite hashing |
 | 10 | Reuse instantiate; **do not push** branch or tag during validation | Blueprint | No | Local Git port / no-op push |
 | 11 | Enable adapter when protected-resources validation is **active** | Blueprint | No | Blueprint config: validator active + blocking; Registry address for `old/v1` |
-| 12 | First slice: **monorepo, no composition** only | Blueprint | No | Other strategies: not-applicable, not silent success that implies a check |
+| 12 | Evaluate every protected destination across 1→1, N→1, 1→N, and N→N | Blueprint | No | Historical first-slice monorepo-only constraint is superseded; empty list / no lineage remain not applicable |
 | 13 | Do **not** change Notification or Policy Service for this slice | Notification, Policy | Yes | Registry V1 bridge already exists |
 | 14 | `old/v1` is removable without rewriting integrity | Blueprint | No | Core must not depend on `old/v1` |
 
@@ -269,15 +271,14 @@ The source document has no numbered ACs. The following are the testable intents 
 **Repository**: `odm-platform-pp-blueprint-server`  
 **Architectural role**: API (product-plane Blueprint Server)  
 **In scope**:
-- Isolated `old/v1` package: Policy subscription to `DATA_PRODUCT_VERSION_CREATION`, Registry fetch, reconstruction of the V2 version resource, evaluate HTTP adapter that calls the existing integrity path
-- Existing integrity use case (unchanged intent): clone product repo at tag, re-instantiate blueprint locally, hash protected files/folders, compare
+- Isolated `old/v1` package: Policy subscription to `DATA_PRODUCT_VERSION_CREATION`, Registry fetch, reconstruction of the V2 version resource (root plus additional locators/refs), evaluate HTTP adapter that calls the existing integrity path
+- Existing integrity use case: clone each protected product repository at its own recorded ref, re-instantiate blueprint locally, hash protected files/folders, compare
 - Reuse existing instantiate; isolate/no-op Git push
-- Monorepo, no composition only
+- All four layouts: 1→1, N→1, 1→N, N→N
 - Service Git credentials, validator **active**, and policy **blocking** in Blueprint configuration
 - Adapter-only Registry client configuration (unused after `old/v1` is removed)
 
 **Out of scope**:
-- Polyrepo and composition validation
 - Changing Registry, Notification, or Policy Service implementations
 - Writing integrity hashes into the source blueprint manifest
 - UI
@@ -309,25 +310,25 @@ The source document has no numbered ACs. The following are the testable intents 
 - No Git secrets on the event; Git credentials, validator active, and blocking flag are Blueprint configuration
 - Two internal layers: removable `old/v1` vs lasting integrity use case
 - Pass (not applicable) when there is no lineage or no protected resources, once the adapter is on
-- Monorepo / no composition only
+- All four layouts are evaluated when protection coverage is non-empty
 - Do not change Notification or Policy
 
-**Open questions** (repo-specific, to resolve in `/spdd-analysis`):
-- Lookup keys and Registry API sequence from V1 `afterState` (FQN + version → tag + repo)
-- Whether GET of a version returns nested `dataProduct.dataProductRepo`
-- Timeouts: include Registry fetch in the existing evaluation timeout
+**Resolved questions** (repo-specific, closed in analysis and implementation):
+- Lookup keys and Registry API sequence from V1 `afterState` (FQN + version → version GET, conditional product GET, default empty additional arrays)
+- Nested `dataProduct` is fetched when absent or when root/additional locator structure is missing
+- Timeouts: Registry fetch is included in the existing evaluation timeout
 
 **Scoped business requirement**:
 
-Implement the remaining **V1 compatibility adapter** inside Blueprint Server so protected-resources validation actually runs on today’s Policy V1 publication gate.
+Keep the **V1 compatibility adapter** inside Blueprint Server so protected-resources validation runs on today’s Policy V1 publication gate.
 
 When Policy asks this service to evaluate `DATA_PRODUCT_VERSION_CREATION`:
 
 - If the adapter is inactive, this service does not register the policy.
-- Reconstruct the V2 data product version resource (descriptor with blueprint lineage, Git **tag**, nested product **repository**) by fetching Registry. Do not expect those fields on the V1 evaluate payload.
-- Then run the existing integrity process: not applicable if no lineage / no protected resources / unsupported strategy; otherwise clone the product repository at the tag, re-instantiate locally without pushing, hash protected paths, fail if any path differs.
+- Reconstruct the V2 data product version resource (descriptor with blueprint lineage, Git **tag**, nested product **repository**, additional locators, additional tags) by fetching Registry. Do not expect those fields on the V1 evaluate payload.
+- Then run the existing integrity process: not applicable if no lineage / no protected resources; otherwise clone each protected product repository at its recorded ref, re-instantiate locally without pushing, hash protected paths, fail if any path differs.
 
-Keep reconstruction isolated in `old/v1` so Policy V2 is a deletion plus re-binding the subscription to `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`. Do not implement polyrepo/composition in this slice. Do not change Notification or Policy.
+Keep reconstruction isolated in `old/v1` so Policy V2 is a deletion plus re-binding the subscription to `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED`. Do not change Notification or Policy.
 
 ---
 

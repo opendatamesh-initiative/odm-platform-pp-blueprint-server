@@ -161,7 +161,7 @@ IntegrityOutcome "1" --> "0..*" ProtectedResourceMismatch
 
 1. Lasting domain boundary:
    - Keep `...blueprintversion.services.usecases.evaluateprotectedresources` independent of Policy and Registry resource classes.
-   - Extend the command with the root locator/ref and raw keyed additional locator/ref lists. Lists intentionally preserve duplicate keys so the use case can fail a referenced ambiguous mapping instead of silently overwriting it in a `Map`.
+   - Keep the command with the root locator/ref and raw keyed additional locator/ref lists. Lists intentionally preserve duplicate keys so the use case can fail a referenced ambiguous mapping instead of silently overwriting it in a `Map`.
    - Keep root metadata asymmetric: the root locator/ref is unkeyed in Registry and is assigned to the manifest key marked `isRoot: true` only after the stored manifest is loaded.
 
 2. Protection-scoped resolution:
@@ -205,7 +205,7 @@ IntegrityOutcome "1" --> "0..*" ProtectedResourceMismatch
 1. `EvaluateProtectedResourcesIntegrity` remains package-private and implements `UseCase`.
 2. `EvaluateProtectedResourcesIntegrityFactory` remains the sole Spring `@Component` in the integrity package.
 3. `EvaluateProtectedResourcesIntegrity*OutboundPortImpl` classes remain plain Java adapters constructed by the factory.
-4. `WorkingTree` and new `TargetWorkingTrees` are package-private `AutoCloseable` domain boundaries.
+4. `WorkingTree` and `TargetWorkingTrees` are package-private `AutoCloseable` domain boundaries.
 5. Existing `IntegrityOutcome`, `OutcomeKind`, `MismatchKind`, `DigestResult`, and `ProtectedResourceMismatch` remain domain types.
 
 ### Dependencies
@@ -234,31 +234,31 @@ IntegrityOutcome "1" --> "0..*" ProtectedResourceMismatch
 2. Keep `EvaluateProtectedResourcesIntegrityFactory` as the package composition root and keep all port implementations non-Spring.
 3. Do not move Policy DTOs, Registry JSON, `HttpHeaders`, or Git tokens into the use-case package.
 
-### Update domain publication context
+### Domain publication context
 
-1. Add `KeyedProductRepoLocator(String repositoryKey, ProductRepoLocator locator)`.
-2. Add `KeyedProductRepoRef(String repositoryKey, String ref)`.
-3. Replace the root-only command fields with:
+1. Keep `KeyedProductRepoLocator(String repositoryKey, ProductRepoLocator locator)`.
+2. Keep `KeyedProductRepoRef(String repositoryKey, String ref)`.
+3. Keep the command fields:
    - `String rootPublicationRef`
    - `ProductRepoLocator rootProductRepo`
    - `List<KeyedProductRepoLocator> additionalProductRepos`
    - `List<KeyedProductRepoRef> additionalRefs`
    - existing Blueprint identity and lineage parameters.
-4. Defensively convert null lists/parameters to empty immutable collections at the adapter boundary or use-case entry.
+4. Defensively convert null lists/parameters to empty immutable collections at the adapter boundary or use-case entry (`EvaluateProtectedResourcesIntegrityCommand` compact constructor copies them).
 5. Do not collapse keyed lists into maps before checking duplicates.
 
 ### Enforce parent-only authoring at Blueprint-version publication
 
-1. Extend `PublishBlueprintVersionManifestOutboundPort` with `boolean hasProtectedResources(JsonNode content)` and implement it using the current manifest parser.
+1. Keep `boolean hasProtectedResources(JsonNode content)` on `PublishBlueprintVersionManifestOutboundPort` and implement it using the current manifest parser.
 2. In `PublishBlueprintVersion`, when the catalog `BlueprintType` is `MODULE`, reject a non-empty list with a `BadRequestException` explaining that Modules cannot own protected-resource policy and final paths must be declared on the parent Blueprint.
 3. Keep omitted/empty Module lists valid.
 4. When validating a parent’s referenced composition Modules, report an aggregated issue if an inconsistent persisted Module version has a non-empty list. This is defense in depth and adds no migration behavior.
 5. Integrity still reads only the parent list and never rewrites Module paths.
 
-### Update use case - `EvaluateProtectedResourcesIntegrity`
+### Use case - `EvaluateProtectedResourcesIntegrity`
 
-1. Remove imports and calls for deleted `ManifestInstantiationRepository`, object-shaped `Manifest.getInstantiation().getRepositories()`, and `getInstantiation().getRoot()`.
-2. `execute()` must remain a composed-method script:
+1. Do not import or call deleted `ManifestInstantiationRepository`, object-shaped `Manifest.getInstantiation().getRepositories()`, or `getInstantiation().getRoot()`.
+2. `execute()` remains a composed-method script:
    - load recorded Blueprint version;
    - read final manifest;
    - return not applicable for empty parent protection;
@@ -273,24 +273,24 @@ IntegrityOutcome "1" --> "0..*" ProtectedResourceMismatch
    - omitted/blank `repository` → root key;
    - non-blank value → canonical declared manifest key;
    - compare that resolved key to Registry `repositoryKey` without further trimming or case folding;
-   - do not broaden this task into changing normalization elsewhere.
+   - do not broaden this contract into changing normalization elsewhere.
 5. Build `ProtectedPublishedTarget` values only for referenced keys:
    - root key uses command root locator/ref;
    - non-root key filters raw keyed lists for exact key;
    - zero or more than one matching locator/ref fails before Git;
    - blank clone URL/provider/ref fails;
    - unrelated duplicates, gaps, and extras are ignored.
-6. Remove the polyrepo not-applicable outcome. Every layout is evaluated when its protected targets have complete metadata.
+6. Do not return polyrepo as not-applicable. Every layout is evaluated when its protected targets have complete metadata.
 7. Load only the parent manifest’s protected list. Do not inspect Module lists.
 8. Use only the recorded Blueprint version’s list; do not compare it with older/newer versions.
 9. Call `instantiatePort.reinstantiateBlueprintLocally(...)` once and require an expected tree for every protected key.
 10. For each protected target, call the existing clone port with that target’s locator/ref and compare only declarations grouped under that key.
 11. Preserve mismatch formatting and the current no-token infrastructure sanitization. Infrastructure errors may fail fast.
 
-### Update expected-tree boundary
+### Expected-tree boundary
 
-1. Add `TargetWorkingTrees extends AutoCloseable` with `WorkingTree get(String repositoryKey)`, `Set<String> keys()`, and deterministic close of every tree.
-2. Change `EvaluateProtectedResourcesIntegrityInstantiateOutboundPort.reinstantiateBlueprintLocally(...)` to return `TargetWorkingTrees`.
+1. Keep `TargetWorkingTrees extends AutoCloseable` with `WorkingTree get(String repositoryKey)`, `Set<String> keys()`, and deterministic close of every tree.
+2. Keep `EvaluateProtectedResourcesIntegrityInstantiateOutboundPort.reinstantiateBlueprintLocally(...)` returning `TargetWorkingTrees`.
 3. Keep instantiate mechanics out of the use case. The repository-layout prompt owns constructing all local target DTOs and adapting `RenderedTreeSnapshot` into `TargetWorkingTrees`.
 4. Missing expected trees for referenced keys fail closed with a message naming the key but not local filesystem paths.
 
@@ -408,12 +408,12 @@ Feature: Lasting protected-resources integrity
 | Integrity / Unreferenced metadata is ignored | `EvaluateProtectedResourcesIntegrityTest` | `whenOnlyRootProtectedThenIgnoreUnreferencedAdditionalMetadata` |
 | Integrity / Matching protected content passes without mutation | `ProtectedResourcesValidatorControllerIT` | preserve and broaden `applicableMatchingTreesPass` |
 | Integrity / Changed content reports path details | `ProtectedResourcesValidatorControllerIT` | preserve `applicableModifiedProtectedFileFailsWithPath` |
-| Digest / Snapshot symbolic link fails safely | `EvaluateProtectedResourcesIntegrityDigestOutboundPortImplTest` plus Git/local snapshot tests | `symbolicLinkFailsDeclaredPath` and snapshot-preservation assertions |
+| Digest / Snapshot symbolic link fails safely | `EvaluateProtectedResourcesIntegrityDigestOutboundPortImplTest` plus Git/local snapshot tests | `symlinkFailsDeclaredPath` and snapshot-preservation assertions |
 | Digest / Absolute or traversing path is invalid | `EvaluateProtectedResourcesIntegrityDigestOutboundPortImplTest` | `absoluteAndTraversalPathsAreInvalid` |
 | Manifest / Incomplete integrity object is rejected | `BlueprintVersionsUseCaseControllerIT` | `whenProtectedIntegrityMissingAlgorithmOrValueThenReturn400` |
 | Integrity / Recorded version policy only | `EvaluateProtectedResourcesIntegrityTest` | `whenLaterBlueprintChangesProtectionThenRecordedVersionListIsUsed` |
 
-Implement each new or rewritten test and copy its complete Scenario text into the test method Javadoc.
+Keep each scenario implemented and copy its complete Scenario text into the test method Javadoc.
 
 ## Norms
 
@@ -463,6 +463,12 @@ Implement each new or rewritten test and copy its complete Scenario text into th
    - Referenced metadata gaps and Git/render/auth/timeouts fail closed.
    - Infrastructure processing may stop at first failure.
    - Policy-facing mapping remains HTTP 200 plus false for applicable failures in the V1 adapter.
+   - Exact integrity messages include:
+     - not applicable: `This blueprint does not declare protected resources`;
+     - pass: `Protected resources match the blueprint`;
+     - missing/blank/duplicate non-root metadata: `Cannot check protected resources: publication metadata for repository key '%s' is missing, blank, or duplicated`;
+     - missing root locator/ref: `Cannot check protected resources: the data product version is missing its Git repository or tag`;
+     - token sanitization: `Cannot complete the protected-resource check`.
 8. Performance:
    - Re-instantiate once per evaluation.
    - Clone only protected published targets.

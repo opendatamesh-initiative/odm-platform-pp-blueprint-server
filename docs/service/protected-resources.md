@@ -16,9 +16,9 @@ Related:
 
 The blueprint **manifest** lists paths that must stay as the blueprint produced them. Typical examples: infrastructure-as-code, locked docs, generated scaffolding that teams must not rewrite.
 
-On **publication**, Policy asks this service to **SHA-256-hash** those paths in the published data-product repository and compare them with a **local re-instantiation** of the same blueprint version (same parameters, no Git push). If a listed file is missing or its contents differ, evaluation **fails** and the message names the path.
+On **publication**, Policy asks this service to **SHA-256-hash** those paths in the published data-product repository and compare them with a **local re-instantiation** of the same blueprint version (same parameters, no Git push). If a listed file, directory, or glob is missing, produces a different file set, or has different contents, evaluation **fails** and the message names the path.
 
-Digests are computed at evaluation time. They are **not** stored on `protectedResources[].integrity`. That optional object is leftover schema: **omit it**. Evaluation **ignores** `integrity.value`. If `integrity.algorithm` is present and is not `sha256`, that path fails.
+Digests are computed at evaluation time. They are **not** stored on `protectedResources[].integrity`. That optional object is leftover schema: **omit it**. If it is present, manifest publication still requires non-empty `algorithm` and `value`; evaluation **ignores** `value`. An algorithm other than `sha256` (case-insensitive) makes that path fail.
 
 The same model applies to **1→1**, composed **N→1**, split **1→N**, and composed **N→N** layouts. Composition changes the source trees used for re-instantiation; multiple destination repositories change the published and expected tree pairs. Each protected destination is still compared independently.
 
@@ -62,6 +62,14 @@ protectedResources:
     repository: operations-repo
 ```
 
+### Path matching and safety
+
+- A declaration may name one regular file, one directory, or a glob. Directories are traversed recursively; globs are evaluated relative to the selected destination root.
+- Only regular files are compared. `.git` is always excluded, and each declaration must match at least one file in both the published and re-instantiated trees.
+- Files are identified by repository-relative `/` paths and compared with lowercase SHA-256 digests of their raw bytes.
+- Empty paths, absolute paths, `..` traversal, and paths that escape the repository root are invalid.
+- Symbolic links are never followed. A selected symlink, or a symlink encountered below a protected literal directory, fails safely.
+
 The Blindata **starter blueprint** (new repo from registration) ships only the manifest, README, and descriptor template. Those first two are relocated, and it does not create `infrastructure/`. Its default is therefore an **empty** `protectedResources` list so publication is not applicable until authors add real files and matching paths.
 
 ---
@@ -84,17 +92,18 @@ When a data product version is published and the validator is **active**:
 2. If the version has **no blueprint lineage**, evaluation **passes** (not applicable).
 3. If the recorded **parent** blueprint has **no** `protectedResources`, evaluation **passes** (not applicable) — including composed parents.
 4. Each item resolves to its explicit `repository` or to the manifest’s `isRoot: true` target. The resulting distinct keys are the **protection coverage set**.
-5. For each protected root target, the service uses Registry `dataProductRepo` and the version’s root `tag`. For each protected non-root target, it joins `additionalDataProductRepos[].repositoryKey` with `additionalTags[].repositoryKey`.
+5. For each protected root target, the service uses Registry `dataProductRepo` and the version’s root `tag`. For each protected non-root target, it exactly joins `additionalDataProductRepos[].repositoryKey` with `additionalTags[].repositoryKey` and clones at that additional tag’s own `tag` value. Non-root refs never fall back to the root tag.
 6. The service clones only those published targets at their own recorded refs, clones the parent Blueprint and any composed Module sources needed for re-instantiation, and renders disposable expected targets with the production instantiate semantics.
 7. It SHA-256-compares every parent protected path within the published and expected trees for the same target key. Stored `integrity.value` is not part of that comparison.
 
-N→1 adds **source** clones (Modules), not extra product remotes. In 1→N and N→N, each protected destination adds a published tree pair; unprotected destinations are not cloned for this policy.
+N→1 adds **source** clones (Modules), not extra product remotes. In 1→N and N→N, each protected destination adds a published tree pair; unprotected **published** destinations are not cloned for this policy. Local re-instantiation still renders every declared destination once so production routing semantics remain authoritative.
 
 A mismatch fails with a business-facing message (file missing from the data product version, not produced by the Blueprint, or contents differ). Missing, blank, duplicate, or conflicting Registry locator/ref data for a **referenced** target also fails closed before Git access. Unreferenced target mappings do not affect the result. Clone, auth, timeout, and render errors fail closed, and evaluation may stop at the first conclusive failure.
 
 ## Deliberate scope decisions
 
 - Each publication uses only the protected-resource list from its recorded parent Blueprint version. A later version may add, remove, or retarget entries without a cross-version protection check.
+- Blueprint update checkpoints (`blueprint-v*`) are not publication approval. Evaluation always compares against the product version’s recorded publication refs, even when an unchanged update reused a render checkpoint.
 - Registry keys introduced or joined by this feature use Registry’s exact-string matching. The integrity feature does not add broader trimming or case-normalization behavior.
 - Two logical targets may resolve to the same physical remote. No alias check is performed; each protected logical target is cloned and compared independently.
 - The guarantee is the immediate publication decision. Repository locators are not snapshotted per version, so repeatable historical evaluation after a locator change is outside the current scope.

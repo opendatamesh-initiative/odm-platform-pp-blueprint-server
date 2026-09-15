@@ -197,7 +197,7 @@ ProtectedResourcesValidatorPolicySubscriber --> PolicyEvaluationRequestRes : reg
 4. Keep `ProtectedResourcesValidatorController` delegation-only.
 5. Do not subscribe to Notification or add `DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED` to Policy V1.
 
-### Update reconstruction - `ReconstructPublicationRequestedService`
+### Reconstruction - `ReconstructPublicationRequestedService`
 
 1. Preserve current identity lookup:
    - descriptor from `afterState.dataProductVersion` or `afterState`;
@@ -213,15 +213,15 @@ ProtectedResourcesValidatorPolicySubscriber --> PolicyEvaluationRequestRes : reg
    - default missing/non-array `additionalDataProductRepos` to `[]`;
    - default missing/non-array version `additionalTags` to `[]`;
    - do not invent locator or tag entries.
-5. Remove the unconditional `MISSING_CLONE_METADATA` check for root `tag` and root `dataProductRepo.remoteUrlHttp`. Core must decide whether root metadata is required from the recorded protected list.
+5. Do not reject reconstruction solely because root `tag` or root `dataProductRepo.remoteUrlHttp` is absent. Core decides whether root metadata is required from the recorded protected list. The constant `MISSING_CLONE_METADATA` (`Cannot check protected resources: the data product version is missing its Git repository or tag`) remains and is used only when product nesting fails (missing uuid or product GET), not as an unconditional root-metadata gate.
 6. Keep malformed V1 payload, zero/multiple product/version, empty Registry response, and Registry client failures fail-closed with current safe messages.
 7. Preserve already-V2-shaped pass-through and do not call Registry for it.
 
-### Update mapping - `ProtectedResourcesPolicyValidatorService`
+### Mapping - `ProtectedResourcesPolicyValidatorService`
 
 1. Keep lineage extraction from `content.blueprint.blueprintName`, `blueprintVersionNumber`, and `parameters`.
 2. If lineage name/version is absent, return the existing not-applicable result and do not invoke integrity.
-3. Update `mapToIntegrityCommand` to populate:
+3. `mapToIntegrityCommand` populates:
    - `rootPublicationRef` from version `tag`;
    - `rootProductRepo` from `dataProduct.dataProductRepo`;
    - `additionalProductRepos` from every `dataProduct.additionalDataProductRepos[]`;
@@ -336,7 +336,7 @@ Feature: Policy V1 Registry reconstruction
 | Reconstruction / No lineage is not applicable | `OldV1ProtectedResourcesValidatorControllerIT` | preserve `v1AfterStateWithReconstructedContentWithoutLineageIsNotApplicable` |
 | Policy adapter / Timeout rejects | `ProtectedResourcesPolicyValidatorServiceTest` | `timeoutSealsOutcomeAndReturnsFalse` |
 
-Implement each new or rewritten test and copy its complete Scenario text into the test method Javadoc.
+Keep each scenario implemented and copy its complete Scenario text into the test method Javadoc.
 
 ## Norms
 
@@ -367,8 +367,14 @@ Implement each new or rewritten test and copy its complete Scenario text into th
    - Preserve duplicate and blank keyed entries for core validation.
 4. API:
    - Keep Observer-compatible request/response fields and evaluate URL.
-   - Malformed request → HTTP 400.
+   - Malformed request → HTTP 400 (`Empty/Malformed Policy Evaluation Object`).
    - Reconstruction/integrity failure → HTTP 200 with `evaluationResult=false`.
+   - Exact reconstruction/adapter messages include:
+     - identity: `Cannot check protected resources: the data product name or version could not be determined`;
+     - timeout: `Protected-resource check timed out after {n}s`;
+     - interrupt: `Protected-resource check was interrupted`;
+     - missing outcome: `Protected-resource check did not produce a result`;
+     - no lineage: `This data product version was not created from a blueprint`.
 5. Security:
    - Do not accept or log Git credentials in Policy/Registry payloads.
    - Sanitize client and execution errors; do not expose tokens, headers, or stack traces.

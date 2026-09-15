@@ -113,6 +113,7 @@ A module must itself be a simple blueprint: **one destination, no nested modules
 | **Multiple remotes** | Split parent (and module) content across several Git repositories in one request |
 | **Composition** | Parent includes published modules and routes their files into the declared destinations |
 | **Root & lineage** | One explicit root repository holds parent lineage and the data-product descriptor |
+| **Protected publication** | Parent-declared protected paths are verified across all four layouts; each protected destination is checked at its own Registry-recorded publication ref |
 | **Update (content)** | Newer template files, new parameter values, and updated module parameter mappings — on the same layout |
 | **Module version bump** | Same module slot can point at a newer version of that module |
 

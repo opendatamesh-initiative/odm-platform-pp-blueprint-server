@@ -90,6 +90,8 @@ Update moves a data-product repository from the **current** checkpoint to the **
 
 As with instantiate, polyrepo updates each mapped remote independently. A first-time remote still requires **instantiate**, not update.
 
+Checkpoint reuse is only an update optimization. It never approves a later product publication: the protected-resources policy still clones the product version’s recorded root and additional publication refs and compares protected paths with a fresh local re-instantiation.
+
 ```text
 (v1 checkpoint)                 (v2 checkpoint)
      C1 ──────────────────────────► C2   update/blueprint-v2.0.0
