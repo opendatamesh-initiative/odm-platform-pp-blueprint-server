@@ -1,9 +1,10 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.services.usecases.updatedocumentationfields;
 
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
-import org.opendatamesh.platform.pp.blueprint.exceptions.NotFoundException;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.TransactionalOutboundPort;
 import org.opendatamesh.platform.pp.blueprint.utils.usecases.UseCase;
+
+import java.util.HashSet;
 
 class UpdateBlueprintDocumentationFields implements UseCase {
 
@@ -42,6 +43,10 @@ class UpdateBlueprintDocumentationFields implements UseCase {
             if (command.blueprintRepo() != null) {
                 command.blueprintRepo().setBlueprint(blueprint);
                 blueprint.setBlueprintRepo(command.blueprintRepo());
+            }
+
+            if (command.labels() != null) {
+                blueprint.setLabels(new HashSet<>(command.labels()));
             }
 
             structuralValidationOutboundPort.validate(blueprint);

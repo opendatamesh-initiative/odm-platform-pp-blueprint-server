@@ -6,6 +6,26 @@ blueprint:
   observer:
     name: blueprint2.0
     displayName: Blueprint 2.0
+  validator:
+    active: false
+    evaluation-timeout-seconds: 120
+    policy-engine:
+      name: blueprint-service-validator
+      display-name: Blueprint Service Validator
+    policy:
+      name: Protected Resources Integrity
+      blocking: true
+    git:
+      credentials: []
+
+odm:
+  product-plane:
+    policy-service:
+      active: false
+      address:
+    registry-service:
+      active: false
+      address:
 
 spring:
   profiles:

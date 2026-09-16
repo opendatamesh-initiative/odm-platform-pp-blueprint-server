@@ -9,7 +9,21 @@ spring:
         default_schema: odm_blueprint_test
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
+blueprint:
+  validator:
+    active: false
+    git:
+      credentials:
+        - provider-type: GITHUB
+          auth-type: PAT
+          token: test-token
+          username: test-user
+
 odm:
   product-plane:
     policy-service:
       active: true
+      address:
+    registry-service:
+      active: false
+      address:

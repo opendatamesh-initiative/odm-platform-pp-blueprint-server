@@ -1,14 +1,16 @@
 # Update data product repository from a new Blueprint version (Tag-Based 3-Way Merge)
 
+> **Contract note (BDMD-4820):** Request/result targets use **`targetId`** (manifest `repositories[].key`), not `type` / `BlueprintRepositoryLogicalType`. Scenario resolution uses repository-key cardinality + composition presence, not `instantiation.strategy`. Phase-1 still accepts exactly one target whose `targetId` matches the sole repository key.
+
 ## Requirements
 
 - Implement **data product repository update** when a new Blueprint version is available, using a **Tag-Based 3-Way Merge** strategy so Git compares a pure blueprint baseline, user edits on the integration branch, and the next pure blueprint render without long-lived template branches.
 - Expose `POST /api/v2/pp/blueprint/blueprints-versions/update-data-product` that, for each accepted target in **`targetRepositories`**, creates a temporary update branch from the **current data-product checkpoint tag**, cleans the working tree, instantiates the **next** blueprint version (slice for that target), commits, tags the next checkpoint, pushes branch + tag, and optionally opens a same-repo Pull Request via Git provider APIs. **PR open is best-effort**: on failure after a successful update, return HTTP 200 with **`warnings`** (not `ErrorRes`).
 - Design the public API as **list-in / list-out** (aligned with instantiate) so enabling monorepo+composition (**N→1**), polyrepo (**1→N**), and polyrepo+composition (**N→N**) later does **not** require a breaking request/response change: `targetRepositories[]` request, `results[]` response; **global** `createPullRequest` on/off applies to all targets; each target may set **`pullRequestTargetBranch`**.
-- Phase-1 runtime remains the same limit as instantiate: **exactly one `root` target**, monorepo, no composition — reject other layouts until templating supports them; widen validation later without reshaping DTOs.
+- Phase-1 runtime remains the same limit as instantiate: **exactly one target** with `targetId` equal to the sole `instantiation.repositories[].key`, monorepo, no composition — reject other layouts until templating supports them; widen validation later without reshaping DTOs.
 - Ensure **Initial Generation** leaves a **pure** checkpoint on each data product repository that receives content (orphan commit → tag → merge into the integration branch) so pre-existing user files are never part of the baseline and later updates do not appear to delete them.
 - Keep checkpoint / update-branch / orphan-init **naming as domain policy** via shared **`BlueprintGitNamingConventions`** under `...services.usecases` (`checkpointTag` → `blueprint-v{versionNumber}`, `updateBranchName` → `update/blueprint-v{versionNumber}`, `orphanInitBranchName` → `odm-init/{uuid}`, plus default commit author constants), distinct from `BlueprintVersion.tag` (blueprint **source** release tag); git outbound ports only **consume** those strings. Allow a future per-target/module discriminator without changing the list API shape.
-- Both **instantiate** and **update** resolve an **`InstantiationScenario`** from `instantiation.strategy` + presence of `composition` (1→1 / N→1 / 1→N / N→N). Phase 1 implements only **`MONOREPO_NO_COMPOSITION`** (singular ROOT source → singular ROOT target); other scenarios throw **`UnsupportedOperationException`** (mapped to HTTP 400 `NotSupported`).
+- Both **instantiate** and **update** resolve an **`InstantiationScenario`** from repository-key cardinality + presence of `composition` (1→1 / N→1 / 1→N / N→N). Phase 1 implements only **`MONOREPO_NO_COMPOSITION`** (singular repository key → singular mapped target); other scenarios throw **`UnsupportedOperationException`** (mapped to HTTP 400 `NotSupported`).
 - Both use cases intentionally orchestrate Git workflows via **granular** per-use-case git outbound ports so steps stay readable in the use case: instantiate Initial Generation is **inlined** in `instantiateMonorepoNoComposition` (orphan → render → commit → tag → merge → push); update is **inlined** in `updateMonorepoNoComposition` (branch from checkpoint → clean → render → commit → tag → push). Ports own clone lifecycle + single-purpose Git ops + author defaults; `CreatePullRequest` stays inside update `openPullRequest` only (option **A**, best-effort warnings). Update may catch git-utils **`GitException`** solely when mapping PR open failures to **`warnings`**.
 - Centralize **templating / render-and-copy** (Velocity evaluation, tree copy, manifest/readme lineage relocation for monorepo-no-composition) in a shared **utility service** (`BlueprintRenderService`); both **instantiate** and **update** templating outbound port impls **delegate** `monorepoNoCompositionRenderAndCopy` to it so render logic lives in one place. Place both shared services — **`BlueprintRenderService`** and **`BlueprintDataProductDescriptorService`** — under the **`usecases` package** (shared location outside the `instantiate` / `updatedataproduct` use-case subpackages). Do **not** call the instantiate use case from update (Git flows differ). Reuse instantiate **manifest validation** patterns; route descriptor lineage enrichment through each use case’s **templating outbound port** (not a Spring bean on the use case). Align instantiate to the same auth-header and enrichment boundaries. Git orchestration stays on **separate** per-use-case git outbound ports.
 - Leave **PR merge and update-branch deletion** to the user in the Git provider UI (out of scope for the server).
@@ -50,7 +52,7 @@ classDiagram
   }
 
   class UpdateDataProductTargetRepository {
-    +BlueprintRepositoryLogicalType type
+    +String targetId
     +String branch
     +Repository repository
     +String pullRequestTargetBranch
@@ -114,7 +116,7 @@ classDiagram
   }
 
   class UpdateDataProductTargetResult {
-    +BlueprintRepositoryLogicalType type
+    +String targetId
     +Repository repository
     +String updateBranchName
     +String checkpointTag
@@ -128,7 +130,7 @@ classDiagram
   }
 
   class UpdateDataProductTargetRepositoryRes {
-    +BlueprintRepositoryLogicalType type
+    +String targetId
     +String branch
     +RepositoryRes repository
     +String pullRequestTargetBranch
@@ -146,7 +148,7 @@ classDiagram
   }
 
   class UpdateDataProductTargetResultRes {
-    +BlueprintRepositoryLogicalType type
+    +String targetId
     +RepositoryRes repository
     +String updateBranchName
     +String checkpointTag
@@ -224,7 +226,7 @@ classDiagram
    - Mirror instantiate: request **`targetRepositories: List<…>`** with `type`, optional `branch`, `repository`, optional **`pullRequestTargetBranch`**.
    - Response **`results: List<…>`** with correlatable `type` + `repository`, plus `updateBranchName`, `checkpointTag`, `commitHash`, optional `pullRequestWebUrl`, plus top-level **`warnings: List&lt;String&gt;`** for non-fatal side-operation issues (e.g. PR open failure).
    - Top-level **`createPullRequest`** (boolean): **global** on/off for all targets in the request.
-   - Phase 1: `InstantiationScenario.MONOREPO_NO_COMPOSITION` only (exactly one `root`); other layouts → `UnsupportedOperationException`. Do **not** ship singular `targetRepository` / singular result fields; do **not** put PR on/off on list entries.
+   - Phase 1: `InstantiationScenario.MONOREPO_NO_COMPOSITION` only (exactly one target (`targetId` = sole repository key)); other layouts → `UnsupportedOperationException`. Do **not** ship singular `targetRepository` / singular result fields; do **not** put PR on/off on list entries.
    - Future N→1 / 1→N / N→N: fill the corresponding scenario method; keep DTO field names stable. Defer partial-failure policy across multiple targets until multi-target is enabled.
 
 3. Granular git outbound ports (git-utils 1.1.0 inside the adapters only):
@@ -292,14 +294,14 @@ classDiagram
 
 1. Package: `rest.v2.resources.blueprintversion.usecases.updatedataproduct`
 2. `UpdateDataProductTargetRepositoryRes` (list element):
-   - `type`: BlueprintRepositoryLogicalType — e.g. `ROOT`
+   - `targetId`: String — manifest `repositories[].key`
    - `branch`: String (optional) — integration branch; defaults to `repository.defaultBranch`
    - `repository`: RepositoryRes
    - `pullRequestTargetBranch`: String (optional) — PR base for this repository when global `createPullRequest` is true; defaults to `repository.defaultBranch`
 3. `UpdateDataProductCommandRes`:
    - `blueprintName`, `currentVersionNumber`, `nextVersionNumber`
    - `parameters`: Map&lt;String, JsonNode&gt;
-   - `targetRepositories`: List&lt;UpdateDataProductTargetRepositoryRes&gt; (phase 1: exactly one `root`)
+   - `targetRepositories`: List&lt;UpdateDataProductTargetRepositoryRes&gt; (phase 1: exactly one target (`targetId` = sole repository key))
    - `commitAuthorName` / `commitAuthorEmail` (optional; defaults applied in git port)
    - `createPullRequest`: Boolean (optional, default false) — **global** on/off
 4. `UpdateDataProductTargetResultRes` / `UpdateDataProductResultRes` with `results[]` as previously defined, plus top-level **`warnings: List&lt;String&gt;`** (empty when none; user-visible side-operation messages such as PR open failure)
@@ -341,7 +343,7 @@ classDiagram
 
 1. Interface: `void execute()`
 2. Core method logic:
-   - Input Validation: blueprint name, current/next versions, non-empty `targetRepositories`, parameters; current ≠ next; each target has type + repository; current and next must belong to the same Blueprint. **Do not** validate auth headers
+   - Input Validation: blueprint name, current/next versions, non-empty `targetRepositories`, parameters; current ≠ next; each target has targetId + repository; current and next must belong to the same Blueprint. **Do not** validate auth headers
    - Business Logic:
      1. Load current and next `BlueprintVersion` via persistency port (same Blueprint)
      2. Parse next manifest → `resolveScenario` → validate manifest/parameters via manifest port
@@ -378,7 +380,7 @@ classDiagram
 2. Factory: `buildInstantiateBlueprintVersion(command, presenter, HttpHeaders headers)` → headers into git port impl only; inject `BlueprintRenderService` into templating port impl
 3. Move descriptor enrichment from use case–injected `BlueprintDataProductDescriptorService` to `InstantiateBlueprintVersionTemplatingOutboundPort.enrichDescriptorWithBlueprintMetadata(...)`; relocate `BlueprintDataProductDescriptorService` to the shared `...services.usecases` package alongside `BlueprintRenderService`
 4. Refactor `InstantiateBlueprintVersionTemplatingOutboundPortImpl.monorepoNoCompositionRenderAndCopy` to **delegate** to `BlueprintRenderService.monorepoNoCompositionRenderAndCopy(...)` — no local duplicate of Velocity/tree-copy implementation
-5. Use shared public `InstantiationScenario` enum under `...services.usecases` and `resolveScenario(Manifest)` from `instantiation.strategy` + composition presence
+5. Use shared public `InstantiationScenario` enum under `...services.usecases` and `resolveScenario(Manifest)` from repository-key cardinality + composition presence
 6. `execute()`: validate command → load version → parse manifest → resolve scenario → validate manifest/parameters → **switch** on scenario:
    - `MONOREPO_NO_COMPOSITION` → `instantiateMonorepoNoComposition(...)`
    - other scenarios → `UnsupportedOperationException` with a clear message (HTTP 400 `NotSupported` via `ResponseExceptionHandler`)
@@ -388,7 +390,7 @@ classDiagram
    3. Inside callback: `createAndCheckoutOrphanBranch` → `monorepoNoCompositionRenderAndCopy` + ROOT descriptor enrichment → `commitAll` → `createCheckpointTag` → `mergeBranch` → `pushBranch` → `pushTag`
 8. Instantiate git outbound port (granular, not opaque):
    - `init`, `withClonedSourceAndTarget`, `createAndCheckoutOrphanBranch`, `commitAll`, `createCheckpointTag`, `mergeBranch`, `pushBranch`, `pushTag`
-9. Manifest port validates parameters + requires `instantiation.strategy`; **layout support** (composition / polyrepo) is owned by the use-case scenario switch, not by early BadRequest rejection in the manifest adapter
+9. Manifest port validates parameters + requires a valid instantiation topology (`repositories` + `root`); **layout support** (composition / polyrepo) is owned by the use-case scenario switch, not by early BadRequest rejection in the manifest adapter
 10. Do **not** invoke instantiate use case from update; shared code path is only the render utility (+ enrichment service + naming conventions)
 
 ### Implement Git Outbound Port - InstantiateBlueprintVersionGitOutboundPort
@@ -575,7 +577,7 @@ Scenario: Reject more than one target repository in phase 1
   When the client sends an update request with two ROOT targetRepositories
   Then the response status is 400
   And the error field is "BadRequestException"
-  And the message is "Exactly one target repository of type 'root' is required, only monorepo is supported in this phase"
+  And the message is "Exactly one target repository is required, only monorepo is supported in this phase"
 
 Scenario: Reject target repository without type
   When the client sends an update request whose only target omits type
@@ -593,7 +595,7 @@ Scenario: Reject non-root target type in phase 1
   When the client sends an update request with a single target whose type is not ROOT
   Then the response status is 400
   And the error field is "BadRequestException"
-  And the message is "Target repository type must be 'root', only monorepo is supported in this phase"
+  And the message is "Target repository targetId must match the sole instantiation.repositories[].key"
 ```
 
 ### Scenario group: Manifest and parameter errors (HTTP 400, error = BadRequestException)

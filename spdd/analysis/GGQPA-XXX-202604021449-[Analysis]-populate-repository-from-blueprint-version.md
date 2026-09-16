@@ -1,12 +1,14 @@
 # SPDD Analysis: Populate target repository from blueprint version
 
+> **Contract note (BDMD-4820):** Manifest topology is `repositories` + `root` (not `instantiation.strategy`). Request targets carry **`targetId`** matching the sole repository key (not `type: root`).
+
 ## Spec
 
 ## Scope
 
 This specification defines testable behavior for populating a **single** target repository from a selected blueprint version, matching the current use-case implementation.
 
-- **In scope:** monorepo strategy, no composition, Apache Velocity rendering (`.vm` → output files), Git provider **clone** (`readRepository`) for source (tag) and target (branch), commit/push, lineage under `.odm/blueprint/`, REST command contract.
+- **In scope:** single-repository / no-composition topology, Apache Velocity rendering (`.vm` → output files), Git provider **clone** (`readRepository`) for source (tag) and target (branch), commit/push, lineage under `.odm/blueprint/`, REST command contract.
 - **In scope:** target repositories are expected to exist already; creation is external.
 - **Out of scope:** composition, polyrepo / multiple targets in one run, repository provisioning, advanced merge/conflict handling.
 
@@ -14,9 +16,9 @@ This specification defines testable behavior for populating a **single** target 
 
 ### Scenario: Successful monorepo population and push
 
-**Given** a persisted blueprint version with manifest `instantiation.strategy = monorepo` and no composition (or empty composition)  
+**Given** a persisted blueprint version with a single `instantiation.repositories` key and no composition (or empty composition)  
 **And** the request identifies the blueprint by **name** and **version number**  
-**And** `targetRepositories` contains **exactly one** entry with `type` **root** and a valid repository reference  
+**And** `targetRepositories` contains **exactly one** entry with `targetId` equal to that repository key and a valid repository reference  
 **And** the request provides valid values for all required manifest parameters (or defaults where defined)  
 **And** Git provider operations succeed for source (tag) and target (branch) materialization and push  
 **When** the client calls `POST /api/v2/pp/blueprint/blueprints-versions/instantiate` with appropriate JSON body and Git auth headers  
@@ -46,16 +48,16 @@ This specification defines testable behavior for populating a **single** target 
 **Then** the commit uses the provided name and email when both are non-blank  
 **And** when omitted or blank, the system uses the default author identity (`odm-blueprint-server` / `odm-blueprint-server@local`)
 
-### Scenario: Instantiation strategy is derived from manifest metadata
+### Scenario: Instantiation topology is derived from manifest metadata
 
 **Given** a valid request payload **without** any client-provided instantiation method field  
 **When** the endpoint is invoked  
-**Then** monorepo vs unsupported modes are determined from the selected manifest  
+**Then** single-repository vs unsupported modes are determined from the selected manifest (`repositories` cardinality + composition)  
 **And** the request is not rejected merely for lacking an explicit instantiation method field
 
-### Scenario: Exactly one root target is required in this phase
+### Scenario: Exactly one mapped target is required in this phase
 
-**Given** a request with zero target repositories, more than one target, or a single target whose `type` is not `root`  
+**Given** a request with zero target repositories, more than one target, or a single target whose `targetId` does not match the sole `instantiation.repositories[].key`  
 **When** the endpoint is invoked  
 **Then** the system returns **`400 Bad Request`**  
 **And** no successful Git mutation completes for that request
@@ -114,7 +116,7 @@ This specification defines testable behavior for populating a **single** target 
 ## High-level acceptance requirements
 
 - **Endpoint:** `POST /api/v2/pp/blueprint/blueprints-versions/instantiate`
-- **Request:** `blueprintName`, `blueprintVersionNumber`, exactly one `targetRepositories` entry with `type: root`, optional `branch`, `parameters`, optional commit author fields; Git auth via request headers.
-- **Contract:** `targetRepositories` remains a list for forward compatibility; validation enforces the single-`root` rule for this phase.
+- **Request:** `blueprintName`, `blueprintVersionNumber`, exactly one `targetRepositories` entry with `targetId` equal to the sole repository key, optional `branch`, `parameters`, optional commit author fields; Git auth via request headers.
+- **Contract:** `targetRepositories` remains a list for forward compatibility; validation enforces the single-`targetId` rule for this phase.
 - **Repositories:** target repository references use the same repository model as other Git provider APIs (`RepositoryRes` → domain `Repository`).
 - **Orchestration:** controller delegates to `BlueprintVersionUseCasesService` and the `InstantiateBlueprintVersion` use case; no orchestration logic in the controller beyond mapping.

@@ -1,8 +1,9 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestvalidator;
 
-import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestInstantiation;
-
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -10,21 +11,33 @@ import java.util.Set;
  */
 class OdmBlueprintManifestValidatorState {
     boolean hasComposition;
-    ManifestInstantiation.InstantiationStrategy currentInstantiationStrategy;
     final Set<String> compositionModules = new HashSet<>();
+    final Set<String> repositoryKeys = new LinkedHashSet<>();
+    final Set<String> usedRepositoryKeys = new LinkedHashSet<>();
+    final List<RouteDestination> routeDestinations = new ArrayList<>();
+    final List<ProtectedResourceRepository> protectedResourceRepositories = new ArrayList<>();
 
     String currentParameterFieldPath;
-    String currentParameterKey;
     String currentParameterTypeFieldPath;
     String currentParameterRequiredFieldPath;
     String currentParameterDefaultFieldPath;
 
     String currentProtectedResourceFieldPath;
-    String currentProtectedResourceIntegrityFieldPath;
 
     String currentCompositionFieldPath;
 
+    String currentTargetRepositoryFieldPath;
     String currentInstantiationFieldPath;
-    String currentCompositionLayoutFieldPath;
+    String currentInstantiationEntryFieldPath;
     String currentTargetFieldPath;
+
+    int rootInstantiationEntryCount;
+    int rootTargetRepositoryCount;
+    final Set<String> instantiatedModules = new HashSet<>();
+
+    record RouteDestination(String repositoryKey, String normalizedPath, String fieldPath, String instantiationEntryPath) {
+    }
+
+    record ProtectedResourceRepository(String fieldPath, String repositoryKey) {
+    }
 }

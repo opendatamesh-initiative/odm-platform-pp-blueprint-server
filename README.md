@@ -42,10 +42,12 @@ How instantiate / update work under the hood: [Blueprint process](docs/service/b
 |:-----------|:--------|
 | **Standardize & reuse** | Turn org-wide patterns into versioned blueprints applied to many data-product repos |
 | **Blueprints & versions** | Persist blueprint identity, Git repo metadata, and versioned manifests |
-| **Instantiate onto real products** | Render parameterized templates into a target data-product repository |
+| **Instantiate onto real products** | Render parameterized templates into one or many target repositories |
+| **Multi-repo & composition** | Monorepo / polyrepo layouts, with optional reusable modules ([guide](docs/service/repositories-and-composition.md)) |
 | **Evolve with new versions** | Roll a new blueprint version onto products that already exist (details in the process guide) |
 | **Git providers** | GitHub, GitLab, Bitbucket, Azure DevOps via shared `git-utils` |
 | **Manifest & Velocity** | Parameterized templates driven by the blueprint manifest |
+| **Protected resources** | Declare destination-scoped immutable paths; on publication, compare each protected product repository with a local re-instantiation |
 | **Notifications** | Optional client to the ODM Notification Server |
 
 ---
@@ -108,8 +110,10 @@ All guides live under [`docs/`](docs/README.md).
 | Guide | Description |
 |:------|:------------|
 | [Blueprint process](docs/service/blueprint-process.md) | How blueprints are applied and evolved on data-product repositories |
+| [Multi-repository & composition](docs/service/repositories-and-composition.md) | Multiple remotes, reusable modules, layouts, and current support |
+| [Protected resources](docs/service/protected-resources.md) | Manifest protected paths and publication-time integrity check |
 | [Git providers](docs/service/git-providers.md) | Multi-provider Git operations and client-supplied auth |
-| [Blueprint manifest](src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) | Manifest schema, parameters, composition, Instantiation strategy |
+| [Blueprint manifest](src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) | Manifest schema, parameters, composition, repositories, protected resources |
 
 </details>
 
@@ -122,7 +126,7 @@ All guides live under [`docs/`](docs/README.md).
 |:------|:------------|
 | [Development](docs/setup/development.md) | Build, run, profiles, testing |
 | [Deployment](docs/setup/deployment.md) | Containers and external dependencies |
-| [Configuration](docs/setup/configuration.md) | DB, notification, observer identity |
+| [Configuration](docs/setup/configuration.md) | DB, notification, observer identity, validator |
 
 </details>
 

@@ -3,54 +3,66 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
 
 import java.nio.file.Path;
-import java.util.function.BiConsumer;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
 /**
- * Git capabilities used while creating the initial checkpoint of a blueprint instantiation.
+ * Git capabilities used while creating the initial checkpoint of a blueprint
+ * instantiation.
  * <p>
- * The port exposes focused, single-purpose Git operations so that the checkpoint workflow
- * (orphan branch, commit, tag, merge, push) stays orchestrated in the use case and remains
- * readable. Repository cloning lifecycle is handled by {@link #withClonedSourceAndTarget}:
- * the granular operations below are meant to be invoked on the target path provided inside
- * that callback.
+ * The use case orders checkpoint policy steps; this port materializes
+ * workspaces and performs
+ * the granular Git operations on the target path supplied inside the workspace
+ * callback.
  */
 interface InstantiateBlueprintVersionGitOutboundPort {
 
-    void init(Blueprint blueprint);
+    /**
+     * Opens each unique source at its release tag for the duration of
+     * {@code operation}. This lets one source workspace serve every target that
+     * consumes it. Temporary directories are cleaned up after the callback returns.
+     * <p>
+     * Binds the Git provider from the parent blueprint's {@code BlueprintRepo} on
+     * first use.
+     */
+    void openSources(
+            Blueprint parentBlueprint,
+            List<SourceRepositoryDto> sources,
+            Consumer<Map<String, Path>> operation);
 
     /**
-     * Clones the source repository (frozen at its tag) and the target repository (at the
-     * integration branch), then invokes {@code operation} with the local {@code (sourcePath,
-     * targetPath)}. Both working directories are cleaned up after the callback returns.
+     * Opens one target at its integration branch for the duration of
+     * {@code operation}. The temporary directory is cleaned up afterwards.
      */
-    void withClonedSourceAndTarget(
-            SourceRepositoryDto source,
+    void openTarget(
             TargetRepositoryDto target,
             String integrationBranch,
-            BiConsumer<Path, Path> operation);
+            Consumer<Path> operation);
 
-    void createAndCheckoutOrphanBranch(Path targetRepository, String branchName);
+        void createAndCheckoutOrphanBranch(Path targetRepository, String branchName);
 
-    /**
-     * Stages every change, commits it on {@code branchName} and returns the resulting commit SHA.
-     */
-    String commitAll(
-            Path targetRepository,
-            String branchName,
-            String commitMessage,
-            String commitAuthorName,
-            String commitAuthorEmail);
+        /**
+         * Stages every change, commits it on {@code branchName} and returns the
+         * resulting commit SHA.
+         */
+        String commitAll(
+                        Path targetRepository,
+                        String branchName,
+                        String commitMessage,
+                        String commitAuthorName,
+                        String commitAuthorEmail);
 
-    void createCheckpointTag(
-            Path targetRepository,
-            String checkpointTag,
-            String commitHash,
-            String commitAuthorName,
-            String commitAuthorEmail);
+        void createCheckpointTag(
+                        Path targetRepository,
+                        String checkpointTag,
+                        String commitHash,
+                        String commitAuthorName,
+                        String commitAuthorEmail);
 
-    void mergeBranch(Path targetRepository, String sourceBranch, String targetBranch);
+        void mergeBranch(Path targetRepository, String sourceBranch, String targetBranch);
 
-    void pushBranch(Path targetRepository, String branchName);
+        void pushBranch(Path targetRepository, String branchName);
 
-    void pushTag(Path targetRepository, String tagName);
+        void pushTag(Path targetRepository, String tagName);
 }

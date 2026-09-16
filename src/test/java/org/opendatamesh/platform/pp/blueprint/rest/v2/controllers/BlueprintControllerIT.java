@@ -6,13 +6,18 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoOwnerTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.label.LabelRes;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,7 +45,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        // When
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture1 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture1.setExternalIdentifier("ext-id");
+        repoFixture1.setName("repo-name");
+        repoFixture1.setDescription("repo-desc");
+        repoFixture1.setManifestRootPath("/manifest");
+        repoFixture1.setDescriptorTemplatePath("/template");
+        repoFixture1.setReadmePath("/readme");
+        repoFixture1.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture1.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture1.setDefaultBranch("main");
+        repoFixture1.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture1.setProviderBaseUrl("https://github.com");
+        repoFixture1.setOwnerId("org");
+        repoFixture1.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(repoFixture1);
+// When
         ResponseEntity<BlueprintRes> response = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
@@ -85,7 +107,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture2 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture2.setExternalIdentifier("ext-id");
+        repoFixture2.setName("repo-name");
+        repoFixture2.setDescription("repo-desc");
+        repoFixture2.setManifestRootPath("/manifest");
+        repoFixture2.setDescriptorTemplatePath("/template");
+        repoFixture2.setReadmePath("/readme");
+        repoFixture2.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture2.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture2.setDefaultBranch("main");
+        repoFixture2.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture2.setProviderBaseUrl("https://github.com");
+        repoFixture2.setOwnerId("org");
+        repoFixture2.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(repoFixture2);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -145,7 +184,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         firstBlueprint.setDisplayName(namePrefix + "-first-display");
         firstBlueprint.setDescription(namePrefix + "-first-description");
 
-        ResponseEntity<BlueprintRes> firstBlueprintResponse = rest.postForEntity(
+        
+        firstBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture3 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture3.setExternalIdentifier("ext-id");
+        repoFixture3.setName("repo-name");
+        repoFixture3.setDescription("repo-desc");
+        repoFixture3.setManifestRootPath("/manifest");
+        repoFixture3.setDescriptorTemplatePath("/template");
+        repoFixture3.setReadmePath("/readme");
+        repoFixture3.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture3.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture3.setDefaultBranch("main");
+        repoFixture3.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture3.setProviderBaseUrl("https://github.com");
+        repoFixture3.setOwnerId("org");
+        repoFixture3.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        firstBlueprint.setBlueprintRepo(repoFixture3);
+ResponseEntity<BlueprintRes> firstBlueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(firstBlueprint),
                 BlueprintRes.class
@@ -158,7 +214,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         secondBlueprint.setDisplayName(namePrefix + "-second-display");
         secondBlueprint.setDescription(namePrefix + "-second-description");
 
-        ResponseEntity<BlueprintRes> secondBlueprintResponse = rest.postForEntity(
+        
+        secondBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture4 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture4.setExternalIdentifier("ext-id");
+        repoFixture4.setName("repo-name");
+        repoFixture4.setDescription("repo-desc");
+        repoFixture4.setManifestRootPath("/manifest");
+        repoFixture4.setDescriptorTemplatePath("/template");
+        repoFixture4.setReadmePath("/readme");
+        repoFixture4.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture4.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture4.setDefaultBranch("main");
+        repoFixture4.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture4.setProviderBaseUrl("https://github.com");
+        repoFixture4.setOwnerId("org");
+        repoFixture4.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        secondBlueprint.setBlueprintRepo(repoFixture4);
+ResponseEntity<BlueprintRes> secondBlueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(secondBlueprint),
                 BlueprintRes.class
@@ -202,7 +275,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         filteredBlueprint.setDisplayName(namePrefix + "-filtered-display");
         filteredBlueprint.setDescription(namePrefix + "-filtered-description");
 
-        ResponseEntity<BlueprintRes> filteredBlueprintResponse = rest.postForEntity(
+        
+        filteredBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture5 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture5.setExternalIdentifier("ext-id");
+        repoFixture5.setName("repo-name");
+        repoFixture5.setDescription("repo-desc");
+        repoFixture5.setManifestRootPath("/manifest");
+        repoFixture5.setDescriptorTemplatePath("/template");
+        repoFixture5.setReadmePath("/readme");
+        repoFixture5.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture5.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture5.setDefaultBranch("main");
+        repoFixture5.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture5.setProviderBaseUrl("https://github.com");
+        repoFixture5.setOwnerId("org");
+        repoFixture5.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        filteredBlueprint.setBlueprintRepo(repoFixture5);
+ResponseEntity<BlueprintRes> filteredBlueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(filteredBlueprint),
                 BlueprintRes.class
@@ -215,7 +305,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         otherBlueprint.setDisplayName(namePrefix + "-other-display");
         otherBlueprint.setDescription(namePrefix + "-other-description");
 
-        ResponseEntity<BlueprintRes> otherBlueprintResponse = rest.postForEntity(
+        
+        otherBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture6 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture6.setExternalIdentifier("ext-id");
+        repoFixture6.setName("repo-name");
+        repoFixture6.setDescription("repo-desc");
+        repoFixture6.setManifestRootPath("/manifest");
+        repoFixture6.setDescriptorTemplatePath("/template");
+        repoFixture6.setReadmePath("/readme");
+        repoFixture6.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture6.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture6.setDefaultBranch("main");
+        repoFixture6.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture6.setProviderBaseUrl("https://github.com");
+        repoFixture6.setOwnerId("org");
+        repoFixture6.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        otherBlueprint.setBlueprintRepo(repoFixture6);
+ResponseEntity<BlueprintRes> otherBlueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(otherBlueprint),
                 BlueprintRes.class
@@ -261,7 +368,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture7 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture7.setExternalIdentifier("ext-id");
+        repoFixture7.setName("repo-name");
+        repoFixture7.setDescription("repo-desc");
+        repoFixture7.setManifestRootPath("/manifest");
+        repoFixture7.setDescriptorTemplatePath("/template");
+        repoFixture7.setReadmePath("/readme");
+        repoFixture7.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture7.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture7.setDefaultBranch("main");
+        repoFixture7.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture7.setProviderBaseUrl("https://github.com");
+        repoFixture7.setOwnerId("org");
+        repoFixture7.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(repoFixture7);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -274,6 +398,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         updateBlueprint.setName(namePrefix + "-bp");
         updateBlueprint.setDisplayName("Updated display");
         updateBlueprint.setDescription("Updated description");
+        updateBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        updateBlueprint.setBlueprintRepo(repoFixture7);
 
         // When
         ResponseEntity<BlueprintRes> response = rest.exchange(
@@ -316,7 +442,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
 
-        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+        
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture8 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture8.setExternalIdentifier("ext-id");
+        repoFixture8.setName("repo-name");
+        repoFixture8.setDescription("repo-desc");
+        repoFixture8.setManifestRootPath("/manifest");
+        repoFixture8.setDescriptorTemplatePath("/template");
+        repoFixture8.setReadmePath("/readme");
+        repoFixture8.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture8.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture8.setDefaultBranch("main");
+        repoFixture8.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture8.setProviderBaseUrl("https://github.com");
+        repoFixture8.setOwnerId("org");
+        repoFixture8.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprint.setBlueprintRepo(repoFixture8);
+ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprint),
                 BlueprintRes.class
@@ -398,7 +541,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprintA.setDisplayName(namePrefix + "-a-display");
         blueprintA.setDescription(namePrefix + "-a-description");
 
-        ResponseEntity<BlueprintRes> blueprintAResponse = rest.postForEntity(
+        
+        blueprintA.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture9 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture9.setExternalIdentifier("ext-id");
+        repoFixture9.setName("repo-name");
+        repoFixture9.setDescription("repo-desc");
+        repoFixture9.setManifestRootPath("/manifest");
+        repoFixture9.setDescriptorTemplatePath("/template");
+        repoFixture9.setReadmePath("/readme");
+        repoFixture9.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture9.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture9.setDefaultBranch("main");
+        repoFixture9.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture9.setProviderBaseUrl("https://github.com");
+        repoFixture9.setOwnerId("org");
+        repoFixture9.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprintA.setBlueprintRepo(repoFixture9);
+ResponseEntity<BlueprintRes> blueprintAResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprintA),
                 BlueprintRes.class
@@ -411,7 +571,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprintB.setDisplayName(namePrefix + "-b-display");
         blueprintB.setDescription(namePrefix + "-b-description");
 
-        ResponseEntity<BlueprintRes> blueprintBResponse = rest.postForEntity(
+        
+        blueprintB.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture10 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture10.setExternalIdentifier("ext-id");
+        repoFixture10.setName("repo-name");
+        repoFixture10.setDescription("repo-desc");
+        repoFixture10.setManifestRootPath("/manifest");
+        repoFixture10.setDescriptorTemplatePath("/template");
+        repoFixture10.setReadmePath("/readme");
+        repoFixture10.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture10.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture10.setDefaultBranch("main");
+        repoFixture10.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture10.setProviderBaseUrl("https://github.com");
+        repoFixture10.setOwnerId("org");
+        repoFixture10.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        blueprintB.setBlueprintRepo(repoFixture10);
+ResponseEntity<BlueprintRes> blueprintBResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(blueprintB),
                 BlueprintRes.class
@@ -424,6 +601,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         updateBlueprintB.setName(blueprintA.getName());
         updateBlueprintB.setDisplayName(namePrefix + "-b-display");
         updateBlueprintB.setDescription(namePrefix + "-b-description");
+        updateBlueprintB.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        updateBlueprintB.setBlueprintRepo(repoFixture10);
 
         // When
         ResponseEntity<String> response = rest.exchange(
@@ -456,7 +635,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         firstBlueprint.setDisplayName(namePrefix + "-first-display");
         firstBlueprint.setDescription(namePrefix + "-first-description");
 
-        ResponseEntity<BlueprintRes> firstBlueprintResponse = rest.postForEntity(
+        
+        firstBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture11 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture11.setExternalIdentifier("ext-id");
+        repoFixture11.setName("repo-name");
+        repoFixture11.setDescription("repo-desc");
+        repoFixture11.setManifestRootPath("/manifest");
+        repoFixture11.setDescriptorTemplatePath("/template");
+        repoFixture11.setReadmePath("/readme");
+        repoFixture11.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture11.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture11.setDefaultBranch("main");
+        repoFixture11.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture11.setProviderBaseUrl("https://github.com");
+        repoFixture11.setOwnerId("org");
+        repoFixture11.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        firstBlueprint.setBlueprintRepo(repoFixture11);
+ResponseEntity<BlueprintRes> firstBlueprintResponse = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(firstBlueprint),
                 BlueprintRes.class
@@ -469,7 +665,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         secondBlueprint.setDisplayName(namePrefix + "-second-display");
         secondBlueprint.setDescription(namePrefix + "-second-description");
 
-        // When
+        
+        secondBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture12 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture12.setExternalIdentifier("ext-id");
+        repoFixture12.setName("repo-name");
+        repoFixture12.setDescription("repo-desc");
+        repoFixture12.setManifestRootPath("/manifest");
+        repoFixture12.setDescriptorTemplatePath("/template");
+        repoFixture12.setReadmePath("/readme");
+        repoFixture12.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture12.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture12.setDefaultBranch("main");
+        repoFixture12.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture12.setProviderBaseUrl("https://github.com");
+        repoFixture12.setOwnerId("org");
+        repoFixture12.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        secondBlueprint.setBlueprintRepo(repoFixture12);
+// When
         ResponseEntity<String> response = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
                 new HttpEntity<>(secondBlueprint),
@@ -498,8 +711,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
-
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -549,8 +762,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
-
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -604,8 +817,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
-
-        BlueprintRes.BlueprintRepoRes createBlueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes createBlueprintRepo = new BlueprintRes.BlueprintRepoRes();
         createBlueprintRepo.setExternalIdentifier("ext-id");
         createBlueprintRepo.setName("repo-name");
         createBlueprintRepo.setDescription("repo-desc");
@@ -633,7 +846,24 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         updateBlueprint.setName(namePrefix + "-bp");
         updateBlueprint.setDisplayName(namePrefix + "-display");
         updateBlueprint.setDescription(namePrefix + "-description");
-        updateBlueprint.setUuid(blueprintUuid);
+        
+        updateBlueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        BlueprintRes.BlueprintRepoRes repoFixture13 = new BlueprintRes.BlueprintRepoRes();
+        repoFixture13.setExternalIdentifier("ext-id");
+        repoFixture13.setName("repo-name");
+        repoFixture13.setDescription("repo-desc");
+        repoFixture13.setManifestRootPath("/manifest");
+        repoFixture13.setDescriptorTemplatePath("/template");
+        repoFixture13.setReadmePath("/readme");
+        repoFixture13.setRemoteUrlHttp("https://github.com/org/repo.git");
+        repoFixture13.setRemoteUrlSsh("git@github.com:org/repo.git");
+        repoFixture13.setDefaultBranch("main");
+        repoFixture13.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        repoFixture13.setProviderBaseUrl("https://github.com");
+        repoFixture13.setOwnerId("org");
+        repoFixture13.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        updateBlueprint.setBlueprintRepo(repoFixture13);
+updateBlueprint.setUuid(blueprintUuid);
 
         BlueprintRes.BlueprintRepoRes updateBlueprintRepo = new BlueprintRes.BlueprintRepoRes();
         updateBlueprintRepo.setExternalIdentifier("ext-id");
@@ -689,8 +919,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
-
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -744,8 +974,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
-
-        BlueprintRes.BlueprintRepoRes incompleteBlueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes incompleteBlueprintRepo = new BlueprintRes.BlueprintRepoRes();
         incompleteBlueprintRepo.setName("only-name");
         blueprint.setBlueprintRepo(incompleteBlueprintRepo);
 
@@ -774,6 +1004,7 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
                   "name": "whenCreateBlueprintWithRepositoryWithInvalidProviderTypeThenReturnBadRequest",
                   "displayName": "d",
                   "description": "d",
+                  "blueprintType": "BLUEPRINT",
                   "blueprintRepo": {
                     "externalIdentifier": "ext",
                     "name": "r",
@@ -817,8 +1048,8 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
-
-        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
         blueprintRepo.setExternalIdentifier("ext-id");
         blueprintRepo.setName("repo-name");
         blueprintRepo.setDescription("repo-desc");
@@ -843,5 +1074,618 @@ public class BlueprintControllerIT extends BlueprintApplicationIT {
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    private static BlueprintRes.BlueprintRepoRes validRepo(String descriptorTemplatePath) {
+        BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();
+        blueprintRepo.setExternalIdentifier("ext-id");
+        blueprintRepo.setName("repo-name");
+        blueprintRepo.setDescription("repo-desc");
+        blueprintRepo.setManifestRootPath("/manifest");
+        blueprintRepo.setDescriptorTemplatePath(descriptorTemplatePath);
+        blueprintRepo.setReadmePath("/readme");
+        blueprintRepo.setRemoteUrlHttp("https://github.com/org/repo.git");
+        blueprintRepo.setRemoteUrlSsh("git@github.com:org/repo.git");
+        blueprintRepo.setDefaultBranch("main");
+        blueprintRepo.setProviderType(BlueprintRepoProviderTypeRes.GITHUB);
+        blueprintRepo.setProviderBaseUrl("https://github.com");
+        blueprintRepo.setOwnerId("org");
+        blueprintRepo.setOwnerType(BlueprintRepoOwnerTypeRes.ORGANIZATION);
+        return blueprintRepo;
+    }
+
+    /**
+     * Scenario: Hidden CRUD create of a Blueprint requires blueprintType and descriptorTemplatePath
+     * Given a valid repository payload with a non-blank descriptorTemplatePath
+     * And blueprintType is BLUEPRINT
+     * When the client POSTs to "/api/v2/pp/blueprint/blueprints"
+     * Then the response status is 201
+     * And GET by uuid returns blueprintType BLUEPRINT and the same descriptorTemplatePath
+     */
+    @Test
+    public void whenCreateBlueprintWithKindBlueprintThenReturnCreatedBlueprint() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-blueprint-create-bp");
+        blueprint.setDisplayName("kind-blueprint-create-display");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+
+        ResponseEntity<BlueprintRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), BlueprintRes.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.BLUEPRINT);
+        assertThat(response.getBody().getBlueprintRepo().getDescriptorTemplatePath()).isEqualTo("/template");
+
+        ResponseEntity<BlueprintRes> get = rest.getForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS, "/" + response.getBody().getUuid()), BlueprintRes.class);
+        assertThat(get.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.BLUEPRINT);
+        rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + response.getBody().getUuid()));
+    }
+
+    /**
+     * Scenario: Hidden CRUD create without blueprintType returns 400
+     * Given a valid blueprint payload with repository and descriptorTemplatePath
+     * And blueprintType is omitted
+     * When the client POSTs to "/api/v2/pp/blueprint/blueprints"
+     * Then the response status is 400
+     * And the message states that blueprint type is required
+     */
+    @Test
+    public void whenCreateBlueprintWithoutKindThenReturnBadRequest() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-missing-bp");
+        blueprint.setDisplayName("d");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintRepo(validRepo("/template"));
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Blueprint type is required");
+    }
+
+    /**
+     * Scenario: Hidden CRUD create of a Blueprint without descriptorTemplatePath returns 400
+     * Given blueprintType is BLUEPRINT
+     * And the repository has a blank descriptorTemplatePath
+     * When the client POSTs to "/api/v2/pp/blueprint/blueprints"
+     * Then the response status is 400
+     * And the message states that descriptor template path is required for a Blueprint
+     */
+    @Test
+    public void whenCreateBlueprintWithoutDescriptorTemplatePathThenReturnBadRequest() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-bp-no-descriptor-bp");
+        blueprint.setDisplayName("d");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo(null));
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Descriptor template path is required for a Blueprint");
+    }
+
+    /**
+     * Scenario: Hidden CRUD create of a Blueprint module forbids descriptorTemplatePath
+     * Given blueprintType is MODULE
+     * And the repository has a non-blank descriptorTemplatePath
+     * When the client POSTs to "/api/v2/pp/blueprint/blueprints"
+     * Then the response status is 400
+     * And the message states that a Blueprint module must not have descriptorTemplatePath
+     */
+    @Test
+    public void whenCreateBlueprintModuleWithDescriptorTemplatePathThenReturnBadRequest() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-module-with-path-bp");
+        blueprint.setDisplayName("d");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("A Blueprint module must not have descriptorTemplatePath");
+    }
+
+    /**
+     * Scenario: Hidden CRUD create of a Blueprint module with blank descriptorTemplatePath succeeds
+     * Given blueprintType is MODULE
+     * And a valid repository payload with blank descriptorTemplatePath
+     * When the client POSTs to "/api/v2/pp/blueprint/blueprints"
+     * Then the response status is 201
+     * And GET by uuid returns blueprintType MODULE
+     */
+    @Test
+    public void whenCreateBlueprintModuleThenReturnCreatedBlueprint() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-module-create-bp");
+        blueprint.setDisplayName("d");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
+        blueprint.setBlueprintRepo(validRepo(null));
+
+        ResponseEntity<BlueprintRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), BlueprintRes.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.MODULE);
+
+        ResponseEntity<BlueprintRes> get = rest.getForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS, "/" + response.getBody().getUuid()), BlueprintRes.class);
+        assertThat(get.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.MODULE);
+        rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + response.getBody().getUuid()));
+    }
+
+    /**
+     * Scenario: Search filters by blueprintType
+     * Given one BLUEPRINT and one MODULE exist
+     * When the client GETs "/api/v2/pp/blueprint/blueprints" with blueprintType=MODULE
+     * Then the response contains only the MODULE row
+     */
+    @Test
+    public void whenSearchBlueprintsByKindThenReturnFilteredResults() {
+        BlueprintRes root = new BlueprintRes();
+        root.setName("kind-search-root-bp");
+        root.setDisplayName("d");
+        root.setDescription("d");
+        root.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        root.setBlueprintRepo(validRepo("/template"));
+        ResponseEntity<BlueprintRes> rootCreated = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(root), BlueprintRes.class);
+
+        BlueprintRes module = new BlueprintRes();
+        module.setName("kind-search-module-bp");
+        module.setDisplayName("d");
+        module.setDescription("d");
+        module.setBlueprintType(BlueprintTypeRes.MODULE);
+        module.setBlueprintRepo(validRepo(null));
+        ResponseEntity<BlueprintRes> moduleCreated = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(module), BlueprintRes.class);
+
+        ResponseEntity<JsonNode> response = rest.getForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS) + "?blueprintType=MODULE&size=100", JsonNode.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode content = response.getBody().get("content");
+        assertThat(content).isNotNull();
+        for (JsonNode item : content) {
+            assertThat(item.get("blueprintType").asText()).isEqualTo("MODULE");
+        }
+        boolean found = false;
+        for (JsonNode item : content) {
+            if ("kind-search-module-bp".equals(item.get("name").asText())) {
+                found = true;
+            }
+            assertThat(item.get("name").asText()).isNotEqualTo("kind-search-root-bp");
+        }
+        assertThat(found).isTrue();
+
+        rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + rootCreated.getBody().getUuid()));
+        rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + moduleCreated.getBody().getUuid()));
+    }
+
+    /**
+     * Scenario: Hidden CRUD overwrite can change blueprintType when path matches the new blueprintType
+     * Given a MODULE exists with blank descriptorTemplatePath
+     * When the client PUTs the blueprint with blueprintType BLUEPRINT and a non-blank descriptorTemplatePath
+     * Then the response status is 200
+     * And GET returns blueprintType BLUEPRINT and that path
+     */
+    @Test
+    public void whenOverwriteBlueprintTypeWithMatchingPathThenReturnUpdatedBlueprintType() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-overwrite-ok-bp");
+        blueprint.setDisplayName("d");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
+        blueprint.setBlueprintRepo(validRepo(null));
+        ResponseEntity<BlueprintRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), BlueprintRes.class);
+        String uuid = created.getBody().getUuid();
+
+        BlueprintRes update = new BlueprintRes();
+        update.setName("kind-overwrite-ok-bp");
+        update.setDisplayName("d");
+        update.setDescription("d");
+        update.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        update.setBlueprintRepo(validRepo("/new-template"));
+
+        ResponseEntity<BlueprintRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid),
+                HttpMethod.PUT,
+                new HttpEntity<>(update),
+                BlueprintRes.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.BLUEPRINT);
+        assertThat(response.getBody().getBlueprintRepo().getDescriptorTemplatePath()).isEqualTo("/new-template");
+        rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid));
+    }
+
+    /**
+     * Scenario: Hidden CRUD overwrite that changes blueprintType without a matching path returns 400
+     * Given a MODULE exists
+     * When the client PUTs blueprintType BLUEPRINT but leaves descriptorTemplatePath blank
+     * Then the response status is 400
+     * And blueprintType on GET is still MODULE
+     */
+    @Test
+    public void whenOverwriteBlueprintTypeWithMismatchedPathThenReturnBadRequest() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-overwrite-bad-bp");
+        blueprint.setDisplayName("d");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
+        blueprint.setBlueprintRepo(validRepo(null));
+        ResponseEntity<BlueprintRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), BlueprintRes.class);
+        String uuid = created.getBody().getUuid();
+
+        BlueprintRes update = new BlueprintRes();
+        update.setName("kind-overwrite-bad-bp");
+        update.setDisplayName("d");
+        update.setDescription("d");
+        update.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        update.setBlueprintRepo(validRepo(null));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid),
+                HttpMethod.PUT,
+                new HttpEntity<>(update),
+                String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        ResponseEntity<BlueprintRes> get = rest.getForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid), BlueprintRes.class);
+        assertThat(get.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.MODULE);
+        rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid));
+    }
+
+    /**
+     * Scenario: Hidden CRUD overwrite that omits blueprintType keeps the stored blueprintType
+     * Given a MODULE exists
+     * When the client PUTs an otherwise valid body without blueprintType
+     * Then the response status is 200
+     * And GET still returns blueprintType MODULE
+     */
+    @Test
+    public void whenOverwriteBlueprintOmittingBlueprintTypeThenKeepStoredBlueprintType() {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName("kind-overwrite-omit-bp");
+        blueprint.setDisplayName("d");
+        blueprint.setDescription("d");
+        blueprint.setBlueprintType(BlueprintTypeRes.MODULE);
+        blueprint.setBlueprintRepo(validRepo(null));
+        ResponseEntity<BlueprintRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS), new HttpEntity<>(blueprint), BlueprintRes.class);
+        String uuid = created.getBody().getUuid();
+
+        BlueprintRes update = new BlueprintRes();
+        update.setName("kind-overwrite-omit-bp");
+        update.setDisplayName("updated");
+        update.setDescription("d");
+        update.setBlueprintRepo(validRepo(null));
+
+        ResponseEntity<BlueprintRes> response = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid),
+                HttpMethod.PUT,
+                new HttpEntity<>(update),
+                BlueprintRes.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.MODULE);
+        assertThat(response.getBody().getDisplayName()).isEqualTo("updated");
+        rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid));
+    }
+
+    /**
+     * Feature: Create blueprint with existing labels
+     * Given catalog labels exist
+     * When the client sends POST with those label uuids
+     * Then GET returns the assigned labels including name and color
+     */
+    @Test
+    public void whenCreateBlueprintWithExistingLabelsThenGetReturnsLabelNameAndColor() {
+        String namePrefix = "whenCreateBlueprintWithExistingLabelsThenGetReturnsLabelNameAndColor";
+        LabelRes label = createLabel(namePrefix + "-label", "#0E8A16", "Status");
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(label.getUuid())));
+
+        ResponseEntity<BlueprintRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        String blueprintUuid = response.getBody().getUuid();
+
+        try {
+            ResponseEntity<BlueprintRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(getResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(getResponse.getBody().getLabels()).isNotNull();
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getName).containsExactly(label.getName());
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getColor).containsExactly("#0E8A16");
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getGroup).containsExactly("Status");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + label.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Update blueprint — replace assignment set
+     * Given a blueprint assigned to one label
+     * When the client sends PUT with a different label
+     * Then GET returns only the new assignment
+     */
+    @Test
+    public void whenUpdateBlueprintThenReplaceLabelAssignmentSet() {
+        String namePrefix = "whenUpdateBlueprintThenReplaceLabelAssignmentSet";
+        LabelRes firstLabel = createLabel(namePrefix + "-first", "#111111");
+        LabelRes secondLabel = createLabel(namePrefix + "-second", "#222222");
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(firstLabel.getUuid())));
+
+        ResponseEntity<BlueprintRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = created.getBody().getUuid();
+
+        try {
+            BlueprintRes update = new BlueprintRes();
+            update.setUuid(blueprintUuid);
+            update.setName(namePrefix + "-bp");
+            update.setDisplayName(namePrefix + "-display");
+            update.setDescription(namePrefix + "-description");
+            update.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+            update.setBlueprintRepo(validRepo("/template"));
+            update.setLabels(List.of(labelStub(secondLabel.getUuid())));
+
+            ResponseEntity<BlueprintRes> response = rest.exchange(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    HttpMethod.PUT,
+                    new HttpEntity<>(update),
+                    BlueprintRes.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().getLabels()).extracting(LabelRes::getUuid).containsExactly(secondLabel.getUuid());
+
+            ResponseEntity<BlueprintRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getUuid).containsExactly(secondLabel.getUuid());
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + firstLabel.getUuid()));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + secondLabel.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Create blueprint — unknown label uuid
+     * When the client sends POST with a label uuid that does not exist
+     * Then the response status is 404 (same reconcile pattern as missing blueprint on a version)
+     */
+    @Test
+    public void whenCreateBlueprintWithUnknownLabelUuidThenReturnNotFound() {
+        String namePrefix = "whenCreateBlueprintWithUnknownLabelUuidThenReturnNotFound";
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(UUID.randomUUID().toString())));
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Feature: Create blueprint — duplicate label uuid
+     * When the client sends POST with the same label uuid twice
+     * Then the response status is 400
+     */
+    @Test
+    public void whenCreateBlueprintWithDuplicateLabelUuidThenReturnBadRequest() {
+        String namePrefix = "whenCreateBlueprintWithDuplicateLabelUuidThenReturnBadRequest";
+        LabelRes label = createLabel(namePrefix + "-label", "#ABCDEF");
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(label.getUuid()), labelStub(label.getUuid())));
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        rest.delete(apiUrl(RoutesV2.LABELS, "/" + label.getUuid()));
+    }
+
+    /**
+     * Feature: Search blueprints — labelUuids match all (superset allowed)
+     * Given Blueprint-1 has Label-1 and Blueprint-2 has Label-1 and Label-2
+     * When filtering by Label-1, both blueprints are returned
+     * When filtering by Label-1 and Label-2, only Blueprint-2 is returned
+     * When composing with name, both filters apply
+     */
+    @Test
+    public void whenSearchBlueprintsByLabelUuidsThenMatchAllAndComposeWithName() {
+        String namePrefix = "whenSearchBlueprintsByLabelUuidsThenMatchAllAndComposeWithName";
+        LabelRes labelA = createLabel(namePrefix + "-labelA", "#AAAAAA");
+        LabelRes labelB = createLabel(namePrefix + "-labelB", "#BBBBBB");
+
+        BlueprintRes blueprint1 = new BlueprintRes();
+        blueprint1.setName(namePrefix + "-bp1");
+        blueprint1.setDisplayName(namePrefix + "-display1");
+        blueprint1.setDescription(namePrefix + "-description1");
+        blueprint1.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint1.setBlueprintRepo(validRepo("/template"));
+        blueprint1.setLabels(List.of(labelStub(labelA.getUuid())));
+
+        BlueprintRes blueprint2 = new BlueprintRes();
+        blueprint2.setName(namePrefix + "-bp2");
+        blueprint2.setDisplayName(namePrefix + "-display2");
+        blueprint2.setDescription(namePrefix + "-description2");
+        blueprint2.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint2.setBlueprintRepo(validRepo("/template"));
+        blueprint2.setLabels(List.of(labelStub(labelA.getUuid()), labelStub(labelB.getUuid())));
+
+        ResponseEntity<BlueprintRes> created1 = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint1),
+                BlueprintRes.class
+        );
+        ResponseEntity<BlueprintRes> created2 = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint2),
+                BlueprintRes.class
+        );
+        assertThat(created1.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created2.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String uuid1 = created1.getBody().getUuid();
+        String uuid2 = created2.getBody().getUuid();
+
+        try {
+            ResponseEntity<JsonNode> filterOne = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?labelUuids=" + labelA.getUuid()),
+                    JsonNode.class
+            );
+            assertThat(filterOne.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(uuidsIn(filterOne.getBody().get("content"))).contains(uuid1, uuid2);
+
+            ResponseEntity<JsonNode> filterBoth = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?labelUuids=" + labelA.getUuid() + "&labelUuids=" + labelB.getUuid()),
+                    JsonNode.class
+            );
+            assertThat(filterBoth.getStatusCode()).isEqualTo(HttpStatus.OK);
+            JsonNode contentBoth = filterBoth.getBody().get("content");
+            assertThat(uuidsIn(contentBoth)).contains(uuid2);
+            for (JsonNode item : contentBoth) {
+                assertThat(item.get("uuid").asText()).isNotEqualTo(uuid1);
+            }
+
+            ResponseEntity<JsonNode> composeName = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?name=" + blueprint2.getName() + "&labelUuids=" + labelA.getUuid() + "&labelUuids=" + labelB.getUuid()),
+                    JsonNode.class
+            );
+            assertThat(composeName.getStatusCode()).isEqualTo(HttpStatus.OK);
+            JsonNode composedContent = composeName.getBody().get("content");
+            assertThat(composedContent.size()).isEqualTo(1);
+            assertThat(composedContent.get(0).get("uuid").asText()).isEqualTo(uuid2);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid1));
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid2));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelA.getUuid()));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelB.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Search blueprints — unlabeled still listed without label filter
+     * Given an unlabeled blueprint
+     * When the client searches by name with no labelUuids
+     * Then the unlabeled blueprint is returned
+     */
+    @Test
+    public void whenSearchBlueprintsWithoutLabelFilterThenUnlabeledBlueprintIsReturned() {
+        String namePrefix = "whenSearchBlueprintsWithoutLabelFilterThenUnlabeledBlueprintIsReturned";
+
+        BlueprintRes unlabeled = new BlueprintRes();
+        unlabeled.setName(namePrefix + "-bp");
+        unlabeled.setDisplayName(namePrefix + "-display");
+        unlabeled.setDescription(namePrefix + "-description");
+        unlabeled.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        unlabeled.setBlueprintRepo(validRepo("/template"));
+
+        ResponseEntity<BlueprintRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(unlabeled),
+                BlueprintRes.class
+        );
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = created.getBody().getUuid();
+
+        try {
+            ResponseEntity<JsonNode> response = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?name=" + unlabeled.getName()),
+                    JsonNode.class
+            );
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(uuidsIn(response.getBody().get("content"))).contains(blueprintUuid);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    private LabelRes createLabel(String name, String color) {
+        return createLabel(name, color, null);
+    }
+
+    private LabelRes createLabel(String name, String color, String group) {
+        LabelRes label = new LabelRes();
+        label.setName(name);
+        label.setDescription(name + "-desc");
+        label.setColor(color);
+        label.setGroup(group);
+        ResponseEntity<LabelRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.LABELS),
+                new HttpEntity<>(label),
+                LabelRes.class
+        );
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private static LabelRes labelStub(String uuid) {
+        LabelRes stub = new LabelRes();
+        stub.setUuid(uuid);
+        return stub;
+    }
+
+    private static List<String> uuidsIn(JsonNode content) {
+        assertThat(content).isNotNull();
+        assertThat(content.isArray()).isTrue();
+        List<String> uuids = new java.util.ArrayList<>();
+        for (JsonNode item : content) {
+            uuids.add(item.get("uuid").asText());
+        }
+        return uuids;
     }
 }

@@ -1,6 +1,7 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.services.usecases.updatedocumentationfields;
 
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
+import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepo;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepoOwnerType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintRepoProviderType;
@@ -19,6 +20,7 @@ class UpdateBlueprintDocumentationFieldsStructuralValidationOutboundPortImpl imp
         }
         validateRequiredFields(blueprint);
         validateFieldConstraints(blueprint);
+        validateBlueprintTypeAndDescriptorPath(blueprint);
         if (blueprint.getBlueprintRepo() != null) {
             validateBlueprintRepo(blueprint.getBlueprintRepo());
         }
@@ -27,11 +29,31 @@ class UpdateBlueprintDocumentationFieldsStructuralValidationOutboundPortImpl imp
     private void validateRequiredFields(Blueprint blueprint) {
         validateRequired("Name", blueprint.getName());
         validateRequired("Display name", blueprint.getDisplayName());
+        if (blueprint.getBlueprintType() == null) {
+            throw new BadRequestException("Blueprint type is required");
+        }
     }
 
     private void validateFieldConstraints(Blueprint blueprint) {
         validateLength("Name", blueprint.getName(), 255);
         validateLength("Display name", blueprint.getDisplayName(), 255);
+    }
+
+    private void validateBlueprintTypeAndDescriptorPath(Blueprint blueprint) {
+        if (blueprint.getBlueprintType() == null) {
+            return;
+        }
+        if (blueprint.getBlueprintRepo() == null) {
+            throw new BadRequestException("Blueprint repository is required");
+        }
+        boolean hasDescriptorPath = StringUtils.hasText(blueprint.getBlueprintRepo().getDescriptorTemplatePath());
+        if (blueprint.getBlueprintType() == BlueprintType.BLUEPRINT && !hasDescriptorPath) {
+            throw new BadRequestException("Descriptor template path is required for a Blueprint");
+        }
+        if (blueprint.getBlueprintType() == BlueprintType.MODULE && hasDescriptorPath) {
+            throw new BadRequestException(
+                    "A Blueprint module must not have descriptorTemplatePath; remove it from the module.");
+        }
     }
 
     private void validateBlueprintRepo(BlueprintRepo blueprintRepo) {
