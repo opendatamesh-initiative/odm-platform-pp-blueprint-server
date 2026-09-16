@@ -19,6 +19,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ManifestParserTest {
 
+    /**
+     * Feature: Protected-resources destination key
+     * Scenario: Omitted repository is valid on a monorepo manifest
+     *   Given a 1→1 blueprint whose protected resources list only `path`
+     *   When the version is published
+     *   Then the response is 200
+     *   And the stored manifest has no `repository` on those items
+     */
     @Test
     void givenReadmeExample21MonorepoYamlWhenDeserializeAndSerializeThenManifestMatchesReadmeAndRoundTrips() throws IOException {
         ManifestParser parser = ManifestParserFactory.getParser();
@@ -48,7 +56,9 @@ class ManifestParserTest {
 
         assertEquals(2, manifest.getProtectedResources().size());
         assertEquals("infrastructure/core/**", manifest.getProtectedResources().get(0).getPath());
-        assertEquals("README.md", manifest.getProtectedResources().get(1).getPath());
+        assertEquals("docs/architecture.md", manifest.getProtectedResources().get(1).getPath());
+        assertThat(manifest.getProtectedResources().get(0).getRepository()).isNull();
+        assertThat(manifest.getProtectedResources().get(1).getRepository()).isNull();
 
         assertEquals(1, manifest.getTargetRepositories().size());
         assertEquals(OdmBlueprintManifestAutoFiller.DEFAULT_REPOSITORY_KEY, manifest.getTargetRepositories().get(0).getKey());

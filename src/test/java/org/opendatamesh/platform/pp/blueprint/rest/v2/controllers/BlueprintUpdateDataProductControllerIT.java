@@ -18,6 +18,8 @@ import org.opendatamesh.platform.git.git.GitOperation;
 import org.opendatamesh.platform.git.model.*;
 import org.opendatamesh.platform.git.provider.GitProvider;
 import org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.manifestautofiller.OdmBlueprintManifestAutoFiller;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationRequestRes;
+import org.opendatamesh.platform.pp.blueprint.old.v1.resources.PolicyEvaluationResultRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.BlueprintApplicationIT;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.RoutesV2;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.mocks.GitProviderFactoryMock;
@@ -425,7 +427,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
     /**
      * Scenario: Next version with extra or renamed repository key is rejected
      * Given current and next parent versions of the same blueprint
-     * When next instantiation.repositories keys differ from current
+     * When next targetRepositories[] keys differ from current
      * Then the API returns 400 listing the structural delta with a hint to keep keys stable or instantiate new remotes
      * And no Git mutation occurs
      */
@@ -507,7 +509,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
      * And each mapped remote has blueprint-v{current}
      * When update-data-product supplies a complete targetId map
      * Then each remote gets its own update branch and next checkpoint tag of the same name
-     * And lineage and descriptor exist only on instantiation.root.repository
+     * And lineage and descriptor exist only on the target marked isRoot true
      */
     @Test
     void whenPolyrepoNoCompositionUpdateThenFanOutResultsAndRootLineageOnly(
@@ -735,7 +737,7 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
 
     /**
      * Scenario: Root key or topology change is rejected
-     * Given current 1→1 and next N→1 or a different instantiation.root.repository
+     * Given current 1→1 and next N→1 or a different isRoot targetRepositories[] key
      * When update-data-product is called
      * Then validation fails with a structure-change hint before Git
      */
@@ -1080,6 +1082,111 @@ public class BlueprintUpdateDataProductControllerIT extends BlueprintApplication
         verify(mockGitOperation, never()).pushBranch(any(), anyString());
         verify(mockGitOperation).pushTag(eq(targetDir.toFile()), eq("blueprint-v2.0.0"));
         verify(gitProviderFactoryMock.getMockGitProvider(), never()).createPullRequest(any(), any());
+
+        deleteCreatedBlueprint(context.blueprintUuid);
+    }
+
+    /**
+     * Feature: Update checkpoint isolation
+     *
+     * Scenario: Reused unchanged checkpoint does not bypass publication integrity
+     *   Given a Blueprint update reuses an unchanged pure-render checkpoint
+     *   And the product snapshot being published contains tampering under a protected path
+     *   When protected-resources integrity is evaluated
+     *   Then evaluationResult is false
+     *   And the comparison uses the published product ref rather than treating checkpoint reuse as approval
+     */
+    @Test
+    void whenUnchangedCheckpointIsReusedThenTamperedPublicationStillFailsIntegrity(
+            @TempDir Path sourceDir, @TempDir Path targetDir, @TempDir Path publishedProduct) throws Exception {
+        writeSourceBlueprintFiles(sourceDir);
+        BlueprintPair context = createBlueprintWithVersions("mesh-dp", "1.0.0", "2.0.0");
+        GitOperation mockGitOperation = stubUpdateHappyPath(sourceDir, targetDir);
+        when(mockGitOperation.isWorkingTreeClean(any())).thenReturn(true);
+        when(mockGitOperation.getCheckedOutCommitSha(any())).thenReturn("same-as-current-sha");
+
+        ResponseEntity<UpdateDataProductResultRes> updateResponse = rest.exchange(
+                apiUrl(RoutesV2.BLUEPRINT_VERSIONS_UPDATE_DATA_PRODUCT),
+                HttpMethod.POST,
+                new HttpEntity<>(buildUpdateRequest(context.blueprintName, true, "main"), jsonHeaders()),
+                UpdateDataProductResultRes.class);
+        assertThat(updateResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(updateResponse.getBody().getResults().getFirst().getContentUnchanged()).isTrue();
+        assertThat(updateResponse.getBody().getResults().getFirst().getCheckpointTag()).isEqualTo("blueprint-v2.0.0");
+
+        gitProviderFactoryMock.reset();
+        Files.createDirectories(publishedProduct.resolve("infrastructure/core"));
+        Files.copy(
+                sourceDir.resolve("infrastructure/core/network.tf"),
+                publishedProduct.resolve("infrastructure/core/network.tf"),
+                StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(
+                sourceDir.resolve("infrastructure/core/iam.tf"),
+                publishedProduct.resolve("infrastructure/core/iam.tf"),
+                StandardCopyOption.REPLACE_EXISTING);
+        Files.createDirectories(publishedProduct.resolve("docs"));
+        Files.copy(
+                sourceDir.resolve("docs/architecture.md"),
+                publishedProduct.resolve("docs/architecture.md"),
+                StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(publishedProduct.resolve("infrastructure/core/network.tf"), "tampered after checkpoint reuse\n");
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        GitOperation evaluateGit = Mockito.mock(GitOperation.class);
+        when(mockGitProvider.gitOperation()).thenReturn(evaluateGit);
+        when(mockGitProvider.getRepository(anyString(), anyString())).thenReturn(Optional.of(new Repository()));
+        doAnswer(invocation -> {
+            Repository repository = invocation.getArgument(0);
+            Consumer<File> consumer = invocation.getArgument(2);
+            String cloneUrl = repository.getCloneUrlHttp();
+            if (cloneUrl != null && cloneUrl.contains("customer360")) {
+                consumer.accept(publishedProduct.toFile());
+            } else {
+                consumer.accept(sourceDir.toFile());
+            }
+            return null;
+        }).when(evaluateGit).readRepository(any(), any(), any());
+        doNothing().when(evaluateGit).createAndCheckoutOrphanBranch(any(), anyString());
+        doNothing().when(evaluateGit).addAll(any());
+        doNothing().when(evaluateGit).commit(any(), any(Commit.class));
+        when(evaluateGit.getHeadSha(any(), anyString())).thenReturn("deadbeefcafebabe");
+        doNothing().when(evaluateGit).addTag(any(), any(Tag.class));
+
+        ObjectNode event = OBJECT_MAPPER.createObjectNode();
+        ObjectNode version = event.putObject("eventContent").putObject("dataProductVersion");
+        version.put("tag", "publication-v1");
+        ObjectNode content = version.putObject("content");
+        ObjectNode blueprint = content.putObject("blueprint");
+        blueprint.put("blueprintName", context.blueprintName());
+        blueprint.put("blueprintVersionNumber", "2.0.0");
+        ObjectNode parameters = blueprint.putObject("parameters");
+        parameters.put("environment", "prod");
+        parameters.put("retentionDays", 365);
+        ObjectNode dataProduct = version.putObject("dataProduct");
+        ObjectNode repo = dataProduct.putObject("dataProductRepo");
+        repo.put("remoteUrlHttp", "https://github.com/org/customer360.git");
+        repo.put("providerType", "GITHUB");
+        repo.put("providerBaseUrl", "https://github.com");
+
+        PolicyEvaluationRequestRes evaluateRequest = new PolicyEvaluationRequestRes();
+        evaluateRequest.setPolicyEvaluationId(7L);
+        evaluateRequest.setObjectToEvaluate(event);
+        ResponseEntity<PolicyEvaluationResultRes> evaluateResponse = rest.exchange(
+                apiUrlFromString("/api/v1/up/validator/evaluate-policy"),
+                HttpMethod.POST,
+                new HttpEntity<>(evaluateRequest, jsonHeaders()),
+                PolicyEvaluationResultRes.class);
+
+        assertThat(evaluateResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(evaluateResponse.getBody().getEvaluationResult()).isFalse();
+        assertThat(evaluateResponse.getBody().getOutputObject().getMessage()).contains("network.tf");
+        ArgumentCaptor<RepositoryPointer> pointerCaptor = ArgumentCaptor.forClass(RepositoryPointer.class);
+        verify(evaluateGit, atLeastOnce()).readRepository(any(), pointerCaptor.capture(), any());
+        assertThat(pointerCaptor.getAllValues())
+                .anyMatch(pointer -> pointer instanceof RepositoryPointerTag
+                        && "publication-v1".equals(pointer.getRefValue()));
+        assertThat(pointerCaptor.getAllValues())
+                .noneMatch(pointer -> pointer.getRefValue() != null && pointer.getRefValue().startsWith("blueprint-v"));
 
         deleteCreatedBlueprint(context.blueprintUuid);
     }

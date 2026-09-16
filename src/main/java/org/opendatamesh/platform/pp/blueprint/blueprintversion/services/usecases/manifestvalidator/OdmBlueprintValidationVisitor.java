@@ -11,10 +11,8 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.Manif
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.protectedresource.ManifestProtectedResourceIntegrity;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
 import java.util.HashSet;
@@ -42,7 +40,7 @@ import java.util.regex.Pattern;
  * </ul>
  */
 class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParameterVisitor,
-        ManifestProtectedResourceVisitor, ManifestInstantiationEntryVisitor {
+        ManifestInstantiationEntryVisitor {
 
     private final OdmBlueprintManifestValidatorContext context;
     private final OdmBlueprintManifestValidatorState state;
@@ -85,7 +83,6 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                 ManifestProtectedResource resource = manifest.getProtectedResources().get(i);
                 if (resource != null) {
                     state.currentProtectedResourceFieldPath = "protectedResources[" + i + "]";
-                    state.currentProtectedResourceIntegrityFieldPath = state.currentProtectedResourceFieldPath + ".integrity";
                     resource.accept(this);
                 }
             }
@@ -166,6 +163,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         validateUnusedRepositoryKeys();
         validateDuplicateDestinations();
         validateNestedPathPrefixes();
+        validateProtectedResourceRepositories();
     }
 
     @Override
@@ -208,8 +206,11 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         validateRequiredString(manifestProtectedResource.getPath(), fieldPath + ".path",
                 "Protected resource path must be a non-empty string");
 
-        if (manifestProtectedResource.getIntegrity() != null) {
-            manifestProtectedResource.getIntegrity().accept(this);
+        if (hasText(manifestProtectedResource.getRepository())) {
+            state.protectedResourceRepositories.add(
+                    new OdmBlueprintManifestValidatorState.ProtectedResourceRepository(
+                            fieldPath + ".repository",
+                            manifestProtectedResource.getRepository().trim()));
         }
     }
 
@@ -335,18 +336,6 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         // Optional ui rules can be added here later.
     }
 
-    @Override
-    public void visit(ManifestProtectedResourceIntegrity integrity) {
-        String fieldPath = state.currentProtectedResourceIntegrityFieldPath != null
-                ? state.currentProtectedResourceIntegrityFieldPath
-                : "protectedResources[].integrity";
-
-        validateRequiredString(integrity.getAlgorithm(), fieldPath + ".algorithm",
-                "Protected resource integrity algorithm must be a non-empty string");
-        validateRequiredString(integrity.getValue(), fieldPath + ".value",
-                "Protected resource integrity value must be a non-empty string");
-    }
-
     private void validateCompositionInstantiationAlignment() {
         for (String module : state.compositionModules) {
             if (!state.instantiatedModules.contains(module)) {
@@ -405,6 +394,20 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                             "Parent parameter key '" + parentKey + "' is not declared in parameters",
                             "Fix the mapping or declare the parameter on the parent manifest.");
                 }
+            }
+        }
+    }
+
+    // --- Post-pass global invariants (after accept/visit walk; operate on collected state only) ---
+
+    private void validateProtectedResourceRepositories() {
+        for (OdmBlueprintManifestValidatorState.ProtectedResourceRepository destination
+                : state.protectedResourceRepositories) {
+            if (!state.repositoryKeys.contains(destination.repositoryKey())) {
+                context.addError(
+                        destination.fieldPath(),
+                        "Protected resource repository must match a targetRepositories[].key",
+                        "Use a key declared in targetRepositories[].key, or omit repository to use the target with isRoot: true.");
             }
         }
     }
@@ -549,6 +552,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         state.repositoryKeys.clear();
         state.usedRepositoryKeys.clear();
         state.routeDestinations.clear();
+        state.protectedResourceRepositories.clear();
         state.instantiatedModules.clear();
         state.rootInstantiationEntryCount = 0;
         state.rootTargetRepositoryCount = 0;

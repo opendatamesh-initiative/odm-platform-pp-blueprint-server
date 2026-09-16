@@ -72,6 +72,18 @@ class PublishBlueprintVersionManifestOutboundPortImpl implements PublishBlueprin
     }
 
     @Override
+    public boolean hasProtectedResources(JsonNode content) {
+        try {
+            Manifest manifest = manifestParser.deserialize(content);
+            return manifest != null
+                    && manifest.getProtectedResources() != null
+                    && !manifest.getProtectedResources().isEmpty();
+        } catch (IOException e) {
+            throw new BadRequestException("Invalid manifest content: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public boolean isMonorepoNoComposition(JsonNode content) {
         try {
             return InstantiationScenarioResolver.isMonorepoNoComposition(manifestParser.deserialize(content));

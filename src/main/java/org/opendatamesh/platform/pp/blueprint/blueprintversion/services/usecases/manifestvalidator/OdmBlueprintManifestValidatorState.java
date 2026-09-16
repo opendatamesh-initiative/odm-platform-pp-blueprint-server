@@ -15,6 +15,7 @@ class OdmBlueprintManifestValidatorState {
     final Set<String> repositoryKeys = new LinkedHashSet<>();
     final Set<String> usedRepositoryKeys = new LinkedHashSet<>();
     final List<RouteDestination> routeDestinations = new ArrayList<>();
+    final List<ProtectedResourceRepository> protectedResourceRepositories = new ArrayList<>();
 
     String currentParameterFieldPath;
     String currentParameterTypeFieldPath;
@@ -22,7 +23,6 @@ class OdmBlueprintManifestValidatorState {
     String currentParameterDefaultFieldPath;
 
     String currentProtectedResourceFieldPath;
-    String currentProtectedResourceIntegrityFieldPath;
 
     String currentCompositionFieldPath;
 
@@ -36,5 +36,8 @@ class OdmBlueprintManifestValidatorState {
     final Set<String> instantiatedModules = new HashSet<>();
 
     record RouteDestination(String repositoryKey, String normalizedPath, String fieldPath, String instantiationEntryPath) {
+    }
+
+    record ProtectedResourceRepository(String fieldPath, String repositoryKey) {
     }
 }

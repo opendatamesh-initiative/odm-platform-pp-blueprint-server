@@ -25,7 +25,7 @@ public class UpdateDataProductCommandRes {
     @Schema(description = "Parameter values used for rendering the next blueprint version")
     private Map<String, JsonNode> parameters = new LinkedHashMap<>();
 
-    @Schema(description = "One entry per instantiation.repositories[].key of the next blueprint version")
+    @Schema(description = "One entry per targetRepositories[].key of the next blueprint version")
     private List<UpdateDataProductTargetRepositoryRes> targetRepositories = new ArrayList<>();
 
     @Schema(description = "Optional commit author name", example = "ODM Platform", requiredMode = NOT_REQUIRED)

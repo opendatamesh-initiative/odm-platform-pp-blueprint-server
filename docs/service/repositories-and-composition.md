@@ -6,6 +6,7 @@ Related:
 
 - [Blueprint process](blueprint-process.md) — instantiate, update, and tag-based 3-way merge
 - [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — schema and YAML examples
+- [Protected resources](protected-resources.md) — publication-time integrity across 1→1, N→1, 1→N, and N→N
 - [Git providers](git-providers.md) — remotes and auth
 
 ---
@@ -112,6 +113,7 @@ A module must itself be a simple blueprint: **one destination, no nested modules
 | **Multiple remotes** | Split parent (and module) content across several Git repositories in one request |
 | **Composition** | Parent includes published modules and routes their files into the declared destinations |
 | **Root & lineage** | One explicit root repository holds parent lineage and the data-product descriptor |
+| **Protected publication** | Parent-declared protected paths are verified across all four layouts; each protected destination is checked at its own Registry-recorded publication ref |
 | **Update (content)** | Newer template files, new parameter values, and updated module parameter mappings — on the same layout |
 | **Module version bump** | Same module slot can point at a newer version of that module |
 

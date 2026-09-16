@@ -5,7 +5,8 @@ How the Blueprint Server applies a blueprint to a data-product repository the fi
 Related:
 
 - [Multi-repository & composition](repositories-and-composition.md) — multiple remotes, modules, layouts, and current support
-- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, targetRepositories, typed instantiation routing, composition schema
+- [Blueprint manifest](../../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) — parameters, target repositories, typed routing, composition, protected resources
+- [Protected resources](protected-resources.md) — publication-time integrity check
 - [Git providers](git-providers.md) — auth and provider APIs
 - API: `POST /api/v2/pp/blueprint/blueprints-versions/instantiate`  
   and `POST /api/v2/pp/blueprint/blueprints-versions/update-data-product`
@@ -43,10 +44,12 @@ Instantiate creates the **first pure checkpoint** and integrates it into the tar
 3. For **each** mapped target that receives files:
    - Clone the relevant blueprint **source(s)** at their release tags and the **target** at the integration branch.
    - Create an **orphan** branch (empty tree — no user files).
-   - Render Velocity templates and copy files along the routes for that key (plus parent lineage under `.odm/blueprint/` on the **root** target only).
+   - Render Velocity templates and copy files along the routes for that key (plus parent lineage under `.odm/blueprint/` on the **root** target only: the blueprint README is moved there; the source manifest is replaced by `.odm/blueprint/blueprint-manifest.yaml`).
    - Commit the pure render, tag it as **`blueprint-v{version}`**, merge into the integration branch, and push branch + tag.
 
 Polyrepo runs that Git policy **independently per target**. Composition only adds extra source repositories and routes; it does not change the orphan-checkpoint idea.
+
+Protected-resource paths must match this **post-instantiation** layout (per destination repository) — see [Protected resources](protected-resources.md).
 
 ```text
        [blueprint-v1.0.0]  pure orphan commit C1
@@ -86,6 +89,8 @@ Update moves a data-product repository from the **current** checkpoint to the **
 6. Optionally open a same-repo Pull Request (`createPullRequest`): update branch → `pullRequestTargetBranch` or repo default branch.
 
 As with instantiate, polyrepo updates each mapped remote independently. A first-time remote still requires **instantiate**, not update.
+
+Checkpoint reuse is only an update optimization. It never approves a later product publication: the protected-resources policy still clones the product version’s recorded root and additional publication refs and compares protected paths with a fresh local re-instantiation.
 
 ```text
 (v1 checkpoint)                 (v2 checkpoint)
@@ -254,7 +259,7 @@ Author blueprints so updates stay **merge-friendly** for product teams.
    One huge `config.yaml.vm` that mixes infra, app, and team knobs forces every update into one conflict surface. Split by concern so non-overlapping files merge cleanly.
 
 6. **Document protected / do-not-edit paths**  
-   Use the manifest’s protected-resources idea and README guidance so users know which files are owned by the blueprint vs safe to customize.
+   Use the manifest’s `protectedResources` and the [protected resources](protected-resources.md) guide so users know which files are owned by the blueprint vs safe to customize. List **post-instantiation** paths only (optional `repository` key, or omit it for the designated root).
 
 7. **Semantic versioning of breaking template moves**  
    Renaming or splitting heavily customized files is a breaking change for merge history — call it out in the changelog so teams expect PR conflicts and plan remapping.

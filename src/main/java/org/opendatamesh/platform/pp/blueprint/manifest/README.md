@@ -86,10 +86,15 @@ The manifest must explicitly declare all parameters required to successfully ins
 
 The manifest must define a list of **Protected Resources** (specific files, directories, or paths).
 
-- Once a Blueprint is instantiated, the resources defined in this list are marked as read-only or immutable in the
-  context of future updates.
-- This ensures that critical infrastructure definitions or core scaffolding cannot be accidentally modified or
-  overwritten by developers working in the target repository.
+- After instantiate, those paths must stay as the blueprint produced them. On data-product **publication**, the
+  service re-instantiates the recorded **parent** version locally and SHA-256-compares each listed path against the
+  published destination tree.
+- Each `path` is relative to an **instantiated destination repository root after render**, not the source blueprint
+  tree. Optional `repository` names `targetRepositories[].key`; when omitted or blank, the path is on the target
+  marked `isRoot: true`. This root shorthand is intentional for the common case. Only the **parent `BLUEPRINT`**
+  list is evaluated when a blueprint is composed; catalog `MODULE` publication rejects a non-empty list. The
+  service guide [Protected resources](../../../../../../../../docs/service/protected-resources.md) covers the
+  publication-time integrity check.
 
 #### 3.3. Blueprint Composition (Modularity)
 
@@ -191,12 +196,11 @@ integrations.
     for forward compatibility. See [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui) for how to use them.
 - `protectedResources` (Array of Objects, Optional): Files, directories, or globs marked immutable after initial
   generation. Each item:
-  - `path` (String, Required): Path relative to the repository root, or a glob (e.g., `infrastructure/`\*).
-  - `integrity` (Object, Optional): Cryptographic digest for tamper detection. **Omitted** in the **source** Blueprint
-    manifest; **populated** on the manifest copy stored in the instantiated Data Product repository (for concrete
-    files, or per platform rules for globs/directories). When present:
-    - `algorithm` (String, Required): Hash algorithm identifier (e.g., `sha256`).
-    - `value` (String, Required): Lowercase hex-encoded digest of the protected content at instantiation time.
+  - `path` (String, Required): Path or glob relative to the **instantiated destination repository root** after
+    render (e.g. `infrastructure/core/**`, `data-plane/storage/**`, `docs/architecture.md`).
+  - `repository` (String, Optional): Logical destination key; must match `targetRepositories[].key` when present.
+    Omit the field to use the target marked `isRoot: true`. Blank is treated as omitted. Integrity requires
+    Registry locator/ref data and clones only for target keys selected by protected-resource declarations.
 - `composition` (Array of Objects, Optional): Declares child blueprints (modules) to be instantiated alongside the
   parent.
   - `module` (String, Required): A logical alias for the child module. Must be unique within the manifest.
@@ -254,6 +258,10 @@ The orchestrator must enforce the following rules when validating a manifest:
 - Every declared `targetRepositories[].key` must appear on at least one route (`instantiation[].targets[].repo`);
   unused keys are rejected.
 - Every `repo` reference in `instantiation[].targets[]` must match an existing `targetRepositories[].key`.
+- When `protectedResources[].repository` is present, it must match an existing `targetRepositories[].key`.
+  Omitted or blank `repository` means the target marked `isRoot: true`.
+- A catalog `MODULE` manifest must have no protected resources or an empty `protectedResources` list. Protection is
+  owned by the parent `BLUEPRINT`, which names final Module-originated paths after routing.
 - Exact duplicate `(repo, normalized destinationPath)` destinations across all routes are rejected.
 - Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
   rejected; use sibling destinations.
@@ -363,7 +371,7 @@ parameters:
 
 protectedResources:
   - path: infrastructure/core/**
-  - path: README.md
+  - path: docs/architecture.md
 
 targetRepositories:
   - key: main-repository
@@ -406,6 +414,11 @@ parameters:
     ui:
       group: Security
       label: Enable PII masking
+
+protectedResources:
+  - path: data-plane/storage/**
+  - path: .odm/storage/**
+  - path: app/serving/**
 
 targetRepositories:
   - key: main-repository
@@ -477,6 +490,11 @@ targetRepositories:
     description: Target repository for application code
     isRoot: true
 
+protectedResources:
+  - path: application/** # root shorthand → app-repo
+  - path: terraform/**
+    repository: infra-repo
+
 instantiation:
   - type: root
     targets:
@@ -516,6 +534,11 @@ targetRepositories:
     isRoot: true
   - key: api-repo
     description: Target repository for API serving components
+
+protectedResources:
+  - path: pipelines/batch/** # root shorthand → pipeline-repo
+  - path: services/consumer/**
+    repository: api-repo
 
 composition:
   - module: ingest

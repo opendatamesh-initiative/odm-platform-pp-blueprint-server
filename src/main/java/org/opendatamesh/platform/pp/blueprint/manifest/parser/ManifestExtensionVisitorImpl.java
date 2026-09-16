@@ -9,17 +9,15 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.Manif
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.protectedresource.ManifestProtectedResourceIntegrity;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
 /**
  * Walks the manifest object graph and applies {@link ManifestExtensionHandler} at each {@code ManifestComponentBase} node.
  */
 class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameterVisitor,
-        ManifestInstantiationEntryVisitor, ManifestProtectedResourceVisitor {
+        ManifestInstantiationEntryVisitor {
 
     private final ManifestExtensionHandler extensionHandler;
 
@@ -61,9 +59,6 @@ class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameter
     @Override
     public void visit(ManifestProtectedResource manifestProtectedResource) {
         extensionHandler.handleComponentBaseExtension(manifestProtectedResource, ManifestProtectedResource.class);
-        if (manifestProtectedResource.getIntegrity() != null) {
-            manifestProtectedResource.getIntegrity().accept(this);
-        }
     }
 
     @Override
@@ -98,10 +93,5 @@ class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameter
     @Override
     public void visit(ManifestTarget target) {
         extensionHandler.handleComponentBaseExtension(target, ManifestTarget.class);
-    }
-
-    @Override
-    public void visit(ManifestProtectedResourceIntegrity integrity) {
-        extensionHandler.handleComponentBaseExtension(integrity, ManifestProtectedResourceIntegrity.class);
     }
 }

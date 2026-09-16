@@ -58,8 +58,8 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: Empty root.targets is rejected at both gates
-     *   Given instantiation.root.targets is []
+     * Scenario: Empty root targets are rejected at both gates
+     *   Given the type: root instantiation[] entry has targets: []
      *   When instantiate validates equivalent content
      *   Then instantiate also returns 400 with the same rule and a hint
      *   And no Git mutation runs
@@ -77,7 +77,8 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
     /*
      * Feature: Structural validation at publish and instantiate
      * Scenario: Unused repository key is rejected at both gates
-     *   Given a key "orphan" with no root or composition target referencing it
+     *   Given targetRepositories[] includes key "orphan"
+     *   And no instantiation[].targets[].repo references it
      *   When instantiate validates
      *   Then 400 lists the unused key and a hint to add a route or remove the key
      */
@@ -93,7 +94,8 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
     /*
      * Feature: Structural validation at publish and instantiate
      * Scenario: Nested path-prefix on the same key is rejected at both gates
-     *   Given a route with path "./" and another with path "data-plane/storage" on the same key
+     *   Given two instantiation[].targets[] share the same repo
+     *   And their destinationPath values are "./" and "data-plane/storage"
      *   When instantiate validates
      *   Then 400 explains nested path coverage is forbidden and hints to use sibling destinations
      */
@@ -109,9 +111,9 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
     /*
      * Feature: Structural validation at publish and instantiate
      * Scenario: Exact overlapping destinations on the same key are rejected at both gates
-     *   Given two routes with the same repository key and the same normalized path
+     *   Given two instantiation[].targets[] share the same repo and the same normalized destinationPath
      *   When instantiate validates
-     *   Then 400 lists the duplicate (repository, path) and a hint to make destinations unique
+     *   Then 400 lists the duplicate (repo, destinationPath) and a hint to make destinations unique
      */
     @Test
     void whenExactOverlappingDestinationsThenIssueWithHint() throws IOException {
@@ -172,7 +174,10 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: Missing instantiation.root.repository is rejected at both gates
+     * Scenario: Missing isRoot target is rejected at both gates
+     *   Given no targetRepositories[] entry sets isRoot: true
+     *   When instantiate validates
+     *   Then 400 names targetRepositories and hints to set isRoot: true
      */
     @Test
     void whenMissingRootRepositoryThenIssueWithHint() throws IOException {
@@ -186,7 +191,10 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: instantiation.root.repository that is not a declared key is rejected at both gates
+     * Scenario: Route repo that is not a declared key is rejected at both gates
+     *   Given instantiation[].targets[].repo is "unknown-repo"
+     *   When instantiate validates
+     *   Then 400 names the field and hints to use a declared targetRepositories[].key
      */
     @Test
     void whenUnknownRootRepositoryThenIssueWithHint() throws IOException {
@@ -194,6 +202,18 @@ class InstantiateBlueprintVersionOdmBlueprintManifestOutboundPortTest {
         assertThat(issues).anySatisfy(issue -> {
             assertThat(issue.problem()).contains("unknown-repo");
             assertThat(issue.hint()).isNotBlank();
+        });
+    }
+
+    @Test
+    void whenUnknownProtectedResourceRepositoryThenIssueWithHint() throws IOException {
+        List<InstantiationValidationIssue> issues = collect(
+                "/manifest/invalid/unknown-protected-resource-repository.yaml");
+        assertThat(issues).anySatisfy(issue -> {
+            assertThat(issue.fieldPath()).contains("protectedResources");
+            assertThat(issue.fieldPath()).contains("repository");
+            assertThat(issue.problem()).contains("targetRepositories[].key");
+            assertThat(issue.hint()).containsIgnoringCase("omit");
         });
     }
 

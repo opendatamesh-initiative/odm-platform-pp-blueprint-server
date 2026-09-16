@@ -10,10 +10,8 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.Manif
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.protectedresource.ManifestProtectedResourceIntegrity;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -22,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 class OdmBlueprintManifestAutoFillerVisitor implements ManifestVisitor, ManifestParameterVisitor,
-        ManifestProtectedResourceVisitor, ManifestInstantiationEntryVisitor {
+        ManifestInstantiationEntryVisitor {
 
     private final String blueprintName;
 
@@ -80,11 +78,6 @@ class OdmBlueprintManifestAutoFillerVisitor implements ManifestVisitor, Manifest
     @Override
     public void visit(ManifestParameterUi ui) {
         // No auto fill for parameter ui
-    }
-
-    @Override
-    public void visit(ManifestProtectedResourceIntegrity integrity) {
-        // No auto fill for protected resource integrity
     }
 
     @Override

@@ -136,6 +136,10 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             assertThat(getResponse.getBody().getName()).isEqualTo(prefix + "-version");
             assertThat(getResponse.getBody().getVersionNumber()).isEqualTo("1.0.0");
             assertThat(getResponse.getBody().getCreatedBy()).isEqualTo("it-created-by");
+            JsonNode storedProtected = getResponse.getBody().getContent().path("protectedResources");
+            assertThat(storedProtected.isArray()).isTrue();
+            assertThat(storedProtected.get(0).has("repository")).isFalse();
+            assertThat(storedProtected.get(1).has("repository")).isFalse();
 
             rest.delete(apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + created.getUuid()));
         } finally {
@@ -645,11 +649,11 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: Empty root.targets is rejected at both gates
-     *   Given instantiation.root.targets is []
+     * Scenario: Empty root targets are rejected at both gates
+     *   Given the type: root instantiation[] entry has targets: []
      *   When the client publishes the version
      *   Then the response status is 400
-     *   And the message states root.targets must be non-empty and includes a hint
+     *   And the message states instantiation[].targets must be non-empty and includes a hint
      */
     @Test
     public void whenPublishEmptyRootTargetsThenReturn400WithHint() throws IOException {
@@ -664,10 +668,10 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
      *   As an author
      *   I want the same structural rules before publish and before instantiate
      *   So that invalid routing never reaches Git and every problem is listed with a hint
-     * Scenario: Missing instantiation.root.repository is rejected at both gates
-     *   Given instantiation.root.repository is absent or blank
+     * Scenario: Missing isRoot target is rejected at both gates
+     *   Given no targetRepositories[] entry sets isRoot: true
      *   When publish or instantiate validates
-     *   Then 400 names instantiation.root.repository and hints to set it to a declared repositories[].key
+     *   Then 400 names targetRepositories and hints to set isRoot: true
      *   And no Git mutation runs
      */
     @Test
@@ -680,10 +684,10 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
 
     /*
      * Feature: Structural validation at publish and instantiate
-     * Scenario: instantiation.root.repository that is not a declared key is rejected at both gates
-     *   Given instantiation.root.repository is "unknown-repo"
+     * Scenario: Route repo that is not a declared key is rejected at both gates
+     *   Given instantiation[].targets[].repo is "unknown-repo"
      *   When publish or instantiate validates
-     *   Then 400 names the field and hints to use a declared instantiation.repositories[].key
+     *   Then 400 names the field and hints to use a declared targetRepositories[].key
      */
     @Test
     public void whenPublishUnknownRootRepositoryThenReturn400WithHint() throws IOException {
@@ -692,6 +696,211 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                 "unknown-repo",
                 "declared in targetRepositories[].key");
     }
+
+    /**
+     * Feature: Protected-resources destination key
+     * Scenario: Unknown repository key is rejected at publish
+     *   Given a blueprint whose `protectedResources[].repository` is not a declared targetRepositories key
+     *   When the version is published
+     *   Then the response is 400
+     *   And the error names `protectedResources[].repository` and hints to use a declared key or omit it
+     */
+    @Test
+    public void whenPublishUnknownProtectedResourceRepositoryThenReturn400WithHint() throws IOException {
+        assertPublishInvalidManifestReturns400WithHint(
+                "/manifest/invalid/unknown-protected-resource-repository.yaml",
+                "protectedResources",
+                "omit");
+    }
+
+    /**
+     * Feature: Protected-resources destination key
+     * Scenario: Present repository key matching the explicit root is accepted
+     *   Given a 1→1 blueprint with `protectedResources[].repository` equal to the isRoot target key
+     *   When the version is published
+     *   Then the response is 201
+     */
+    @Test
+    public void whenPublishProtectedResourceRepositoryIsRootKeyThenReturn201() throws IOException {
+        String prefix = "pubProtRootKey";
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(buildParentRepo());
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            ObjectNode content = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE);
+            for (JsonNode node : content.withArray("protectedResources")) {
+                ((ObjectNode) node).put("repository", "main-repository");
+            }
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    content
+            );
+
+            ResponseEntity<PublishBlueprintVersionResponseRes> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    PublishBlueprintVersionResponseRes.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getBlueprintVersion()).isNotNull();
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /**
+     * Feature: Protected-resource manifest ownership
+     *
+     * Scenario: Publication accepts omitted repository when root is not first
+     *   Given a valid manifest whose root target is not first
+     *   And a protected resource omits repository
+     *   When the version is published
+     *   Then publication returns 201
+     *
+     * Publication-only: this IT does not evaluate integrity. Explicit-root comparison
+     * (including a non-first {@code isRoot} key) is
+     * {@link org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources.EvaluateProtectedResourcesIntegrityTest#whenRepositoryOmittedThenResolveExplicitRootEvenIfNotFirst}.
+     */
+    @Test
+    public void whenRepositoryOmittedThenPublishAcceptsExplicitRootShorthand() throws IOException {
+        String prefix = "pubProtOmitRepo";
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(buildParentRepo());
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            ObjectNode content = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                    "/manifest/example-2.3-polyrepo-no-composition.yaml");
+            ArrayNode protectedResources = content.putArray("protectedResources");
+            protectedResources.addObject().put("path", "application/**");
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "0.5.0",
+                    content
+            );
+
+            ResponseEntity<PublishBlueprintVersionResponseRes> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    PublishBlueprintVersionResponseRes.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            assertThat(response.getBody()).isNotNull();
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /**
+     * Feature: Protected-resource manifest ownership
+     *
+     * Scenario: Module with protected resources is rejected
+     *   Given a catalog MODULE manifest with a non-empty protectedResources list
+     *   When the Module version is published
+     *   Then publication returns 400
+     *   And the message tells the author to declare final paths on the parent Blueprint
+     */
+    @Test
+    public void whenPublishModuleWithProtectedResourcesThenReturn400() throws IOException {
+        String prefix = "moduleProtPublish-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        BlueprintRes moduleBlueprint = new BlueprintRes();
+        moduleBlueprint.setName(prefix + "-bp");
+        moduleBlueprint.setDisplayName(prefix + "-display");
+        moduleBlueprint.setDescription(prefix + "-description");
+        moduleBlueprint.setBlueprintType(BlueprintTypeRes.MODULE);
+        moduleBlueprint.setBlueprintRepo(buildModuleRepo());
+
+        ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(moduleBlueprint),
+                BlueprintRes.class);
+        assertThat(blueprintResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = blueprintResponse.getBody().getUuid();
+
+        try {
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprintResponse.getBody(),
+                    prefix + "-version",
+                    "1.0.0",
+                    ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE));
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("A Blueprint module must not declare protectedResources");
+            assertThat(response.getBody()).contains("declare final protected paths on the parent Blueprint");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /**
+     * Feature: Protected-resource manifest ownership
+     *
+     * Scenario: Parent composing a Module with protected resources is rejected
+     *   Given a referenced catalog MODULE version whose manifest has a non-empty protectedResources list
+     *   When the parent Blueprint is published
+     *   Then publication returns 400
+     *   And the aggregated issue tells the author to declare final paths on the parent Blueprint
+     */
+    @Test
+    public void whenPublishParentComposingModuleWithProtectedResourcesThenReturn400() throws IOException {
+        ObjectNode moduleManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE);
+        moduleManifest.set("parameters", OBJECT_MAPPER.createArrayNode());
+        StoredModule storage = createStoredModule("compose-storage-protected", "3.0.1", moduleManifest);
+        ObjectNode servingManifest = (ObjectNode) moduleManifest.deepCopy();
+        servingManifest.set("protectedResources", OBJECT_MAPPER.createArrayNode());
+        StoredModule serving = createStoredModule("compose-serving-clean", "1.4.0", servingManifest);
+
+        ObjectNode parentManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(
+                "/manifest/example-2.2-monorepo-composition.yaml");
+        rewriteCompositionRef(parentManifest, "storage", storage);
+        rewriteCompositionRef(parentManifest, "serving", serving);
+        for (JsonNode node : parentManifest.get("composition")) {
+            ((ObjectNode) node).set("parameterMapping", OBJECT_MAPPER.createObjectNode());
+        }
+
+        try {
+            assertPublishParentWithModuleReturns400(
+                    parentManifest, storage, "declares protectedResources");
+        } finally {
+            deleteStoredModule(storage);
+            deleteStoredModule(serving);
+        }
+    }
+
 
     /*
      * Feature: Structural validation at publish and instantiate
@@ -927,6 +1136,7 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
     public void whenPublishParentComposingModuleThenSucceed() throws IOException {
         ObjectNode moduleManifest = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE);
         moduleManifest.set("parameters", OBJECT_MAPPER.createArrayNode());
+        moduleManifest.set("protectedResources", OBJECT_MAPPER.createArrayNode());
 
         StoredModule storage = createStoredModule("compose-storage-module", "3.0.1", moduleManifest);
         StoredModule serving = createStoredModule("compose-serving-module", "1.4.0", moduleManifest);
@@ -1187,6 +1397,17 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
             String expectedProblemFragment,
             String expectedHintFragment
     ) throws IOException {
+        assertPublishInvalidContentReturns400WithHint(
+                ManifestYamlTestSupport.readYamlTreeFromClasspath(classpathManifest),
+                expectedProblemFragment,
+                expectedHintFragment);
+    }
+
+    private void assertPublishInvalidContentReturns400WithHint(
+            JsonNode content,
+            String expectedProblemFragment,
+            String expectedHintFragment
+    ) throws IOException {
         String prefix = "pubStruct" + expectedProblemFragment.replaceAll("[^a-zA-Z0-9]", "").substring(0,
                 Math.min(8, expectedProblemFragment.replaceAll("[^a-zA-Z0-9]", "").length()));
         BlueprintRes blueprint = new BlueprintRes();
@@ -1224,7 +1445,7 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
                     blueprintResponse.getBody(),
                     prefix + "-version",
                     "1.0.0",
-                    ManifestYamlTestSupport.readYamlTreeFromClasspath(classpathManifest)
+                    content
             );
 
             ResponseEntity<String> response = rest.postForEntity(
