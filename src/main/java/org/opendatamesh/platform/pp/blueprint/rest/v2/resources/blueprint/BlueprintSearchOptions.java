@@ -26,7 +26,7 @@ public class BlueprintSearchOptions {
     private BlueprintTypeRes blueprintType;
 
     @Parameter(
-            description = "Filter blueprints that have any of these label UUIDs (match any)."
+            description = "Filter blueprints that have all of these label UUIDs (match all)."
     )
     private List<String> labelUuids;
 

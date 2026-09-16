@@ -10,7 +10,7 @@ import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.exceptions.ResourceConflictException;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.label.entities.Label;
-import org.opendatamesh.platform.pp.blueprint.label.repositories.LabelsRepository;
+import org.opendatamesh.platform.pp.blueprint.label.services.core.LabelService;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintSearchOptions;
@@ -33,13 +33,13 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
 
     private final BlueprintMapper mapper;
     private final BlueprintsRepository repository;
-    private final LabelsRepository labelsRepository;
+    private final LabelService labelService;
 
     @Autowired
-    public BlueprintServiceImpl(BlueprintMapper mapper, BlueprintsRepository repository, LabelsRepository labelsRepository) {
+    public BlueprintServiceImpl(BlueprintMapper mapper, BlueprintsRepository repository, LabelService labelService) {
         this.mapper = mapper;
         this.repository = repository;
-        this.labelsRepository = labelsRepository;
+        this.labelService = labelService;
     }
 
     @Override
@@ -61,7 +61,7 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
                 specs.add(BlueprintsRepository.Specs.hasBlueprintType(BlueprintType.valueOf(filters.getBlueprintType().name())));
             }
             if (!CollectionUtils.isEmpty(filters.getLabelUuids())) {
-                specs.add(BlueprintsRepository.Specs.hasAnyLabelUuid(filters.getLabelUuids()));
+                specs.add(BlueprintsRepository.Specs.hasAllLabelUuids(filters.getLabelUuids()));
             }
         }
         return SpecsUtils.combineWithAnd(specs);
@@ -244,8 +244,7 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
         Set<Label> managedLabels = new HashSet<>();
         for (Label label : blueprint.getLabels()) {
             String uuid = label.getUuid();
-            Label managed = labelsRepository.findById(uuid)
-                    .orElseThrow(() -> new BadRequestException("Unknown label uuid: " + uuid));
+            Label managed = labelService.findOne(uuid);
             managedLabels.add(managed);
         }
         blueprint.setLabels(managedLabels);

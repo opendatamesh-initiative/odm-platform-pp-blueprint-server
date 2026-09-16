@@ -10,7 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "labels")
+@Table(name = "blueprints_labels")
 public class Label extends VersionedEntity {
 
     @Id

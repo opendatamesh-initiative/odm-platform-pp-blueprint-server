@@ -1,6 +1,9 @@
 package org.opendatamesh.platform.pp.blueprint.blueprint.repositories;
 
 import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.BlueprintType;
 import org.opendatamesh.platform.pp.blueprint.blueprint.entities.Blueprint_;
@@ -11,7 +14,9 @@ import org.opendatamesh.platform.pp.blueprint.utils.repositories.SpecsUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 public interface BlueprintsRepository extends PagingAndSortingAndSpecificationExecutorRepository<Blueprint, String> {
 
@@ -56,16 +61,30 @@ public interface BlueprintsRepository extends PagingAndSortingAndSpecificationEx
             };
         }
 
-        public static Specification<Blueprint> hasAnyLabelUuid(Collection<String> labelUuids) {
+        public static Specification<Blueprint> hasAllLabelUuids(Collection<String> labelUuids) {
             return (root, query, cb) -> {
                 if (labelUuids == null || labelUuids.isEmpty()) {
                     return cb.conjunction();
                 }
-                if (query != null) {
-                    query.distinct(true);
+                List<Predicate> predicates = new ArrayList<>();
+                for (String labelUuid : labelUuids) {
+                    if (!StringUtils.hasText(labelUuid)) {
+                        continue;
+                    }
+                    Subquery<String> subquery = query.subquery(String.class);
+                    Root<Blueprint> subRoot = subquery.from(Blueprint.class);
+                    Join<Blueprint, Label> labels = subRoot.join(Blueprint_.labels);
+                    subquery.select(subRoot.get(Blueprint_.uuid))
+                            .where(
+                                    cb.equal(subRoot.get(Blueprint_.uuid), root.get(Blueprint_.uuid)),
+                                    cb.equal(labels.get(Label_.uuid), labelUuid)
+                            );
+                    predicates.add(cb.exists(subquery));
                 }
-                Join<Blueprint, Label> labels = root.join(Blueprint_.labels);
-                return labels.get(Label_.uuid).in(labelUuids);
+                if (predicates.isEmpty()) {
+                    return cb.conjunction();
+                }
+                return cb.and(predicates.toArray(Predicate[]::new));
             };
         }
     }

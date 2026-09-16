@@ -1393,6 +1393,8 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
         blueprint.setLabels(List.of(labelStub(label.getUuid())));
 
         ResponseEntity<BlueprintRes> response = rest.postForEntity(
@@ -1437,6 +1439,8 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
         blueprint.setLabels(List.of(labelStub(firstLabel.getUuid())));
 
         ResponseEntity<BlueprintRes> created = rest.postForEntity(
@@ -1453,6 +1457,8 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
             update.setName(namePrefix + "-bp");
             update.setDisplayName(namePrefix + "-display");
             update.setDescription(namePrefix + "-description");
+            update.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+            update.setBlueprintRepo(validRepo("/template"));
             update.setLabels(List.of(labelStub(secondLabel.getUuid())));
 
             ResponseEntity<BlueprintRes> response = rest.exchange(
@@ -1480,16 +1486,18 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
     /**
      * Feature: Create blueprint — unknown label uuid
      * When the client sends POST with a label uuid that does not exist
-     * Then the response status is 400
+     * Then the response status is 404 (same reconcile pattern as missing blueprint on a version)
      */
     @Test
-    public void whenCreateBlueprintWithUnknownLabelUuidThenReturnBadRequest() {
-        String namePrefix = "whenCreateBlueprintWithUnknownLabelUuidThenReturnBadRequest";
+    public void whenCreateBlueprintWithUnknownLabelUuidThenReturnNotFound() {
+        String namePrefix = "whenCreateBlueprintWithUnknownLabelUuidThenReturnNotFound";
 
         BlueprintRes blueprint = new BlueprintRes();
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
         blueprint.setLabels(List.of(labelStub(UUID.randomUUID().toString())));
 
         ResponseEntity<String> response = rest.postForEntity(
@@ -1498,7 +1506,7 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
                 String.class
         );
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     /**
@@ -1515,6 +1523,8 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
         blueprint.setName(namePrefix + "-bp");
         blueprint.setDisplayName(namePrefix + "-display");
         blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
         blueprint.setLabels(List.of(labelStub(label.getUuid()), labelStub(label.getUuid())));
 
         ResponseEntity<String> response = rest.postForEntity(
@@ -1529,44 +1539,48 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
     }
 
     /**
-     * Feature: Search blueprints — labelUuids match any
-     * Given two blueprints and two labels
-     * When filtering by one label uuid, only the assigned blueprint is returned
-     * When filtering by both uuids, the union is returned
+     * Feature: Search blueprints — labelUuids match all (superset allowed)
+     * Given Blueprint-1 has Label-1 and Blueprint-2 has Label-1 and Label-2
+     * When filtering by Label-1, both blueprints are returned
+     * When filtering by Label-1 and Label-2, only Blueprint-2 is returned
      * When composing with name, both filters apply
      */
     @Test
-    public void whenSearchBlueprintsByLabelUuidsThenMatchAnyAndComposeWithName() {
-        String namePrefix = "whenSearchBlueprintsByLabelUuidsThenMatchAnyAndComposeWithName";
+    public void whenSearchBlueprintsByLabelUuidsThenMatchAllAndComposeWithName() {
+        String namePrefix = "whenSearchBlueprintsByLabelUuidsThenMatchAllAndComposeWithName";
         LabelRes labelA = createLabel(namePrefix + "-labelA", "#AAAAAA");
         LabelRes labelB = createLabel(namePrefix + "-labelB", "#BBBBBB");
 
-        BlueprintRes blueprintA = new BlueprintRes();
-        blueprintA.setName(namePrefix + "-bpA");
-        blueprintA.setDisplayName(namePrefix + "-displayA");
-        blueprintA.setDescription(namePrefix + "-descriptionA");
-        blueprintA.setLabels(List.of(labelStub(labelA.getUuid())));
+        BlueprintRes blueprint1 = new BlueprintRes();
+        blueprint1.setName(namePrefix + "-bp1");
+        blueprint1.setDisplayName(namePrefix + "-display1");
+        blueprint1.setDescription(namePrefix + "-description1");
+        blueprint1.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint1.setBlueprintRepo(validRepo("/template"));
+        blueprint1.setLabels(List.of(labelStub(labelA.getUuid())));
 
-        BlueprintRes blueprintB = new BlueprintRes();
-        blueprintB.setName(namePrefix + "-bpB");
-        blueprintB.setDisplayName(namePrefix + "-displayB");
-        blueprintB.setDescription(namePrefix + "-descriptionB");
-        blueprintB.setLabels(List.of(labelStub(labelB.getUuid())));
+        BlueprintRes blueprint2 = new BlueprintRes();
+        blueprint2.setName(namePrefix + "-bp2");
+        blueprint2.setDisplayName(namePrefix + "-display2");
+        blueprint2.setDescription(namePrefix + "-description2");
+        blueprint2.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint2.setBlueprintRepo(validRepo("/template"));
+        blueprint2.setLabels(List.of(labelStub(labelA.getUuid()), labelStub(labelB.getUuid())));
 
-        ResponseEntity<BlueprintRes> createdA = rest.postForEntity(
+        ResponseEntity<BlueprintRes> created1 = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
-                new HttpEntity<>(blueprintA),
+                new HttpEntity<>(blueprint1),
                 BlueprintRes.class
         );
-        ResponseEntity<BlueprintRes> createdB = rest.postForEntity(
+        ResponseEntity<BlueprintRes> created2 = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),
-                new HttpEntity<>(blueprintB),
+                new HttpEntity<>(blueprint2),
                 BlueprintRes.class
         );
-        assertThat(createdA.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(createdB.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        String uuidA = createdA.getBody().getUuid();
-        String uuidB = createdB.getBody().getUuid();
+        assertThat(created1.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created2.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String uuid1 = created1.getBody().getUuid();
+        String uuid2 = created2.getBody().getUuid();
 
         try {
             ResponseEntity<JsonNode> filterOne = rest.getForEntity(
@@ -1574,32 +1588,30 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
                     JsonNode.class
             );
             assertThat(filterOne.getStatusCode()).isEqualTo(HttpStatus.OK);
-            JsonNode contentOne = filterOne.getBody().get("content");
-            assertThat(contentOne).isNotNull();
-            assertThat(contentOne.size()).isGreaterThanOrEqualTo(1);
-            for (JsonNode item : contentOne) {
-                assertThat(item.get("uuid").asText()).isNotEqualTo(uuidB);
-            }
-            assertThat(uuidsIn(contentOne)).contains(uuidA);
+            assertThat(uuidsIn(filterOne.getBody().get("content"))).contains(uuid1, uuid2);
 
             ResponseEntity<JsonNode> filterBoth = rest.getForEntity(
                     apiUrl(RoutesV2.BLUEPRINTS, "?labelUuids=" + labelA.getUuid() + "&labelUuids=" + labelB.getUuid()),
                     JsonNode.class
             );
             assertThat(filterBoth.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(uuidsIn(filterBoth.getBody().get("content"))).contains(uuidA, uuidB);
+            JsonNode contentBoth = filterBoth.getBody().get("content");
+            assertThat(uuidsIn(contentBoth)).contains(uuid2);
+            for (JsonNode item : contentBoth) {
+                assertThat(item.get("uuid").asText()).isNotEqualTo(uuid1);
+            }
 
             ResponseEntity<JsonNode> composeName = rest.getForEntity(
-                    apiUrl(RoutesV2.BLUEPRINTS, "?name=" + blueprintA.getName() + "&labelUuids=" + labelA.getUuid()),
+                    apiUrl(RoutesV2.BLUEPRINTS, "?name=" + blueprint2.getName() + "&labelUuids=" + labelA.getUuid() + "&labelUuids=" + labelB.getUuid()),
                     JsonNode.class
             );
             assertThat(composeName.getStatusCode()).isEqualTo(HttpStatus.OK);
             JsonNode composedContent = composeName.getBody().get("content");
             assertThat(composedContent.size()).isEqualTo(1);
-            assertThat(composedContent.get(0).get("uuid").asText()).isEqualTo(uuidA);
+            assertThat(composedContent.get(0).get("uuid").asText()).isEqualTo(uuid2);
         } finally {
-            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuidA));
-            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuidB));
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid1));
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid2));
             rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelA.getUuid()));
             rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelB.getUuid()));
         }
@@ -1619,6 +1631,8 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
         unlabeled.setName(namePrefix + "-bp");
         unlabeled.setDisplayName(namePrefix + "-display");
         unlabeled.setDescription(namePrefix + "-description");
+        unlabeled.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        unlabeled.setBlueprintRepo(validRepo("/template"));
 
         ResponseEntity<BlueprintRes> created = rest.postForEntity(
                 apiUrl(RoutesV2.BLUEPRINTS),

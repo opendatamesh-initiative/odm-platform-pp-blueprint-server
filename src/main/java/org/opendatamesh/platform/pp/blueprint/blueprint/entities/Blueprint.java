@@ -38,7 +38,7 @@ public class Blueprint extends VersionedEntity {
 
     @ManyToMany
     @JoinTable(
-            name = "blueprints_labels",
+            name = "blueprints_labels_rel",
             joinColumns = @JoinColumn(name = "blueprint_uuid"),
             inverseJoinColumns = @JoinColumn(name = "label_uuid")
     )
