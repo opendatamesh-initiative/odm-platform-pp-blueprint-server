@@ -9,6 +9,8 @@ import org.opendatamesh.platform.pp.blueprint.blueprint.repositories.BlueprintsR
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.exceptions.ResourceConflictException;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
+import org.opendatamesh.platform.pp.blueprint.label.entities.Label;
+import org.opendatamesh.platform.pp.blueprint.label.services.core.LabelService;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintSearchOptions;
@@ -18,21 +20,26 @@ import org.opendatamesh.platform.pp.blueprint.utils.services.GenericMappedAndFil
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImpl<BlueprintSearchOptions, BlueprintRes, Blueprint, String> implements BlueprintService {
 
     private final BlueprintMapper mapper;
     private final BlueprintsRepository repository;
+    private final LabelService labelService;
 
     @Autowired
-    public BlueprintServiceImpl(BlueprintMapper mapper, BlueprintsRepository repository) {
+    public BlueprintServiceImpl(BlueprintMapper mapper, BlueprintsRepository repository, LabelService labelService) {
         this.mapper = mapper;
         this.repository = repository;
+        this.labelService = labelService;
     }
 
     @Override
@@ -52,6 +59,9 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
             }
             if (filters.getBlueprintType() != null) {
                 specs.add(BlueprintsRepository.Specs.hasBlueprintType(BlueprintType.valueOf(filters.getBlueprintType().name())));
+            }
+            if (!CollectionUtils.isEmpty(filters.getLabelUuids())) {
+                specs.add(BlueprintsRepository.Specs.hasAllLabelUuids(filters.getLabelUuids()));
             }
         }
         return SpecsUtils.combineWithAnd(specs);
@@ -78,6 +88,7 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
         if (objectToValidate.getBlueprintRepo() != null) {
             validateBlueprintRepo(objectToValidate.getBlueprintRepo());
         }
+        validateLabels(objectToValidate);
     }
 
     private void validateRequiredFields(Blueprint blueprint) {
@@ -178,6 +189,7 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
         if (objectToReconcile.getBlueprintRepo() != null) {
             reconcileBlueprintRepo(objectToReconcile.getBlueprintRepo(), objectToReconcile);
         }
+        reconcileLabels(objectToReconcile);
     }
 
     private void reconcileBlueprintRepo(BlueprintRepo blueprintRepo, Blueprint parentBlueprint) {
@@ -207,6 +219,35 @@ public class BlueprintServiceImpl extends GenericMappedAndFilteredCrudServiceImp
             }
         }
         return super.overwriteResource(uuid, resource);
+    }
+
+    private void validateLabels(Blueprint blueprint) {
+        if (blueprint.getLabels() == null) {
+            return;
+        }
+        Set<String> seenUuids = new HashSet<>();
+        for (Label label : blueprint.getLabels()) {
+            if (label == null || !StringUtils.hasText(label.getUuid())) {
+                throw new BadRequestException("Label uuid is required");
+            }
+            if (!seenUuids.add(label.getUuid())) {
+                throw new BadRequestException("A blueprint cannot have the same label twice");
+            }
+        }
+    }
+
+    private void reconcileLabels(Blueprint blueprint) {
+        if (blueprint.getLabels() == null) {
+            blueprint.setLabels(new HashSet<>());
+            return;
+        }
+        Set<Label> managedLabels = new HashSet<>();
+        for (Label label : blueprint.getLabels()) {
+            String uuid = label.getUuid();
+            Label managed = labelService.findOne(uuid);
+            managedLabels.add(managed);
+        }
+        blueprint.setLabels(managedLabels);
     }
 
     private void validateNaturalKeyConstraints(Blueprint blueprint, String excludeUuid) {

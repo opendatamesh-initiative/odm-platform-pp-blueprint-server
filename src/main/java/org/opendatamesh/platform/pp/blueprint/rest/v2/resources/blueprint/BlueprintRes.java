@@ -1,7 +1,10 @@
 package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.label.LabelRes;
 import org.opendatamesh.platform.pp.blueprint.utils.resources.VersionedRes;
+
+import java.util.List;
 
 @Schema(name = "blueprints")
 public class BlueprintRes extends VersionedRes {
@@ -26,6 +29,9 @@ public class BlueprintRes extends VersionedRes {
     private BlueprintTypeRes blueprintType;
 
     private BlueprintRepoRes blueprintRepo;
+
+    @Schema(description = "Catalog labels assigned to this blueprint")
+    private List<LabelRes> labels;
 
     public String getUuid() {
         return uuid;
@@ -73,6 +79,14 @@ public class BlueprintRes extends VersionedRes {
 
     public void setBlueprintRepo(BlueprintRepoRes blueprintRepo) {
         this.blueprintRepo = blueprintRepo;
+    }
+
+    public List<LabelRes> getLabels() {
+        return labels;
+    }
+
+    public void setLabels(List<LabelRes> labels) {
+        this.labels = labels;
     }
 
     @Schema(name = "blueprint_repositories")

@@ -9,6 +9,7 @@ import org.opendatamesh.platform.pp.blueprint.blueprint.services.usecases.update
 import org.opendatamesh.platform.pp.blueprint.blueprint.services.usecases.updatedocumentationfields.UpdateBlueprintDocumentationFieldsFactory;
 import org.opendatamesh.platform.pp.blueprint.blueprint.services.usecases.updatedocumentationfields.UpdateBlueprintDocumentationFieldsPresenter;
 import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
+import org.opendatamesh.platform.pp.blueprint.label.entities.Label;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
@@ -16,9 +17,12 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecas
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.register.RegisterBlueprintResponseRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.BlueprintUpdateDocumentationFieldsCommandRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.usecases.updatedocumentationfields.UpdateBlueprintDocumentationFieldsResponseRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.label.LabelMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+
+import java.util.List;
 
 @Service
 public class BlueprintUseCasesService {
@@ -27,6 +31,7 @@ public class BlueprintUseCasesService {
     private final UpdateBlueprintDocumentationFieldsFactory updateBlueprintDocumentationFieldsFactory;
     private final BlueprintMapper blueprintMapper;
     private final BlueprintRepoMapper blueprintRepoMapper;
+    private final LabelMapper labelMapper;
     private final ObjectMapper objectMapper;
 
     public BlueprintUseCasesService(
@@ -34,12 +39,14 @@ public class BlueprintUseCasesService {
             UpdateBlueprintDocumentationFieldsFactory updateBlueprintDocumentationFieldsFactory,
             BlueprintMapper blueprintMapper,
             BlueprintRepoMapper blueprintRepoMapper,
+            LabelMapper labelMapper,
             ObjectMapper objectMapper
     ) {
         this.registerBlueprintFactory = registerBlueprintFactory;
         this.updateBlueprintDocumentationFieldsFactory = updateBlueprintDocumentationFieldsFactory;
         this.blueprintMapper = blueprintMapper;
         this.blueprintRepoMapper = blueprintRepoMapper;
+        this.labelMapper = labelMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -72,12 +79,20 @@ public class BlueprintUseCasesService {
                     BlueprintRes.BlueprintRepoRes.class);
                     blueprintRepo = blueprintRepoMapper.toEntity(res);
         }
+
+        List<Label> labels = null;
+        if (command.getLabels() != null) {
+            labels = command.getLabels().stream()
+                    .map(labelMapper::toEntity)
+                    .toList();
+        }
         
         UpdateBlueprintDocumentationFieldsCommand domainCommand = new UpdateBlueprintDocumentationFieldsCommand(
                 command.getUuid(),
                 command.getDisplayName(),
                 command.getDescription(),
-                blueprintRepo
+                blueprintRepo,
+                labels
         );
         UpdateResultHolder presenter = new UpdateResultHolder();
         updateBlueprintDocumentationFieldsFactory.buildUpdateBlueprintDocumentationFields(domainCommand, presenter).execute();

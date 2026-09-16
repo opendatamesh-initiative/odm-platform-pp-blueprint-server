@@ -8,12 +8,16 @@ import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.Bluepr
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRepoProviderTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintTypeRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint.BlueprintRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.label.LabelRes;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -1372,5 +1376,316 @@ BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes(
         assertThat(response.getBody().getBlueprintType()).isEqualTo(BlueprintTypeRes.MODULE);
         assertThat(response.getBody().getDisplayName()).isEqualTo("updated");
         rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid));
+    }
+
+    /**
+     * Feature: Create blueprint with existing labels
+     * Given catalog labels exist
+     * When the client sends POST with those label uuids
+     * Then GET returns the assigned labels including name and color
+     */
+    @Test
+    public void whenCreateBlueprintWithExistingLabelsThenGetReturnsLabelNameAndColor() {
+        String namePrefix = "whenCreateBlueprintWithExistingLabelsThenGetReturnsLabelNameAndColor";
+        LabelRes label = createLabel(namePrefix + "-label", "#0E8A16", "Status");
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(label.getUuid())));
+
+        ResponseEntity<BlueprintRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        String blueprintUuid = response.getBody().getUuid();
+
+        try {
+            ResponseEntity<BlueprintRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(getResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(getResponse.getBody().getLabels()).isNotNull();
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getName).containsExactly(label.getName());
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getColor).containsExactly("#0E8A16");
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getGroup).containsExactly("Status");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + label.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Update blueprint — replace assignment set
+     * Given a blueprint assigned to one label
+     * When the client sends PUT with a different label
+     * Then GET returns only the new assignment
+     */
+    @Test
+    public void whenUpdateBlueprintThenReplaceLabelAssignmentSet() {
+        String namePrefix = "whenUpdateBlueprintThenReplaceLabelAssignmentSet";
+        LabelRes firstLabel = createLabel(namePrefix + "-first", "#111111");
+        LabelRes secondLabel = createLabel(namePrefix + "-second", "#222222");
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(firstLabel.getUuid())));
+
+        ResponseEntity<BlueprintRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class
+        );
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = created.getBody().getUuid();
+
+        try {
+            BlueprintRes update = new BlueprintRes();
+            update.setUuid(blueprintUuid);
+            update.setName(namePrefix + "-bp");
+            update.setDisplayName(namePrefix + "-display");
+            update.setDescription(namePrefix + "-description");
+            update.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+            update.setBlueprintRepo(validRepo("/template"));
+            update.setLabels(List.of(labelStub(secondLabel.getUuid())));
+
+            ResponseEntity<BlueprintRes> response = rest.exchange(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    HttpMethod.PUT,
+                    new HttpEntity<>(update),
+                    BlueprintRes.class
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().getLabels()).extracting(LabelRes::getUuid).containsExactly(secondLabel.getUuid());
+
+            ResponseEntity<BlueprintRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid),
+                    BlueprintRes.class
+            );
+            assertThat(getResponse.getBody().getLabels()).extracting(LabelRes::getUuid).containsExactly(secondLabel.getUuid());
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + firstLabel.getUuid()));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + secondLabel.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Create blueprint — unknown label uuid
+     * When the client sends POST with a label uuid that does not exist
+     * Then the response status is 404 (same reconcile pattern as missing blueprint on a version)
+     */
+    @Test
+    public void whenCreateBlueprintWithUnknownLabelUuidThenReturnNotFound() {
+        String namePrefix = "whenCreateBlueprintWithUnknownLabelUuidThenReturnNotFound";
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(UUID.randomUUID().toString())));
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Feature: Create blueprint — duplicate label uuid
+     * When the client sends POST with the same label uuid twice
+     * Then the response status is 400
+     */
+    @Test
+    public void whenCreateBlueprintWithDuplicateLabelUuidThenReturnBadRequest() {
+        String namePrefix = "whenCreateBlueprintWithDuplicateLabelUuidThenReturnBadRequest";
+        LabelRes label = createLabel(namePrefix + "-label", "#ABCDEF");
+
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(namePrefix + "-bp");
+        blueprint.setDisplayName(namePrefix + "-display");
+        blueprint.setDescription(namePrefix + "-description");
+        blueprint.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint.setBlueprintRepo(validRepo("/template"));
+        blueprint.setLabels(List.of(labelStub(label.getUuid()), labelStub(label.getUuid())));
+
+        ResponseEntity<String> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        rest.delete(apiUrl(RoutesV2.LABELS, "/" + label.getUuid()));
+    }
+
+    /**
+     * Feature: Search blueprints — labelUuids match all (superset allowed)
+     * Given Blueprint-1 has Label-1 and Blueprint-2 has Label-1 and Label-2
+     * When filtering by Label-1, both blueprints are returned
+     * When filtering by Label-1 and Label-2, only Blueprint-2 is returned
+     * When composing with name, both filters apply
+     */
+    @Test
+    public void whenSearchBlueprintsByLabelUuidsThenMatchAllAndComposeWithName() {
+        String namePrefix = "whenSearchBlueprintsByLabelUuidsThenMatchAllAndComposeWithName";
+        LabelRes labelA = createLabel(namePrefix + "-labelA", "#AAAAAA");
+        LabelRes labelB = createLabel(namePrefix + "-labelB", "#BBBBBB");
+
+        BlueprintRes blueprint1 = new BlueprintRes();
+        blueprint1.setName(namePrefix + "-bp1");
+        blueprint1.setDisplayName(namePrefix + "-display1");
+        blueprint1.setDescription(namePrefix + "-description1");
+        blueprint1.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint1.setBlueprintRepo(validRepo("/template"));
+        blueprint1.setLabels(List.of(labelStub(labelA.getUuid())));
+
+        BlueprintRes blueprint2 = new BlueprintRes();
+        blueprint2.setName(namePrefix + "-bp2");
+        blueprint2.setDisplayName(namePrefix + "-display2");
+        blueprint2.setDescription(namePrefix + "-description2");
+        blueprint2.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        blueprint2.setBlueprintRepo(validRepo("/template"));
+        blueprint2.setLabels(List.of(labelStub(labelA.getUuid()), labelStub(labelB.getUuid())));
+
+        ResponseEntity<BlueprintRes> created1 = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint1),
+                BlueprintRes.class
+        );
+        ResponseEntity<BlueprintRes> created2 = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint2),
+                BlueprintRes.class
+        );
+        assertThat(created1.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created2.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String uuid1 = created1.getBody().getUuid();
+        String uuid2 = created2.getBody().getUuid();
+
+        try {
+            ResponseEntity<JsonNode> filterOne = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?labelUuids=" + labelA.getUuid()),
+                    JsonNode.class
+            );
+            assertThat(filterOne.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(uuidsIn(filterOne.getBody().get("content"))).contains(uuid1, uuid2);
+
+            ResponseEntity<JsonNode> filterBoth = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?labelUuids=" + labelA.getUuid() + "&labelUuids=" + labelB.getUuid()),
+                    JsonNode.class
+            );
+            assertThat(filterBoth.getStatusCode()).isEqualTo(HttpStatus.OK);
+            JsonNode contentBoth = filterBoth.getBody().get("content");
+            assertThat(uuidsIn(contentBoth)).contains(uuid2);
+            for (JsonNode item : contentBoth) {
+                assertThat(item.get("uuid").asText()).isNotEqualTo(uuid1);
+            }
+
+            ResponseEntity<JsonNode> composeName = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?name=" + blueprint2.getName() + "&labelUuids=" + labelA.getUuid() + "&labelUuids=" + labelB.getUuid()),
+                    JsonNode.class
+            );
+            assertThat(composeName.getStatusCode()).isEqualTo(HttpStatus.OK);
+            JsonNode composedContent = composeName.getBody().get("content");
+            assertThat(composedContent.size()).isEqualTo(1);
+            assertThat(composedContent.get(0).get("uuid").asText()).isEqualTo(uuid2);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid1));
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + uuid2));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelA.getUuid()));
+            rest.delete(apiUrl(RoutesV2.LABELS, "/" + labelB.getUuid()));
+        }
+    }
+
+    /**
+     * Feature: Search blueprints — unlabeled still listed without label filter
+     * Given an unlabeled blueprint
+     * When the client searches by name with no labelUuids
+     * Then the unlabeled blueprint is returned
+     */
+    @Test
+    public void whenSearchBlueprintsWithoutLabelFilterThenUnlabeledBlueprintIsReturned() {
+        String namePrefix = "whenSearchBlueprintsWithoutLabelFilterThenUnlabeledBlueprintIsReturned";
+
+        BlueprintRes unlabeled = new BlueprintRes();
+        unlabeled.setName(namePrefix + "-bp");
+        unlabeled.setDisplayName(namePrefix + "-display");
+        unlabeled.setDescription(namePrefix + "-description");
+        unlabeled.setBlueprintType(BlueprintTypeRes.BLUEPRINT);
+        unlabeled.setBlueprintRepo(validRepo("/template"));
+
+        ResponseEntity<BlueprintRes> created = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(unlabeled),
+                BlueprintRes.class
+        );
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String blueprintUuid = created.getBody().getUuid();
+
+        try {
+            ResponseEntity<JsonNode> response = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINTS, "?name=" + unlabeled.getName()),
+                    JsonNode.class
+            );
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(uuidsIn(response.getBody().get("content"))).contains(blueprintUuid);
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    private LabelRes createLabel(String name, String color) {
+        return createLabel(name, color, null);
+    }
+
+    private LabelRes createLabel(String name, String color, String group) {
+        LabelRes label = new LabelRes();
+        label.setName(name);
+        label.setDescription(name + "-desc");
+        label.setColor(color);
+        label.setGroup(group);
+        ResponseEntity<LabelRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.LABELS),
+                new HttpEntity<>(label),
+                LabelRes.class
+        );
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private static LabelRes labelStub(String uuid) {
+        LabelRes stub = new LabelRes();
+        stub.setUuid(uuid);
+        return stub;
+    }
+
+    private static List<String> uuidsIn(JsonNode content) {
+        assertThat(content).isNotNull();
+        assertThat(content.isArray()).isTrue();
+        List<String> uuids = new java.util.ArrayList<>();
+        for (JsonNode item : content) {
+            uuids.add(item.get("uuid").asText());
+        }
+        return uuids;
     }
 }

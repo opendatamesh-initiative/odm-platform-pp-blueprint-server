@@ -4,6 +4,7 @@ public enum RoutesV2 {
 
     GIT_PROVIDERS("/api/v2/pp/blueprint/git-providers"),
     BLUEPRINTS("/api/v2/pp/blueprint/blueprints"),
+    LABELS("/api/v2/pp/blueprint/labels"),
     BLUEPRINT_REGISTER("/api/v2/pp/blueprint/blueprints/register"),
     BLUEPRINT_VERSIONS_UPDATE_DOCUMENTATION_FIELDS("/api/v2/pp/blueprint/blueprints-versions/update-documentation-fields"),
     BLUEPRINT_VERSIONS("/api/v2/pp/blueprint/blueprints-versions"),

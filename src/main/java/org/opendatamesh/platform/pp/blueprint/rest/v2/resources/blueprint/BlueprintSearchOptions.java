@@ -3,6 +3,8 @@ package org.opendatamesh.platform.pp.blueprint.rest.v2.resources.blueprint;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.util.List;
+
 public class BlueprintSearchOptions {
 
     @Parameter(
@@ -22,6 +24,11 @@ public class BlueprintSearchOptions {
             schema = @Schema(implementation = BlueprintTypeRes.class, allowableValues = {"BLUEPRINT", "MODULE"})
     )
     private BlueprintTypeRes blueprintType;
+
+    @Parameter(
+            description = "Filter blueprints that have all of these label UUIDs (match all)."
+    )
+    private List<String> labelUuids;
 
     public String getName() {
         return name;
@@ -45,5 +52,13 @@ public class BlueprintSearchOptions {
 
     public void setBlueprintType(BlueprintTypeRes blueprintType) {
         this.blueprintType = blueprintType;
+    }
+
+    public List<String> getLabelUuids() {
+        return labelUuids;
+    }
+
+    public void setLabelUuids(List<String> labelUuids) {
+        this.labelUuids = labelUuids;
     }
 }
