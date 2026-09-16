@@ -2,5 +2,5 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 
 interface EvaluateProtectedResourcesIntegrityDigestOutboundPort {
 
-    DigestResult computeDigest(WorkingTree tree, String declaredPath);
+    DigestResult computeDigest(CloseableWorkingTree tree, String declaredPath);
 }

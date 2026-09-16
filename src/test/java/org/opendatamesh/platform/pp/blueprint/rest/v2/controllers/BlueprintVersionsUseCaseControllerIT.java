@@ -867,24 +867,6 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
     }
 
     /**
-     * Feature: Lasting protected-resources integrity
-     *
-     * Scenario: Incomplete integrity object is rejected at Blueprint publication
-     *   Given a protected resource includes integrity but omits algorithm or value
-     *   When the Blueprint version is published
-     *   Then publication returns 400
-     *   And evaluation never relies on the stored integrity value
-     */
-    @Test
-    public void whenProtectedIntegrityMissingAlgorithmOrValueThenReturn400() throws IOException {
-        ObjectNode content = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE);
-        ((ObjectNode) content.withArray("protectedResources").get(0))
-                .putObject("integrity")
-                .put("algorithm", "sha256");
-        assertPublishInvalidContentReturns400WithHint(content, "integrity", "value");
-    }
-
-    /**
      * Feature: Protected-resource manifest ownership
      *
      * Scenario: Parent composing a Module with protected resources is rejected

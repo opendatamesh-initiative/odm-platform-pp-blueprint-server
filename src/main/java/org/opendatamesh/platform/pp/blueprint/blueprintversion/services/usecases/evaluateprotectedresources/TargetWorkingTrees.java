@@ -10,15 +10,15 @@ import java.util.Set;
  */
 final class TargetWorkingTrees implements AutoCloseable {
 
-    private final Map<String, WorkingTree> trees;
+    private final Map<String, CloseableWorkingTree> trees;
 
-    TargetWorkingTrees(Map<String, WorkingTree> trees) {
+    TargetWorkingTrees(Map<String, CloseableWorkingTree> trees) {
         this.trees = trees == null
                 ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(trees));
     }
 
-    WorkingTree get(String repositoryKey) {
+    CloseableWorkingTree get(String repositoryKey) {
         return trees.get(repositoryKey);
     }
 
@@ -29,7 +29,7 @@ final class TargetWorkingTrees implements AutoCloseable {
     @Override
     public void close() {
         RuntimeException firstFailure = null;
-        for (WorkingTree tree : trees.values()) {
+        for (CloseableWorkingTree tree : trees.values()) {
             if (tree == null) {
                 continue;
             }
@@ -46,7 +46,7 @@ final class TargetWorkingTrees implements AutoCloseable {
         }
     }
 
-    static TargetWorkingTrees of(Map<String, WorkingTree> trees) {
+    static TargetWorkingTrees of(Map<String, CloseableWorkingTree> trees) {
         return new TargetWorkingTrees(new LinkedHashMap<>(trees));
     }
 }

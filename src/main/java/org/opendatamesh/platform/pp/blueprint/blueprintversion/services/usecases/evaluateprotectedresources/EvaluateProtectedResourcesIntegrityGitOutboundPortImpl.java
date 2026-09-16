@@ -28,7 +28,7 @@ class EvaluateProtectedResourcesIntegrityGitOutboundPortImpl
     }
 
     @Override
-    public WorkingTree clonePublishedDataProductVersion(ProductRepoLocator repo, String tag) {
+    public CloseableWorkingTree clonePublishedDataProductVersion(ProductRepoLocator repo, String tag) {
         HttpHeaders credentials = resolveProductCredentials(repo);
         Path publishedTree = copyPublishedTreeAtTag(repo, tag, credentials);
         return new CloseableWorkingTree(publishedTree);
@@ -46,6 +46,7 @@ class EvaluateProtectedResourcesIntegrityGitOutboundPortImpl
 
     private Path copyPublishedTreeAtTag(ProductRepoLocator repo, String tag, HttpHeaders credentials) {
         Path publishedTree = createTempDirectory();
+        boolean copied = false;
         try {
             GitProvider gitProvider = gitProviderFactory.buildGitProvider(
                     new GitProviderIdentifier(repo.providerType(), repo.providerBaseUrl()),
@@ -56,10 +57,12 @@ class EvaluateProtectedResourcesIntegrityGitOutboundPortImpl
                     new RepositoryPointerTag(tag),
                     cloneDir -> copyTreeSkippingGit(cloneDir.toPath(), publishedTree)
             );
+            copied = true;
             return publishedTree;
-        } catch (RuntimeException e) {
-            CloseableWorkingTree.deleteRecursively(publishedTree);
-            throw e;
+        } finally {
+            if (!copied) {
+                CloseableWorkingTree.deleteRecursively(publishedTree);
+            }
         }
     }
 

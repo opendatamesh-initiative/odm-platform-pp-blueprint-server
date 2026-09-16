@@ -2,5 +2,5 @@ package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecase
 
 interface EvaluateProtectedResourcesIntegrityGitOutboundPort {
 
-    WorkingTree clonePublishedDataProductVersion(ProductRepoLocator repo, String tag);
+    CloseableWorkingTree clonePublishedDataProductVersion(ProductRepoLocator repo, String tag);
 }

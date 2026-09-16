@@ -1,12 +1,17 @@
 package org.opendatamesh.platform.pp.blueprint.blueprintversion.services.usecases.evaluateprotectedresources;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.stream.Stream;
 
-final class CloseableWorkingTree implements WorkingTree {
+class CloseableWorkingTree implements AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(CloseableWorkingTree.class);
 
     private final Path root;
 
@@ -14,8 +19,7 @@ final class CloseableWorkingTree implements WorkingTree {
         this.root = root;
     }
 
-    @Override
-    public Path path() {
+    Path path() {
         return root;
     }
 
@@ -32,12 +36,12 @@ final class CloseableWorkingTree implements WorkingTree {
             walk.sorted(Comparator.reverseOrder()).forEach(p -> {
                 try {
                     Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    // best-effort cleanup
+                } catch (IOException e) {
+                    log.warn("Failed to delete working-tree file {}", p, e);
                 }
             });
-        } catch (IOException ignored) {
-            // best-effort cleanup
+        } catch (IOException e) {
+            log.warn("Failed to walk working tree for cleanup {}", path, e);
         }
     }
 }

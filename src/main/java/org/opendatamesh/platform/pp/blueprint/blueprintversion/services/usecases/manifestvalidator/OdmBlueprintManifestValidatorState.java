@@ -23,7 +23,6 @@ class OdmBlueprintManifestValidatorState {
     String currentParameterDefaultFieldPath;
 
     String currentProtectedResourceFieldPath;
-    String currentProtectedResourceIntegrityFieldPath;
 
     String currentCompositionFieldPath;
 

@@ -16,7 +16,7 @@ class EvaluateProtectedResourcesIntegrityMessageTest {
      * Feature: Protected-resources integrity evaluation
      *
      * Scenario: Failure message names declared path, kind, and files
-     *   Given mismatches for missing on published, contents differ, not produced by the blueprint, and unsupported algorithm
+     *   Given mismatches for missing on published, contents differ, and not produced by the blueprint
      *   When the failure message is formatted
      *   Then the message lists each declared path and the user-facing reason without mentioning digest
      */
@@ -40,20 +40,13 @@ class EvaluateProtectedResourcesIntegrityMessageTest {
                         MismatchKind.MISSING_ON_REINSTANTIATED,
                         List.of("docs/a.md", "docs/b.md"),
                         null
-                ),
-                new ProtectedResourceMismatch(
-                        "secret",
-                        MismatchKind.UNSUPPORTED_ALGORITHM,
-                        List.of(),
-                        "md5"
                 )
         );
         String message = EvaluateProtectedResourcesIntegrity.formatFailureMessage(mismatches);
         assertThat(message).isEqualTo(
                 "Protected resource 'infrastructure/core/**' is missing file 'infrastructure/core/main.tf' from the data product version; "
                         + "Protected resource 'README.md': file contents differ from the blueprint; "
-                        + "Protected resource 'docs/**': files 'docs/a.md', 'docs/b.md' are in the data product version but are not produced by the blueprint; "
-                        + "Protected resource 'secret' uses an integrity check that is not supported"
+                        + "Protected resource 'docs/**': files 'docs/a.md', 'docs/b.md' are in the data product version but are not produced by the blueprint"
         );
     }
 }

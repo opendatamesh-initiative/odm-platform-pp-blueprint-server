@@ -57,7 +57,7 @@ class EvaluateProtectedResourcesIntegrityGitOutboundPortImplTest {
                 "main",
                 "org",
                 "id");
-        try (WorkingTree tree = port.clonePublishedDataProductVersion(locator, "v1.0.0")) {
+        try (CloseableWorkingTree tree = port.clonePublishedDataProductVersion(locator, "v1.0.0")) {
             assertThat(Files.isSymbolicLink(tree.path().resolve("link.txt"))).isTrue();
             DigestResult digest = new EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl()
                     .computeDigest(tree, "link.txt");

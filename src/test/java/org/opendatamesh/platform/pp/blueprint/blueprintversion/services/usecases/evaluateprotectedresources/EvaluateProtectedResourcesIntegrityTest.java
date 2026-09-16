@@ -378,6 +378,40 @@ class EvaluateProtectedResourcesIntegrityTest {
         assertThat(gitPort.refs).isNotEmpty();
     }
 
+    /**
+     * Feature: Protected-resources integrity evaluation
+     *
+     * Scenario: All path mismatches are reported together
+     *   Given two protected paths whose contents differ from the re-instantiation
+     *   When integrity is evaluated
+     *   Then evaluation fails once
+     *   And the failure names both protected paths
+     */
+    @Test
+    void whenSeveralProtectedPathsDifferThenReportAllMismatches(
+            @TempDir Path published, @TempDir Path expected) throws Exception {
+        Files.writeString(published.resolve("docs.md"), "tampered-docs");
+        Files.writeString(published.resolve("core.tf"), "tampered-tf");
+        Files.writeString(expected.resolve("docs.md"), "original-docs");
+        Files.writeString(expected.resolve("core.tf"), "original-tf");
+        CapturingPresenter presenter = new CapturingPresenter();
+        new EvaluateProtectedResourcesIntegrity(
+                command(ROOT_LOCATOR, "root-tag", List.of(), List.of()),
+                presenter,
+                persistency(polyrepoManifest(
+                        protectedResource("docs.md", null),
+                        protectedResource("core.tf", null))),
+                new RecordingGitPort(published),
+                instantiatePort(Map.of("infra-repo", tree(expected), "app-repo", tree(expected))),
+                new EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl()
+        ).execute();
+
+        assertThat(presenter.failed).isTrue();
+        assertThat(presenter.infrastructure).isFalse();
+        assertThat(presenter.mismatches).hasSize(2);
+        assertThat(presenter.message).contains("docs.md").contains("core.tf");
+    }
+
     private static EvaluateProtectedResourcesIntegrityCommand command(
             ProductRepoLocator rootLocator,
             String rootRef,
@@ -427,7 +461,7 @@ class EvaluateProtectedResourcesIntegrityTest {
     }
 
     private static EvaluateProtectedResourcesIntegrityInstantiateOutboundPort instantiatePort(
-            Map<String, WorkingTree> trees
+            Map<String, CloseableWorkingTree> trees
     ) {
         return (version, command) -> TargetWorkingTrees.of(trees);
     }
@@ -455,15 +489,11 @@ class EvaluateProtectedResourcesIntegrityTest {
         return new ProductRepoLocator(url, "GITHUB", "https://github.com", "repo", "main", "org", "id");
     }
 
-    private static WorkingTree tree(Path path) {
-        return new WorkingTree() {
-            @Override
-            public Path path() {
-                return path;
-            }
-
+    private static CloseableWorkingTree tree(Path path) {
+        return new CloseableWorkingTree(path) {
             @Override
             public void close() {
+                // JUnit @TempDir trees must survive try-with-resources in the use case.
             }
         };
     }
@@ -473,6 +503,7 @@ class EvaluateProtectedResourcesIntegrityTest {
         private boolean failed;
         private boolean infrastructure;
         private String message;
+        private List<ProtectedResourceMismatch> mismatches = List.of();
 
         @Override
         public void presentNotApplicable(String reason) {
@@ -488,6 +519,7 @@ class EvaluateProtectedResourcesIntegrityTest {
         @Override
         public void presentFailed(List<ProtectedResourceMismatch> mismatches, String message) {
             this.failed = true;
+            this.mismatches = mismatches;
             this.message = message;
         }
 
@@ -509,7 +541,7 @@ class EvaluateProtectedResourcesIntegrityTest {
         }
 
         @Override
-        public WorkingTree clonePublishedDataProductVersion(ProductRepoLocator repo, String tag) {
+        public CloseableWorkingTree clonePublishedDataProductVersion(ProductRepoLocator repo, String tag) {
             refs.add(tag);
             urls.add(repo == null ? null : repo.remoteUrlHttp());
             if (failure != null) {

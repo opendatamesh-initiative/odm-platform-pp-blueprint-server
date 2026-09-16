@@ -88,15 +88,13 @@ The manifest must define a list of **Protected Resources** (specific files, dire
 
 - After instantiate, those paths must stay as the blueprint produced them. On data-product **publication**, the
   service re-instantiates the recorded **parent** version locally and SHA-256-compares each listed path against the
-  published destination tree. Digests are **not** written onto `protectedResources[].integrity`.
+  published destination tree.
 - Each `path` is relative to an **instantiated destination repository root after render**, not the source blueprint
-  tree. Instantiation relocates the parent README and writes a lineage snapshot under `.odm/blueprint/` on the
-  **root** key only — do not protect `README.md` or `manifest.yaml` at their source paths. Optional `repository`
-  names `targetRepositories[].key`; when omitted or blank, the path is on the target marked `isRoot: true`. This
-  root shorthand is intentional for the common case. Only the **parent `BLUEPRINT`** list is evaluated when a
-  blueprint is composed; catalog `MODULE` publication rejects a non-empty list. The service guide
-  [Protected resources](../../../../../../../../docs/service/protected-resources.md) covers the publication-time
-  integrity check.
+  tree. Optional `repository` names `targetRepositories[].key`; when omitted or blank, the path is on the target
+  marked `isRoot: true`. This root shorthand is intentional for the common case. Only the **parent `BLUEPRINT`**
+  list is evaluated when a blueprint is composed; catalog `MODULE` publication rejects a non-empty list. The
+  service guide [Protected resources](../../../../../../../../docs/service/protected-resources.md) covers the
+  publication-time integrity check.
 
 #### 3.3. Blueprint Composition (Modularity)
 
@@ -199,18 +197,10 @@ integrations.
 - `protectedResources` (Array of Objects, Optional): Files, directories, or globs marked immutable after initial
   generation. Each item:
   - `path` (String, Required): Path or glob relative to the **instantiated destination repository root** after
-    render (e.g. `infrastructure/core/**`, `data-plane/storage/**`, `docs/architecture.md`). Do **not** list source-only paths that
-    instantiation relocates (`README.md` at the blueprint `readmePath`, `manifest.yaml` at `manifestRootPath`).
-    To protect parent lineage, declare the destination on the **root** key (`.odm/blueprint/README.md`, `.odm/blueprint/blueprint-manifest.yaml`,
-    or `.odm/blueprint/**`). To protect a composed module’s relocated README/manifest, declare `.odm/<alias>/...`
-    on the key that received that module. The checker does not rewrite source paths to `.odm/blueprint/`.
+    render (e.g. `infrastructure/core/**`, `data-plane/storage/**`, `docs/architecture.md`).
   - `repository` (String, Optional): Logical destination key; must match `targetRepositories[].key` when present.
     Omit the field to use the target marked `isRoot: true`. Blank is treated as omitted. Integrity requires
     Registry locator/ref data and clones only for target keys selected by protected-resource declarations.
-  - `integrity` (Object, Optional): Leftover digest object. **Omit it.** Instantiate does **not** populate hashes on the
-    product copy of the manifest. Publication evaluation **ignores** `value` and SHA-256-hashes the published tree
-    against a local re-instantiation instead. If `algorithm` is present and is not `sha256` (case-insensitive), that
-    path fails. When the object is present, publish validation still requires non-empty `algorithm` and `value`.
 - `composition` (Array of Objects, Optional): Declares child blueprints (modules) to be instantiated alongside the
   parent.
   - `module` (String, Required): A logical alias for the child module. Must be unique within the manifest.
@@ -272,8 +262,6 @@ The orchestrator must enforce the following rules when validating a manifest:
   Omitted or blank `repository` means the target marked `isRoot: true`.
 - A catalog `MODULE` manifest must have no protected resources or an empty `protectedResources` list. Protection is
   owned by the parent `BLUEPRINT`, which names final Module-originated paths after routing.
-- `protectedResources[].integrity` is optional leftover schema and should be omitted. If the object is present,
-  `algorithm` and `value` must be non-empty; evaluation still ignores `value`.
 - Exact duplicate `(repo, normalized destinationPath)` destinations across all routes are rejected.
 - Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
   rejected; use sibling destinations.

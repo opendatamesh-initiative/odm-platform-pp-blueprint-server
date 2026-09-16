@@ -31,7 +31,7 @@ class TargetWorkingTreesTest {
     @Test
     void closeFollowsInsertionOrderAndContinuesAfterFailure() {
         List<String> closed = new ArrayList<>();
-        Map<String, WorkingTree> trees = new LinkedHashMap<>();
+        Map<String, CloseableWorkingTree> trees = new LinkedHashMap<>();
         trees.put("gamma", recordingTree("gamma", closed, null));
         trees.put("alpha", recordingTree("alpha", closed, new IllegalStateException("close failed")));
         trees.put("beta", recordingTree("beta", closed, null));
@@ -45,13 +45,8 @@ class TargetWorkingTreesTest {
         assertThat(closed).containsExactly("gamma", "alpha", "beta");
     }
 
-    private static WorkingTree recordingTree(String key, List<String> closed, RuntimeException failure) {
-        return new WorkingTree() {
-            @Override
-            public Path path() {
-                return Path.of(key);
-            }
-
+    private static CloseableWorkingTree recordingTree(String key, List<String> closed, RuntimeException failure) {
+        return new CloseableWorkingTree(Path.of(key)) {
             @Override
             public void close() {
                 closed.add(key);

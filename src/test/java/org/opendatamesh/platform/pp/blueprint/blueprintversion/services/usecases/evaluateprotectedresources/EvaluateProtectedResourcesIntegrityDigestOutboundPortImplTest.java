@@ -162,16 +162,7 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImplTest {
                 .isEqualTo(result.fileDigests().get("a.txt"));
     }
 
-    private static WorkingTree tree(Path path) {
-        return new WorkingTree() {
-            @Override
-            public Path path() {
-                return path;
-            }
-
-            @Override
-            public void close() {
-            }
-        };
+    private static CloseableWorkingTree tree(Path path) {
+        return new CloseableWorkingTree(path);
     }
 }

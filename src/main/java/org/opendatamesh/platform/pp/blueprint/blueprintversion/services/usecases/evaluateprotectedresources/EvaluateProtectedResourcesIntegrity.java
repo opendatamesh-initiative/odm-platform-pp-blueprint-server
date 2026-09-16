@@ -247,14 +247,14 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
     ) {
         List<ProtectedResourceMismatch> mismatches = new ArrayList<>();
         for (ProtectedPublishedTarget target : protectedTargets) {
-            WorkingTree expectedTree = expected.get(target.repositoryKey());
+            CloseableWorkingTree expectedTree = expected.get(target.repositoryKey());
             if (expectedTree == null) {
                 presentFailed(List.of(),
                         "Cannot check protected resources: expected tree for repository key '%s' was not produced"
                                 .formatted(target.repositoryKey()));
                 return;
             }
-            try (WorkingTree published = productGitPort.clonePublishedDataProductVersion(
+            try (CloseableWorkingTree published = productGitPort.clonePublishedDataProductVersion(
                     target.locator(), target.ref())) {
                 for (ManifestProtectedResource protectedResource : target.resources()) {
                     compareProtectedResource(protectedResource, published, expectedTree, mismatches);
@@ -270,24 +270,11 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
 
     private void compareProtectedResource(
             ManifestProtectedResource protectedResource,
-            WorkingTree published,
-            WorkingTree expected,
+            CloseableWorkingTree published,
+            CloseableWorkingTree expected,
             List<ProtectedResourceMismatch> mismatches
     ) {
         String declaredPath = protectedResource.getPath();
-        if (protectedResource.getIntegrity() != null
-                && hasText(protectedResource.getIntegrity().getAlgorithm())
-                && !"sha256".equalsIgnoreCase(protectedResource.getIntegrity().getAlgorithm().trim())) {
-            mismatches.add(new ProtectedResourceMismatch(
-                    declaredPath,
-                    MismatchKind.UNSUPPORTED_ALGORITHM,
-                    List.of(),
-                    "unsupported integrity algorithm '%s'"
-                            .formatted(protectedResource.getIntegrity().getAlgorithm())
-            ));
-            return;
-        }
-
         DigestResult actual = digestPort.computeDigest(published, declaredPath);
         DigestResult expectedDigest = digestPort.computeDigest(expected, declaredPath);
 
@@ -397,8 +384,6 @@ class EvaluateProtectedResourcesIntegrity implements UseCase {
                     "Protected resource '%s' is not a valid path".formatted(resource);
             case SYMLINK ->
                     "Protected resource '%s' cannot be checked because it contains a symbolic link".formatted(resource);
-            case UNSUPPORTED_ALGORITHM ->
-                    "Protected resource '%s' uses an integrity check that is not supported".formatted(resource);
         };
     }
 

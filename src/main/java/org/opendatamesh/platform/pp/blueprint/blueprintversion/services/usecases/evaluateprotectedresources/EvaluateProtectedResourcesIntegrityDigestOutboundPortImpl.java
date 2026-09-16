@@ -23,7 +23,7 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
     private static final char[] GLOB_META = {'*', '?', '[', '{'};
 
     @Override
-    public DigestResult computeDigest(WorkingTree tree, String declaredPath) {
+    public DigestResult computeDigest(CloseableWorkingTree tree, String declaredPath) {
         Path repoRoot = tree == null ? null : tree.path();
         if (repoRoot == null || declaredPath == null || declaredPath.isBlank()) {
             return new DigestResult(MismatchKind.INVALID_PATH, "the protected path is empty", Map.of());
@@ -54,8 +54,8 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
                 return digestLiteral(root, resolved, normalizedDeclared);
             }
             return digestGlob(root, normalizedDeclared);
-        } catch (DigestSignal signal) {
-            return new DigestResult(signal.kind, signal.detail, Map.of());
+        } catch (DigestMismatchException mismatch) {
+            return new DigestResult(mismatch.kind, mismatch.detail, Map.of());
         } catch (IOException e) {
             return new DigestResult(
                     MismatchKind.INVALID_PATH,
@@ -65,9 +65,10 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
         }
     }
 
-    private DigestResult digestLiteral(Path root, Path resolved, String relativePath) throws IOException, DigestSignal {
+    private DigestResult digestLiteral(Path root, Path resolved, String relativePath)
+            throws IOException, DigestMismatchException {
         if (Files.isSymbolicLink(resolved)) {
-            throw new DigestSignal(MismatchKind.SYMLINK, "the path is a symbolic link: " + relativePath);
+            throw new DigestMismatchException(MismatchKind.SYMLINK, "the path is a symbolic link: " + relativePath);
         }
         if (Files.isRegularFile(resolved)) {
             Map<String, String> files = new LinkedHashMap<>();
@@ -80,27 +81,30 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
         return new DigestResult(null, null, Map.of());
     }
 
-    private DigestResult digestDirectory(Path root, Path directory) throws IOException, DigestSignal {
+    private DigestResult digestDirectory(Path root, Path directory) throws IOException, DigestMismatchException {
         TreeMap<String, String> files = new TreeMap<>();
         Files.walkFileTree(directory, EnumSet.noneOf(FileVisitOption.class), Integer.MAX_VALUE, new SimpleFileVisitor<>() {
             @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws DigestSignal {
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws DigestMismatchException {
                 if (dir.getFileName() != null && ".git".equals(dir.getFileName().toString())) {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
                 if (Files.isSymbolicLink(dir) && !dir.equals(directory)) {
-                    throw new DigestSignal(MismatchKind.SYMLINK, "the path contains a symbolic link: " + relative(root, dir));
+                    throw new DigestMismatchException(
+                            MismatchKind.SYMLINK, "the path contains a symbolic link: " + relative(root, dir));
                 }
                 return FileVisitResult.CONTINUE;
             }
 
             @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException, DigestSignal {
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException, DigestMismatchException {
                 if (file.getFileName() != null && ".git".equals(file.getFileName().toString())) {
                     return FileVisitResult.CONTINUE;
                 }
                 if (Files.isSymbolicLink(file)) {
-                    throw new DigestSignal(MismatchKind.SYMLINK, "the path contains a symbolic link: " + relative(root, file));
+                    throw new DigestMismatchException(
+                            MismatchKind.SYMLINK, "the path contains a symbolic link: " + relative(root, file));
                 }
                 if (Files.isRegularFile(file)) {
                     files.put(relative(root, file), sha256Hex(Files.readAllBytes(file)));
@@ -111,7 +115,7 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
         return new DigestResult(null, null, files);
     }
 
-    private DigestResult digestGlob(Path root, String globPattern) throws IOException, DigestSignal {
+    private DigestResult digestGlob(Path root, String globPattern) throws IOException, DigestMismatchException {
         FileSystem fileSystem = root.getFileSystem();
         PathMatcher matcher = fileSystem.getPathMatcher("glob:" + globPattern);
         TreeMap<String, String> files = new TreeMap<>();
@@ -125,13 +129,15 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
             }
 
             @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException, DigestSignal {
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException, DigestMismatchException {
                 String relative = relative(root, file);
                 if (!matcher.matches(fileSystem.getPath(relative)) && !matcher.matches(root.relativize(file))) {
                     return FileVisitResult.CONTINUE;
                 }
                 if (Files.isSymbolicLink(file)) {
-                    throw new DigestSignal(MismatchKind.SYMLINK, "the path contains a symbolic link: " + relative);
+                    throw new DigestMismatchException(
+                            MismatchKind.SYMLINK, "the path contains a symbolic link: " + relative);
                 }
                 if (Files.isRegularFile(file)) {
                     files.put(relative, sha256Hex(Files.readAllBytes(file)));
@@ -167,7 +173,7 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
         }
     }
 
-    private static boolean hasGlobMetacharacters(String path) {
+    private boolean hasGlobMetacharacters(String path) {
         for (char meta : GLOB_META) {
             if (path.indexOf(meta) >= 0) {
                 return true;
@@ -176,11 +182,11 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
         return false;
     }
 
-    private static boolean isAbsolutePath(String relativePath) {
+    private boolean isAbsolutePath(String relativePath) {
         return relativePath.startsWith("/") || relativePath.matches("^[A-Za-z]:/.*");
     }
 
-    private static boolean hasPathTraversal(String relativePath) {
+    private boolean hasPathTraversal(String relativePath) {
         for (String segment : relativePath.split("/")) {
             if ("..".equals(segment)) {
                 return true;
@@ -189,15 +195,15 @@ class EvaluateProtectedResourcesIntegrityDigestOutboundPortImpl
         return false;
     }
 
-    private static String relative(Path root, Path path) {
+    private String relative(Path root, Path path) {
         return root.relativize(path).toString().replace('\\', '/');
     }
 
-    static final class DigestSignal extends RuntimeException {
+    static final class DigestMismatchException extends RuntimeException {
         private final MismatchKind kind;
         private final String detail;
 
-        DigestSignal(MismatchKind kind, String detail) {
+        DigestMismatchException(MismatchKind kind, String detail) {
             super(detail);
             this.kind = kind;
             this.detail = detail;

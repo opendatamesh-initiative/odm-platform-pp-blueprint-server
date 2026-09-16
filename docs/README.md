@@ -16,7 +16,7 @@ Index of guides for the **ODM Platform Blueprint Server**.
 |:------|:------------|
 | [Blueprint process](service/blueprint-process.md) | Instantiate, update, tag-based 3-way merge, conflict cases, hunk overlap & authoring best practices |
 | [Multi-repository & composition](service/repositories-and-composition.md) | Multiple remotes, reusable modules, layouts, and what is supported today |
-| [Protected resources](service/protected-resources.md) | Destination-scoped paths, root shorthand, parent-only ownership, and publication checks across all repository layouts |
+| [Protected resources](service/protected-resources.md) | What they are, how to declare them, how to enable the check, and how publication verification works |
 | [Git providers](service/git-providers.md) | How the service uses Git hosts and client-supplied auth |
 | [Blueprint manifest](../src/main/java/org/opendatamesh/platform/pp/blueprint/manifest/README.md) | Manifest schema (repositories, root, composition, protected resources) |
 

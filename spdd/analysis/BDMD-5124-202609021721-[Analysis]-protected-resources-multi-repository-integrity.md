@@ -148,7 +148,7 @@ The end state supports all four layouts. Work can be delivered in coherent phase
 - **Version-local policy**: no comparison or monotonicity rule across Blueprint versions.
 - **Immediate publication guarantee**: historical locator snapshots are out of scope.
 - **No physical-alias validation**: logical targets are evaluated independently even when locators happen to identify the same remote.
-- **Fail fast**: evaluation may stop on the first mismatch or infrastructure error; failure aggregation is not required.
+- **Path mismatches are reported together; infrastructure errors fail immediately**: comparison collects every protected-path mismatch into one policy failure. Clone, auth, timeout, and render errors stop evaluation at once.
 
 ### Resolved Decisions for REASONS
 
@@ -176,8 +176,8 @@ The end state supports all four layouts. Work can be delivered in coherent phase
 8. **Physical remote aliasing**
    Add no alias detection or special handling. Each protected logical target is cloned and digested independently using its own locator/ref mapping, even when two locators happen to resolve to the same physical remote.
 
-9. **Failure aggregation**
-   Fail fast is sufficient. Evaluation may stop at the first mismatch or infrastructure error because any one failure rejects the policy; per-target infrastructure aggregation is not required.
+9. **Failure reporting**
+   Collect every protected-path mismatch and report them together so authors can fix them in one pass. Infrastructure errors (clone, auth, timeout, render, or incomplete locators for a referenced target) fail immediately: any one of those rejects the policy, and remaining remotes need not be cloned.
 
 ### Alternatives Considered
 
@@ -192,7 +192,7 @@ The end state supports all four layouts. Work can be delivered in coherent phase
 - **Store per-target hashes in the manifest**: Rejected. Re-instantiation remains the source of expected content.
 - **Freeze or compare protection declarations across versions**: Rejected. The recorded parent Blueprint version is the complete policy authority for each publication.
 - **Snapshot repository locators per version now**: Rejected. It is unnecessary for the immediate publication gate and can be introduced if historical evaluation becomes a requirement.
-- **Aggregate every target failure**: Rejected. Fail fast is simpler and preserves the same pass/fail outcome.
+- **Continue cloning after an infrastructure error**: Rejected. One clone, auth, timeout, or render failure already rejects the policy; later remotes need not be cloned. Path mismatches are still collected and reported together.
 
 ## Risk & Gap Analysis
 
@@ -204,7 +204,7 @@ The end state supports all four layouts. Work can be delivered in coherent phase
 - **Protection can weaken or move**: no cross-version invariant is imposed.
 - **Historical locator drift is accepted**: current locators may change after the immediate publication decision.
 - **Physical aliases are opaque**: no attempt is made to prove whether logical locators identify the same remote.
-- **Failure detail is bounded**: path-level comparison messages remain useful, but evaluation need not continue after a conclusive failure.
+- **Failure reporting**: path mismatches are all returned in one policy failure; evaluation stops only when infrastructure cannot continue.
 
 ### Edge Cases
 
@@ -230,7 +230,6 @@ The end state supports all four layouts. Work can be delivered in coherent phase
 
 - **Wrong-tree comparison**: Resolving a target key without using it for both published and expected lookup can silently compare against root. Keep keyed trees through the complete call chain.
 - **Source/destination cardinality confusion**: N→1 means several source components and one destination, not several product repositories. Test dimensions independently.
-- **Cross-service naming drift**: Registry OpenAPI may still reference superseded Blueprint terminology even though runtime fields are `repositoryKey`. New integrity joins use exact current runtime keys; broader documentation cleanup remains separate.
 - **Metadata/remote divergence**: Registry validates fields, not Git state. Cloneability remains an integrity responsibility.
 - **Historical locator drift**: Current locators combined with old refs may target the wrong physical repository during later re-evaluation. That use case is outside the immediate-publication guarantee.
 - **Temporary resource scale**: N→N requires multiple source and published clones plus disposable expected targets. Bound evaluation and clean every workspace deterministically.

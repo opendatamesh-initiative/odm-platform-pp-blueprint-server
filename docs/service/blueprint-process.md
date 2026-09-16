@@ -259,7 +259,7 @@ Author blueprints so updates stay **merge-friendly** for product teams.
    One huge `config.yaml.vm` that mixes infra, app, and team knobs forces every update into one conflict surface. Split by concern so non-overlapping files merge cleanly.
 
 6. **Document protected / do-not-edit paths**  
-   Use the manifest’s `protectedResources` and the [protected resources](protected-resources.md) guide so users know which files are owned by the blueprint vs safe to customize. List **post-instantiation** paths only (optional `repository` key, or omit it for the designated root). Do not put hashes on `integrity`.
+   Use the manifest’s `protectedResources` and the [protected resources](protected-resources.md) guide so users know which files are owned by the blueprint vs safe to customize. List **post-instantiation** paths only (optional `repository` key, or omit it for the designated root).
 
 7. **Semantic versioning of breaking template moves**  
    Renaming or splitting heavily customized files is a breaking change for merge history — call it out in the changelog so teams expect PR conflicts and plan remapping.

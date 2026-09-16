@@ -11,10 +11,8 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.Manif
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
-import org.opendatamesh.platform.pp.blueprint.manifest.model.protectedresource.ManifestProtectedResourceIntegrity;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
-import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestProtectedResourceVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
 import java.util.HashSet;
@@ -42,7 +40,7 @@ import java.util.regex.Pattern;
  * </ul>
  */
 class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParameterVisitor,
-        ManifestProtectedResourceVisitor, ManifestInstantiationEntryVisitor {
+        ManifestInstantiationEntryVisitor {
 
     private final OdmBlueprintManifestValidatorContext context;
     private final OdmBlueprintManifestValidatorState state;
@@ -85,7 +83,6 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                 ManifestProtectedResource resource = manifest.getProtectedResources().get(i);
                 if (resource != null) {
                     state.currentProtectedResourceFieldPath = "protectedResources[" + i + "]";
-                    state.currentProtectedResourceIntegrityFieldPath = state.currentProtectedResourceFieldPath + ".integrity";
                     resource.accept(this);
                 }
             }
@@ -215,10 +212,6 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                             fieldPath + ".repository",
                             manifestProtectedResource.getRepository().trim()));
         }
-
-        if (manifestProtectedResource.getIntegrity() != null) {
-            manifestProtectedResource.getIntegrity().accept(this);
-        }
     }
 
     @Override
@@ -341,18 +334,6 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
     @Override
     public void visit(ManifestParameterUi ui) {
         // Optional ui rules can be added here later.
-    }
-
-    @Override
-    public void visit(ManifestProtectedResourceIntegrity integrity) {
-        String fieldPath = state.currentProtectedResourceIntegrityFieldPath != null
-                ? state.currentProtectedResourceIntegrityFieldPath
-                : "protectedResources[].integrity";
-
-        validateRequiredString(integrity.getAlgorithm(), fieldPath + ".algorithm",
-                "Protected resource integrity algorithm must be a non-empty string");
-        validateRequiredString(integrity.getValue(), fieldPath + ".value",
-                "Protected resource integrity value must be a non-empty string");
     }
 
     private void validateCompositionInstantiationAlignment() {

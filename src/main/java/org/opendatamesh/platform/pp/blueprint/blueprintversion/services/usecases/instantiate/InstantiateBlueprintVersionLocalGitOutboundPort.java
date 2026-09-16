@@ -71,6 +71,7 @@ class InstantiateBlueprintVersionLocalGitOutboundPort implements InstantiateBlue
         try {
             initEmptyGitRepo(throwawayTarget, integrationBranch);
             operation.accept(throwawayTarget);
+            // Copy before returning: the Git library deletes this workspace when the operation completes.
             snapshot.putExpectedTree(target.targetId(), copyWorkingTreeSkippingGit(throwawayTarget));
         } finally {
             deleteRecursively(throwawayTarget);

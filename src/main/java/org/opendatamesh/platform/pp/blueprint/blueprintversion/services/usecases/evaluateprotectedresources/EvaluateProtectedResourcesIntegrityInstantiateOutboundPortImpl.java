@@ -63,6 +63,10 @@ class EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl
                                 + providerType));
     }
 
+    /**
+     * Re-instantiate locally and copy each destination tree out of the Git workspace.
+     * The Git library deletes the clone when the operation returns; the snapshot copy is what hashing uses afterwards.
+     */
     private TargetWorkingTrees snapshotExpectedTrees(
             BlueprintVersion blueprintVersion,
             EvaluateProtectedResourcesIntegrityCommand command,
@@ -74,7 +78,7 @@ class EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl
             instantiateFactory.buildInstantiateBlueprintVersionForLocalValidation(
                     buildInstantiateCommand(declaredKeys, command),
                     result -> {
-                        // expected trees are captured by the local Git port into the snapshot
+                        // presenter unused; expected trees are snapshotted by the local Git port
                     },
                     credentials,
                     snapshot
@@ -139,7 +143,7 @@ class EvaluateProtectedResourcesIntegrityInstantiateOutboundPortImpl
     }
 
     private TargetWorkingTrees adaptSnapshot(List<String> declaredKeys, RenderedTreeSnapshot snapshot) {
-        Map<String, WorkingTree> trees = new LinkedHashMap<>();
+        Map<String, CloseableWorkingTree> trees = new LinkedHashMap<>();
         for (String key : declaredKeys) {
             Path expectedTree = snapshot.getExpectedTree(key);
             if (expectedTree == null || !Files.isDirectory(expectedTree)) {
