@@ -78,7 +78,7 @@ public class BlueprintValidatorProperties {
     }
 
     public static class Policy {
-        private String name = "Protected Resources Integrity";
+        private String name = "Blueprint Protected Resources Integrity";
         private boolean blocking = true;
 
         public String getName() {

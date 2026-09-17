@@ -52,7 +52,7 @@ blueprint:
       name: blueprint-service-validator
       display-name: Blueprint Service Validator
     policy:
-      name: Protected Resources Integrity
+      name: Blueprint Protected Resources Integrity
       blocking: true
     git:
       credentials:

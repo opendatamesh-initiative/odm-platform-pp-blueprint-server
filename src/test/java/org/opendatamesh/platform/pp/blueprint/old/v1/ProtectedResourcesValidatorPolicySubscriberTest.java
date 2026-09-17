@@ -60,7 +60,7 @@ class ProtectedResourcesValidatorPolicySubscriberTest {
      *   And no Policy engine or policy named for this validator exists
      *   When the Policy subscriber initializes
      *   Then a Policy engine is created with adapterUrl equal to server.baseUrl
-     *   And a policy named "Protected Resources Integrity" is created
+     *   And a policy named "Blueprint Protected Resources Integrity" is created
      *   And the policy blockingFlag is taken from Blueprint configuration
      *   And the policy evaluation events contain exactly "DATA_PRODUCT_VERSION_CREATION"
      *   And the policy evaluation events do not contain "DATA_PRODUCT_VERSION_PUBLICATION_REQUESTED"
@@ -90,8 +90,8 @@ class ProtectedResourcesValidatorPolicySubscriberTest {
         ArgumentCaptor<PolicyResource> policyCaptor = ArgumentCaptor.forClass(PolicyResource.class);
         verify(policyClient).createPolicy(policyCaptor.capture());
         PolicyResource created = policyCaptor.getValue();
-        assertThat(created.getName()).isEqualTo("Protected Resources Integrity");
-        assertThat(created.getDisplayName()).isEqualTo("Protected Resources Integrity");
+        assertThat(created.getName()).isEqualTo("Blueprint Protected Resources Integrity");
+        assertThat(created.getDisplayName()).isEqualTo("Blueprint Protected Resources Integrity");
         assertThat(created.getBlockingFlag()).isTrue();
         assertThat(created.getEvaluationEvents()).hasSize(1);
         assertThat(created.getEvaluationEvents().getFirst().getEvent())
@@ -122,7 +122,7 @@ class ProtectedResourcesValidatorPolicySubscriberTest {
         existing.setName("blueprint-service-validator");
         when(policyEngineClient.getPolicyEngines(any(), any())).thenReturn(new PageImpl<>(List.of(existing)));
         PolicyResource existingPolicy = new PolicyResource();
-        existingPolicy.setName("Protected Resources Integrity");
+        existingPolicy.setName("Blueprint Protected Resources Integrity");
         when(policyClient.getPolicies(any(), any())).thenReturn(new PageImpl<>(List.of(existingPolicy)));
 
         ProtectedResourcesValidatorPolicySubscriber subscriber = new ProtectedResourcesValidatorPolicySubscriber(
