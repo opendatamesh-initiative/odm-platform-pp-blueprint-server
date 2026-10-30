@@ -1,0 +1,54 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: repository-naming-invalid
+version: 1.0.0
+
+parameters:
+  - key: dpName
+    type: string
+  - key: layer
+    type: string
+
+targetRepositories:
+  - key: undeclared-repo
+    naming:
+      pattern: "${dpDomain}-${dpName}"
+  - key: syntax-repo
+    naming:
+      pattern: "$dpName-raw"
+  - key: constant-repo
+    naming:
+      pattern: "shared-repository"
+  - key: unsupported-repo
+    naming:
+      pattern: "${dpName}-${layer}"
+  - key: enforcement-repo
+    isRoot: true
+    naming:
+      pattern: "${dpName}-main"
+      enforcement: mandatory
+  - key: duplicate-repo
+    naming:
+      pattern: "${dpName}-main"
+
+instantiation:
+  - type: root
+    targets:
+      - sourcePath: a/
+        repo: undeclared-repo
+        destinationPath: ./
+      - sourcePath: b/
+        repo: syntax-repo
+        destinationPath: ./
+      - sourcePath: c/
+        repo: constant-repo
+        destinationPath: ./
+      - sourcePath: d/
+        repo: unsupported-repo
+        destinationPath: ./
+      - sourcePath: e/
+        repo: enforcement-repo
+        destinationPath: ./
+      - sourcePath: f/
+        repo: duplicate-repo
+        destinationPath: ./

@@ -1,0 +1,33 @@
+spec: odm-blueprint-manifest
+specVersion: 1.0.0
+name: repository-naming-valid
+version: 1.0.0
+
+parameters:
+  - key: dpDomain
+    type: string
+  - key: dpName
+    type: string
+
+targetRepositories:
+  - key: infra-repo
+    description: Target repository for infrastructure code
+    naming:
+      pattern: "${dpName}-infra"
+      enforcement: suggested
+  - key: app-repo
+    description: Target repository for application code
+    isRoot: true
+    naming:
+      pattern: "${dpDomain}-${dpName}"
+      futureOption: kept
+
+instantiation:
+  - type: root
+    targets:
+      - sourcePath: terraform/
+        repo: infra-repo
+        destinationPath: terraform/
+      - sourcePath: application/
+        repo: app-repo
+        destinationPath: ./

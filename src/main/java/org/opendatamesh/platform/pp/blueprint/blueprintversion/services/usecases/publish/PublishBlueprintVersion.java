@@ -96,6 +96,11 @@ class PublishBlueprintVersion implements UseCase {
                     "A Blueprint module must not declare protectedResources. "
                             + "Hint: Remove protectedResources from the module; declare final protected paths on the parent Blueprint.");
         }
+        if (manifestOutboundPort.hasRepositoryNamingConventions(blueprintVersion.getContent())) {
+            throw new BadRequestException(
+                    "A Blueprint module must not declare repository naming conventions. "
+                            + "Hint: Remove targetRepositories[].naming from the module; declare naming conventions on the parent Blueprint.");
+        }
     }
 
     private void validateCompositionModules(BlueprintVersion parentVersion) {

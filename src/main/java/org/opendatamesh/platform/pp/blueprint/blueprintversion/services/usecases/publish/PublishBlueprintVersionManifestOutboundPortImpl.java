@@ -84,6 +84,19 @@ class PublishBlueprintVersionManifestOutboundPortImpl implements PublishBlueprin
     }
 
     @Override
+    public boolean hasRepositoryNamingConventions(JsonNode content) {
+        try {
+            Manifest manifest = manifestParser.deserialize(content);
+            return manifest != null
+                    && manifest.getTargetRepositories() != null
+                    && manifest.getTargetRepositories().stream()
+                    .anyMatch(repository -> repository != null && repository.getNaming() != null);
+        } catch (IOException e) {
+            throw new BadRequestException("Invalid manifest content: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public boolean isMonorepoNoComposition(JsonNode content) {
         try {
             return InstantiationScenarioResolver.isMonorepoNoComposition(manifestParser.deserialize(content));

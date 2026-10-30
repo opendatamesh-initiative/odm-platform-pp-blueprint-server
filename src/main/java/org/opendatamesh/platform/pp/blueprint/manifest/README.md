@@ -17,6 +17,7 @@
     - [1. Specification Definition with Schema](#1-specification-definition-with-schema)
       - [Core Schema Objects](#core-schema-objects)
       - [Validation constraints](#validation-constraints)
+      - [Repository naming (`targetRepositories[].naming`)](#repository-naming-targetrepositoriesnaming)
       - [UI metadata (`parameters[].ui`)](#ui-metadata-parametersui)
     - [2. Manifest Examples](#2-manifest-examples)
       - [2.1. Monorepo, no composition](#21-monorepo-no-composition)
@@ -151,9 +152,9 @@ The system orchestrating the Blueprint must support the following lifecycle:
    then processes each `instantiation[]` entry: for `type: root`, routes parent blueprint files; for `type: module`,
    instantiates the referenced child and routes its output. Files are extracted from declared source directories,
    parameter variables are resolved, and generated code is written into the mapped target repositories and destinations.
-5. **Lineage Preservation:** A version of the manifest, complete with the resolved parameter values and versioning
-   metadata, is copied **only into the root target repository** designated at instantiation time—not into module or
-   secondary target repositories.
+5. **Lineage Preservation:** The manifest, as published (not rendered), is copied **only into the root target
+   repository** designated at instantiation time—not into module or secondary target repositories. The resolved
+   parameter values and versioning metadata are recorded in the blueprint metadata of the data product descriptor.
 
 ## Specification
 
@@ -222,9 +223,15 @@ integrations.
   time.
   - `key` (String, Required): Unique logical alias referenced by `instantiation[].targets[].repo` (e.g.,
     `main-repository`, `pipeline-repo`).
-  - `description` (String, Optional): Human-readable guidance for UI selection.
+  - `description` (String, Optional): Human-readable guidance for UI selection; clients also use it as the default
+    description of a repository they create for this key.
   - `isRoot` (Boolean, Optional — defaults to `false`): When `true`, designates this key as the data-product root
     repository (lineage, descriptor enrichment, registry primary pointer). Exactly one entry must set `isRoot: true`.
+  - `naming` (Object, Optional): Naming convention for the physical repository bound to this key. See
+    [Repository naming](#repository-naming-targetrepositoriesnaming).
+    - `pattern` (String, Required when `naming` is present): Literal text plus `${key}` placeholders.
+    - `enforcement` (Enum: `binding`, `suggested`, Optional — defaults to `binding`): Whether clients lock the name to
+      the pattern or only pre-fill it.
 - `instantiation` (Array of Objects, Required): Routes blueprint contents to destination repositories. Each entry
   targets either the parent blueprint (`type: root`) or a composed child module (`type: module`).
   - `type` (Enum: `root`, `module`, Required): Discriminant for the instantiation entry.
@@ -262,6 +269,11 @@ The orchestrator must enforce the following rules when validating a manifest:
   Omitted or blank `repository` means the target marked `isRoot: true`.
 - A catalog `MODULE` manifest must have no protected resources or an empty `protectedResources` list. Protection is
   owned by the parent `BLUEPRINT`, which names final Module-originated paths after routing.
+- When `targetRepositories[].naming` is present: `pattern` is non-blank, follows the placeholder grammar, references
+  at least one variable, and references only allowed variables that are declared in `parameters[]`; `enforcement`,
+  when present, is `binding` or `suggested`; no two entries declare the same `pattern`.
+- A catalog `MODULE` manifest must not declare `targetRepositories[].naming`. Repository naming is owned by the parent
+  `BLUEPRINT`.
 - Exact duplicate `(repo, normalized destinationPath)` destinations across all routes are rejected.
 - Nested path-prefix destinations on the **same** repository key (e.g. `./` together with `data-plane/storage`) are
   rejected; use sibling destinations.
@@ -275,6 +287,53 @@ The orchestrator must enforce the following rules when validating a manifest:
   rejected.
 - Path normalization (leading `./`, trailing slashes) is implementation-defined but must be applied consistently.
 - Validation reports **all** problems found, each with a short how-to-fix hint.
+
+#### Repository naming (`targetRepositories[].naming`)
+
+Lets the platform engineer define the name of the physical repository a client creates or selects for a key when a
+data product is instantiated.
+
+```yaml
+targetRepositories:
+  - key: main-repository
+    isRoot: true
+    naming:
+      pattern: "${dpDomain}-${dpName}"
+      enforcement: binding   # or: suggested; defaults to binding when omitted
+```
+
+**Grammar.** Literal text plus `${key}` placeholders. Every `$` must start a `${key}` placeholder, `${` must be closed
+by `}`, and the key is non-empty with no whitespace. There are no Velocity directives, methods, filters or escapes.
+A pattern must contain at least one placeholder.
+
+**Variables.** Only the reserved data product parameters `dpDomain`, `dpName`, `dpFqn`, `dpDisplayName`,
+`dpDescription`, `dpOwnerId` and `dpOwnerName`, and only when the manifest declares them in `parameters[]`. Clients
+fill these values from the selected data product (`dpOwnerId` / `dpOwnerName` from the profile of the user who
+instantiates).
+
+**Modes.**
+
+| `enforcement` | Create a repository                       | Select an existing repository                 |
+| ------------- | ----------------------------------------- | --------------------------------------------- |
+| `binding`     | The name is the resolved pattern; locked. | Only repositories whose name conforms.        |
+| `suggested`   | The name is pre-filled and editable.      | Any repository.                               |
+
+**Resolution and conformance.** A client replaces each placeholder with the value it submits for that parameter, with
+no trimming, case change or slugification. If a referenced value is empty, the pattern cannot be resolved for that
+instantiation. A repository name conforms only when it equals the resolved name exactly (case-sensitive).
+
+**Enforcement.** The orchestrator (the Blindata instantiation wizards) applies the convention. The platform validates
+the declaration at publish but does not check repository names at instantiate, and conventions never affect updates
+of existing data products.
+
+**Shared examples** (used as test vectors by server and client implementations):
+
+| Pattern                  | Values                             | Result                          |
+| ------------------------ | ---------------------------------- | ------------------------------- |
+| `${dpDomain}-${dpName}`  | `dpDomain=sales`, `dpName=orders`  | `sales-orders`                  |
+| `dp-${dpName}-infra`     | `dpName=Orders`                    | `dp-Orders-infra`               |
+| `${dpDomain}-${dpName}`  | `dpDomain=` (empty)                | unresolved (`dpDomain`)         |
+| resolved `sales-orders`  | repository name `Sales-Orders`     | does not conform                |
 
 #### UI metadata (`parameters[].ui`)
 

@@ -9,12 +9,16 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.Manif
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationType;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepositoryNaming;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestTargetRepositoryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +44,7 @@ import java.util.regex.Pattern;
  * </ul>
  */
 class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParameterVisitor,
-        ManifestInstantiationEntryVisitor {
+        ManifestInstantiationEntryVisitor, ManifestTargetRepositoryVisitor {
 
     private final OdmBlueprintManifestValidatorContext context;
     private final OdmBlueprintManifestValidatorState state;
@@ -164,6 +168,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         validateDuplicateDestinations();
         validateNestedPathPrefixes();
         validateProtectedResourceRepositories();
+        validateDuplicateNamingPatterns();
     }
 
     @Override
@@ -241,6 +246,30 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
                 : "targetRepositories[]";
         validateRequiredString(repository.getKey(), fieldPath + ".key",
                 "Target repository key is required");
+        if (repository.getNaming() != null) {
+            repository.getNaming().accept(this);
+        }
+    }
+
+    @Override
+    public void visit(ManifestTargetRepositoryNaming naming) {
+        String repositoryPath = state.currentTargetRepositoryFieldPath != null
+                ? state.currentTargetRepositoryFieldPath
+                : "targetRepositories[]";
+        String patternPath = repositoryPath + ".naming.pattern";
+        validateNamingEnforcement(naming.getEnforcement(), repositoryPath + ".naming.enforcement");
+        if (!hasText(naming.getPattern())) {
+            context.addError(patternPath, "Repository naming pattern is required",
+                    "Set naming.pattern, or remove naming.");
+            return;
+        }
+        List<String> variables = extractNamingVariables(naming.getPattern(), patternPath);
+        if (variables == null) {
+            return;
+        }
+        validateNamingVariables(variables, patternPath);
+        state.namingPatterns.add(new OdmBlueprintManifestValidatorState.NamingPattern(
+                repositoryPath, patternPath, naming.getPattern()));
     }
 
     @Override
@@ -398,7 +427,70 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         }
     }
 
+    private void validateNamingEnforcement(String enforcement, String fieldPath) {
+        if (enforcement == null
+                || ManifestTargetRepositoryNaming.ENFORCEMENT_BINDING.equals(enforcement)
+                || ManifestTargetRepositoryNaming.ENFORCEMENT_SUGGESTED.equals(enforcement)) {
+            return;
+        }
+        context.addError(fieldPath, "Repository naming enforcement must be 'binding' or 'suggested'",
+                "Use binding (default) or suggested.");
+    }
+
+    /**
+     * Returns the placeholder keys of the pattern in order, or {@code null} after reporting a syntax error.
+     */
+    private List<String> extractNamingVariables(String pattern, String fieldPath) {
+        List<String> variables = new ArrayList<>();
+        int index = pattern.indexOf('$');
+        while (index >= 0) {
+            int close = pattern.indexOf('}', index);
+            boolean opensPlaceholder = index + 1 < pattern.length() && pattern.charAt(index + 1) == '{';
+            String variable = opensPlaceholder && close > index ? pattern.substring(index + 2, close) : null;
+            if (variable == null || variable.isEmpty() || variable.contains("$") || variable.contains("{")
+                    || variable.chars().anyMatch(Character::isWhitespace)) {
+                context.addError(fieldPath,
+                        "Repository naming pattern has invalid placeholder syntax at position " + (index + 1),
+                        "Use ${key} placeholders; every $ must start a ${key} placeholder.");
+                return null;
+            }
+            variables.add(variable);
+            index = pattern.indexOf('$', close);
+        }
+        return variables;
+    }
+
+    private void validateNamingVariables(List<String> variables, String fieldPath) {
+        if (variables.isEmpty()) {
+            context.addError(fieldPath, "Repository naming pattern must reference at least one variable",
+                    "Add a placeholder such as ${dpName}; a constant name collides from the second data product on.");
+            return;
+        }
+        for (String variable : variables) {
+            if (!ManifestTargetRepositoryNaming.ALLOWED_VARIABLES.contains(variable)) {
+                context.addError(fieldPath, "Repository naming variable '" + variable + "' is not supported",
+                        "Use one of: " + String.join(", ", ManifestTargetRepositoryNaming.ALLOWED_VARIABLES) + ".");
+            } else if (!context.containsParameterKey(variable)) {
+                context.addError(fieldPath,
+                        "Repository naming variable '" + variable + "' is not declared in parameters",
+                        "Declare " + variable + " in parameters[].");
+            }
+        }
+    }
+
     // --- Post-pass global invariants (after accept/visit walk; operate on collected state only) ---
+
+    private void validateDuplicateNamingPatterns() {
+        Map<String, String> firstRepositoryByPattern = new HashMap<>();
+        for (OdmBlueprintManifestValidatorState.NamingPattern naming : state.namingPatterns) {
+            String firstRepository = firstRepositoryByPattern.putIfAbsent(naming.pattern(), naming.repositoryPath());
+            if (firstRepository != null) {
+                context.addError(naming.fieldPath(),
+                        "Repository naming pattern duplicates " + firstRepository,
+                        "Give each repository key a distinct naming pattern.");
+            }
+        }
+    }
 
     private void validateProtectedResourceRepositories() {
         for (OdmBlueprintManifestValidatorState.ProtectedResourceRepository destination
@@ -553,6 +645,7 @@ class OdmBlueprintValidationVisitor implements ManifestVisitor, ManifestParamete
         state.usedRepositoryKeys.clear();
         state.routeDestinations.clear();
         state.protectedResourceRepositories.clear();
+        state.namingPatterns.clear();
         state.instantiatedModules.clear();
         state.rootInstantiationEntryCount = 0;
         state.rootTargetRepositoryCount = 0;
