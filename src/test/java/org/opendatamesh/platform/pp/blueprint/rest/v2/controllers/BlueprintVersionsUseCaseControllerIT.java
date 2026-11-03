@@ -948,6 +948,139 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
     }
 
     /*
+     * Feature: Repository naming conventions in the manifest
+     * Scenario: A Blueprint with valid naming conventions is published and keeps them
+     *   Given a polyrepo manifest declaring the reserved parameters dpDomain and dpName
+     *   And targetRepositories entries with naming patterns "${dpDomain}-${dpName}" (enforcement omitted) and "${dpName}-infra" (enforcement suggested)
+     *   When the version is published
+     *   Then the response status is 201
+     *   And the stored content keeps both naming objects as authored
+     */
+    @Test
+    public void whenPublishWithValidRepositoryNamingThenSucceedAndKeepNaming() throws IOException {
+        String prefix = "namingOk-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String blueprintUuid = createBlueprint(prefix, BlueprintTypeRes.BLUEPRINT, buildParentRepo());
+
+        try {
+            BlueprintRes blueprint = new BlueprintRes();
+            blueprint.setUuid(blueprintUuid);
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprint,
+                    prefix + "-version",
+                    "1.0.0",
+                    ManifestYamlTestSupport.readYamlTreeFromClasspath("/manifest/repository-naming-valid.yaml"));
+
+            ResponseEntity<PublishBlueprintVersionResponseRes> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    PublishBlueprintVersionResponseRes.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            String versionUuid = response.getBody().getBlueprintVersion().getUuid();
+            ResponseEntity<BlueprintVersionRes> getResponse = rest.getForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid),
+                    BlueprintVersionRes.class);
+            JsonNode storedRepositories = getResponse.getBody().getContent().path("targetRepositories");
+            assertThat(storedRepositories.get(0).path("naming").path("pattern").asText()).isEqualTo("${dpName}-infra");
+            assertThat(storedRepositories.get(0).path("naming").path("enforcement").asText()).isEqualTo("suggested");
+            assertThat(storedRepositories.get(1).path("naming").path("pattern").asText()).isEqualTo("${dpDomain}-${dpName}");
+            assertThat(storedRepositories.get(1).path("naming").has("enforcement")).isFalse();
+            assertThat(storedRepositories.get(1).path("naming").path("futureOption").asText()).isEqualTo("kept");
+
+            rest.delete(apiUrl(RoutesV2.BLUEPRINT_VERSIONS, "/" + versionUuid));
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /*
+     * Feature: Repository naming conventions in the manifest
+     * Scenario: Invalid naming conventions are rejected at publish with every problem and a hint
+     *   Given a manifest with a naming pattern using an undeclared reserved variable, a pattern with a bare $, a pattern without placeholders, a non-reserved variable, an invalid enforcement and a duplicated pattern
+     *   When the version is published
+     *   Then the response status is 400
+     *   And the message lists each problem with its field path and hint
+     */
+    @Test
+    public void whenPublishInvalidRepositoryNamingThenReturn400WithHints() throws IOException {
+        String prefix = "namingKo-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String blueprintUuid = createBlueprint(prefix, BlueprintTypeRes.BLUEPRINT, buildParentRepo());
+
+        try {
+            BlueprintRes blueprint = new BlueprintRes();
+            blueprint.setUuid(blueprintUuid);
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprint,
+                    prefix + "-version",
+                    "1.0.0",
+                    ManifestYamlTestSupport.readYamlTreeFromClasspath("/manifest/invalid/repository-naming.yaml"));
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody())
+                    .contains("targetRepositories[0].naming.pattern")
+                    .contains("Repository naming variable 'dpDomain' is not declared in parameters")
+                    .contains("Declare dpDomain in parameters[].")
+                    .contains("targetRepositories[1].naming.pattern")
+                    .contains("Repository naming pattern has invalid placeholder syntax at position 1")
+                    .contains("every $ must start a ${key} placeholder")
+                    .contains("targetRepositories[2].naming.pattern")
+                    .contains("Repository naming pattern must reference at least one variable")
+                    .contains("targetRepositories[3].naming.pattern")
+                    .contains("Repository naming variable 'layer' is not supported")
+                    .contains("Use one of: dpDomain, dpName, dpFqn, dpDisplayName, dpDescription, dpOwnerId, dpOwnerName.")
+                    .contains("targetRepositories[4].naming.enforcement")
+                    .contains("Repository naming enforcement must be 'binding' or 'suggested'")
+                    .contains("targetRepositories[5].naming.pattern")
+                    .contains("Repository naming pattern duplicates targetRepositories[4]")
+                    .contains("Give each repository key a distinct naming pattern.");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /*
+     * Feature: Repository naming conventions in the manifest
+     * Scenario: A Blueprint module cannot declare naming conventions
+     *   Given a catalog MODULE manifest whose target repository declares naming
+     *   When the version is published
+     *   Then the response status is 400
+     *   And the message tells the author to declare naming conventions on the parent Blueprint
+     */
+    @Test
+    public void whenPublishModuleWithRepositoryNamingThenReturn400() throws IOException {
+        String prefix = "namingModule-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String blueprintUuid = createBlueprint(prefix, BlueprintTypeRes.MODULE, buildModuleRepo());
+
+        try {
+            BlueprintRes blueprint = new BlueprintRes();
+            blueprint.setUuid(blueprintUuid);
+            ObjectNode content = (ObjectNode) ManifestYamlTestSupport.readYamlTreeFromClasspath(MONOREPO_MANIFEST_RESOURCE);
+            content.remove("protectedResources");
+            content.withArray("parameters").addObject().put("key", "dpName").put("type", "string");
+            ((ObjectNode) content.withArray("targetRepositories").get(0))
+                    .putObject("naming").put("pattern", "${dpName}");
+            PublishBlueprintVersionCommandRes cmd = publishCommandWithContent(
+                    blueprint, prefix + "-version", "1.0.0", content);
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    apiUrl(RoutesV2.BLUEPRINT_VERSIONS_PUBLISH),
+                    new HttpEntity<>(cmd),
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("A Blueprint module must not declare repository naming conventions");
+            assertThat(response.getBody()).contains("declare naming conventions on the parent Blueprint");
+        } finally {
+            rest.delete(apiUrl(RoutesV2.BLUEPRINTS, "/" + blueprintUuid));
+        }
+    }
+
+    /*
      * Feature: Structural validation at publish and instantiate
      * Scenario: Exact overlapping destinations on the same key are rejected at both gates
      *   Given two routes with the same repository key and the same normalized path
@@ -1654,6 +1787,22 @@ ResponseEntity<BlueprintRes> blueprintResponse = rest.postForEntity(
         }
     }
 
+
+    private String createBlueprint(String prefix, BlueprintTypeRes blueprintType,
+                                   BlueprintRes.BlueprintRepoRes blueprintRepo) {
+        BlueprintRes blueprint = new BlueprintRes();
+        blueprint.setName(prefix + "-bp");
+        blueprint.setDisplayName(prefix + "-display");
+        blueprint.setDescription(prefix + "-description");
+        blueprint.setBlueprintType(blueprintType);
+        blueprint.setBlueprintRepo(blueprintRepo);
+        ResponseEntity<BlueprintRes> response = rest.postForEntity(
+                apiUrl(RoutesV2.BLUEPRINTS),
+                new HttpEntity<>(blueprint),
+                BlueprintRes.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody().getUuid();
+    }
 
     private BlueprintRes.BlueprintRepoRes buildParentRepo() {
         BlueprintRes.BlueprintRepoRes blueprintRepo = new BlueprintRes.BlueprintRepoRes();

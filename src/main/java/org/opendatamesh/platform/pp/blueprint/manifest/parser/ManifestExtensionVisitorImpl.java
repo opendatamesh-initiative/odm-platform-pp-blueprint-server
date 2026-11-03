@@ -7,17 +7,19 @@ import org.opendatamesh.platform.pp.blueprint.manifest.model.ManifestProtectedRe
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestInstantiationEntry;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTarget;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepository;
+import org.opendatamesh.platform.pp.blueprint.manifest.model.instantiation.ManifestTargetRepositoryNaming;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterUi;
 import org.opendatamesh.platform.pp.blueprint.manifest.model.parameter.ManifestParameterValidation;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestInstantiationEntryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestParameterVisitor;
+import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestTargetRepositoryVisitor;
 import org.opendatamesh.platform.pp.blueprint.manifest.visitors.ManifestVisitor;
 
 /**
  * Walks the manifest object graph and applies {@link ManifestExtensionHandler} at each {@code ManifestComponentBase} node.
  */
 class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameterVisitor,
-        ManifestInstantiationEntryVisitor {
+        ManifestInstantiationEntryVisitor, ManifestTargetRepositoryVisitor {
 
     private final ManifestExtensionHandler extensionHandler;
 
@@ -69,6 +71,14 @@ class ManifestExtensionVisitorImpl implements ManifestVisitor, ManifestParameter
     @Override
     public void visit(ManifestTargetRepository targetRepository) {
         extensionHandler.handleComponentBaseExtension(targetRepository, ManifestTargetRepository.class);
+        if (targetRepository.getNaming() != null) {
+            targetRepository.getNaming().accept(this);
+        }
+    }
+
+    @Override
+    public void visit(ManifestTargetRepositoryNaming naming) {
+        extensionHandler.handleComponentBaseExtension(naming, ManifestTargetRepositoryNaming.class);
     }
 
     @Override

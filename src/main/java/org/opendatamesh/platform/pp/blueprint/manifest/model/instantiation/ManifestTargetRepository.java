@@ -12,6 +12,7 @@ public class ManifestTargetRepository extends ManifestComponentBase {
      * enrichment, registry primary pointer). Exactly one entry must set {@code isRoot: true}.
      */
     private Boolean isRoot;
+    private ManifestTargetRepositoryNaming naming;
 
     public String getKey() {
         return key;
@@ -35,6 +36,14 @@ public class ManifestTargetRepository extends ManifestComponentBase {
 
     public void setIsRoot(Boolean isRoot) {
         this.isRoot = isRoot;
+    }
+
+    public ManifestTargetRepositoryNaming getNaming() {
+        return naming;
+    }
+
+    public void setNaming(ManifestTargetRepositoryNaming naming) {
+        this.naming = naming;
     }
 
     public void accept(ManifestVisitor visitor) {

@@ -17,6 +17,8 @@ interface PublishBlueprintVersionManifestOutboundPort {
 
     boolean hasProtectedResources(JsonNode content);
 
+    boolean hasRepositoryNamingConventions(JsonNode content);
+
     List<String> listMappedChildParameterKeys(JsonNode parentContent, String compositionFieldPath);
 
     List<String> listModuleParameterKeysWithoutDefault(JsonNode moduleContent);
