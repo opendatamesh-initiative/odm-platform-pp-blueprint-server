@@ -96,6 +96,8 @@ docker run -p 8080:8080 \
 | Step-by-step deploy | [Deployment](docs/setup/deployment.md) |
 | Properties to manage | [Configuration](docs/setup/configuration.md) |
 
+The Docker Hub overview of this image is [`DOCKERHUB.md`](DOCKERHUB.md). It is published on every release, so keep it up to date.
+
 ---
 
 ## Documentation
