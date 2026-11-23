@@ -6,6 +6,15 @@ import java.util.Optional;
 
 import org.opendatamesh.platform.git.exceptions.GitOperationException;
 import org.opendatamesh.platform.git.model.Branch;
+import org.opendatamesh.platform.git.model.Commit;
+import org.opendatamesh.platform.git.model.CommitListFilter;
+import org.opendatamesh.platform.git.model.CommitListNoFilter;
+import org.opendatamesh.platform.git.model.CommitListRangeFilter;
+import org.opendatamesh.platform.git.model.CommitListSingleBranchFilter;
+import org.opendatamesh.platform.git.model.CommitRef;
+import org.opendatamesh.platform.git.model.CommitRefBranch;
+import org.opendatamesh.platform.git.model.CommitRefHash;
+import org.opendatamesh.platform.git.model.CommitRefTag;
 import org.opendatamesh.platform.git.model.Tag;
 import org.opendatamesh.platform.git.model.Organization;
 import org.opendatamesh.platform.git.model.ProviderCustomResource;
@@ -24,6 +33,9 @@ import org.opendatamesh.platform.pp.blueprint.exceptions.BadRequestException;
 import org.opendatamesh.platform.pp.blueprint.git.provider.GitProviderFactory;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.BranchMapper;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.BranchRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.CommitMapper;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.CommitRes;
+import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.CommitSearchOptions;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.CreateRepositoryReqRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.CreateRepositoryTagReqRes;
 import org.opendatamesh.platform.pp.blueprint.rest.v2.resources.gitproviders.OrganizationMapper;
@@ -54,16 +66,18 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
     private final ProviderCustomResourceMapper providerCustomResourceMapper;
     private final BranchMapper branchMapper;
     private final TagMapper tagMapper;
+    private final CommitMapper commitMapper;
 
     private final GitProviderFactory gitProviderFactory;
 
-    public GitProvidersUtilsServiceImpl(OrganizationMapper organizationMapper, RepositoryMapper repositoryMapper, ProviderCustomResourceDefinitionMapper providerCustomResourceDefinitionMapper, ProviderCustomResourceMapper providerCustomResourceMapper, BranchMapper branchMapper, TagMapper tagMapper, GitProviderFactory gitProviderFactory) {
+    public GitProvidersUtilsServiceImpl(OrganizationMapper organizationMapper, RepositoryMapper repositoryMapper, ProviderCustomResourceDefinitionMapper providerCustomResourceDefinitionMapper, ProviderCustomResourceMapper providerCustomResourceMapper, BranchMapper branchMapper, TagMapper tagMapper, CommitMapper commitMapper, GitProviderFactory gitProviderFactory) {
         this.organizationMapper = organizationMapper;
         this.repositoryMapper = repositoryMapper;
         this.providerCustomResourceDefinitionMapper = providerCustomResourceDefinitionMapper;
         this.providerCustomResourceMapper = providerCustomResourceMapper;
         this.branchMapper = branchMapper;
         this.tagMapper = tagMapper;
+        this.commitMapper = commitMapper;
         this.gitProviderFactory = gitProviderFactory;
     }
 
@@ -208,6 +222,22 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
     }
 
     @Override
+    public Page<CommitRes> listCommits(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, CommitSearchOptions searchOptions, HttpHeaders headers, Pageable pageable) {
+        GitProvider provider = gitProviderFactory.buildGitProvider(
+                new GitProviderIdentifier(providerIdentifier.getProviderType(), providerIdentifier.getProviderBaseUrl()),
+                headers
+        );
+
+        Repository repository = provider.getRepository(repositoryId, ownerId)
+                .orElseThrow(() -> new BadRequestException("Repository not found with ID: " + repositoryId));
+
+        CommitListFilter filter = buildCommitListFilter(searchOptions, repository.getDefaultBranch());
+        Page<Commit> commits = provider.listCommits(repository, filter, pageable);
+
+        return commits.map(commitMapper::toRes);
+    }
+
+    @Override
     public void createRepositoryTag(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, CreateRepositoryTagReqRes createRepositoryTagReqRes) {
         validateCreateRepositoryTagReqRes(createRepositoryTagReqRes);
 
@@ -262,6 +292,86 @@ public class GitProvidersUtilsServiceImpl implements GitProvidersUtilsService {
             return provider.gitOperation().getHeadSha(repository, req.getBranchName());
         }
         return provider.gitOperation().getHeadSha(repository, defaultBranch);
+    }
+
+    /**
+     * Same rules as the registry repository commits endpoint: {@code branchName} alone lists one
+     * branch; otherwise at most one {@code from} and one {@code to} ref, a missing side falling
+     * back to the repository default branch.
+     */
+    private CommitListFilter buildCommitListFilter(CommitSearchOptions options, String defaultBranchName) {
+        if (options == null) {
+            return CommitListNoFilter.getInstance();
+        }
+
+        boolean hasBranchName = StringUtils.hasText(options.getBranchName());
+        boolean hasFromBranchName = StringUtils.hasText(options.getFromBranchName());
+        boolean hasToBranchName = StringUtils.hasText(options.getToBranchName());
+        boolean hasFromTag = StringUtils.hasText(options.getFromTagName());
+        boolean hasToTag = StringUtils.hasText(options.getToTagName());
+        boolean hasFromCommit = StringUtils.hasText(options.getFromCommitHash());
+        boolean hasToCommit = StringUtils.hasText(options.getToCommitHash());
+
+        if (hasBranchName && (hasFromBranchName || hasToBranchName || hasFromTag || hasToTag || hasFromCommit || hasToCommit)) {
+            throw new BadRequestException(
+                    "'branchName' cannot be used together with 'fromBranchName' or 'toBranchName' or from/to tag/commit. " +
+                            "Use either branchName alone to list commits on one branch, or from/to parameters to list commits between refs.");
+        }
+
+        int fromCount = (hasFromTag ? 1 : 0) + (hasFromCommit ? 1 : 0) + (hasFromBranchName ? 1 : 0);
+        int toCount = (hasToTag ? 1 : 0) + (hasToCommit ? 1 : 0) + (hasToBranchName ? 1 : 0);
+        if (fromCount > 1 || toCount > 1) {
+            throw new BadRequestException("Set at most one 'from' and one 'to' parameter (tag, commit hash or branch)");
+        }
+
+        if (hasBranchName) {
+            return new CommitListSingleBranchFilter(new CommitRefBranch(options.getBranchName()));
+        }
+
+        CommitRef fromRef = buildFromRef(options);
+        CommitRef toRef = buildToRef(options);
+
+        if (fromRef == null && toRef == null) {
+            return CommitListNoFilter.getInstance();
+        }
+        if (fromRef == null || toRef == null) {
+            if (!StringUtils.hasText(defaultBranchName)) {
+                throw new BadRequestException("For commit range filter both 'from' and 'to' parameters are required, or configure a default branch.");
+            }
+            if (fromRef == null) {
+                fromRef = new CommitRefBranch(defaultBranchName);
+            } else {
+                toRef = new CommitRefBranch(defaultBranchName);
+            }
+        }
+
+        return new CommitListRangeFilter(fromRef, toRef);
+    }
+
+    private CommitRef buildFromRef(CommitSearchOptions options) {
+        if (StringUtils.hasText(options.getFromTagName())) {
+            return new CommitRefTag(options.getFromTagName());
+        }
+        if (StringUtils.hasText(options.getFromCommitHash())) {
+            return new CommitRefHash(options.getFromCommitHash());
+        }
+        if (StringUtils.hasText(options.getFromBranchName())) {
+            return new CommitRefBranch(options.getFromBranchName());
+        }
+        return null;
+    }
+
+    private CommitRef buildToRef(CommitSearchOptions options) {
+        if (StringUtils.hasText(options.getToTagName())) {
+            return new CommitRefTag(options.getToTagName());
+        }
+        if (StringUtils.hasText(options.getToCommitHash())) {
+            return new CommitRefHash(options.getToCommitHash());
+        }
+        if (StringUtils.hasText(options.getToBranchName())) {
+            return new CommitRefBranch(options.getToBranchName());
+        }
+        return null;
     }
 
     /**

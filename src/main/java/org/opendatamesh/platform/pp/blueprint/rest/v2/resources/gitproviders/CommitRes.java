@@ -14,6 +14,9 @@ public class CommitRes {
     @Schema(description = "Commit message", example = "Fix: resolve authentication issue")
     private String message;
 
+    @Schema(description = "Author name", example = "John Doe")
+    private String author;
+
     @Schema(description = "Author email", example = "john.doe@example.com")
     private String authorEmail;
 
@@ -46,6 +49,13 @@ public class CommitRes {
         this.message = message;
     }
 
+    public String getAuthor() {
+        return author;
+    }
+
+    public void setAuthor(String author) {
+        this.author = author;
+    }
 
     public String getAuthorEmail() {
         return authorEmail;

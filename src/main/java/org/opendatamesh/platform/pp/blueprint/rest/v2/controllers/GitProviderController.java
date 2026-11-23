@@ -191,6 +191,37 @@ public class GitProviderController {
         return gitProviderService.listTags(providerIdentifier, repositoryId, ownerId, headers, pageable);
     }
 
+    @Operation(summary = "Get repository commits", description = "Retrieves a paginated list of commits from a Git provider repository: the default branch, one branch (branchName) or a range between two refs (from/to tag, commit hash or branch; a missing side defaults to the repository default branch)")
+    @GetMapping("/repositories/{repositoryId}/commits")
+    @ResponseStatus(HttpStatus.OK)
+    public Page<CommitRes> getRepositoryCommits(
+            @Parameter(description = "Repository ID", required = true)
+            @PathVariable String repositoryId,
+            @Parameter(description = "Owner ID")
+            @RequestParam String ownerId,
+            @Parameter(description = "Type of the Git provider")
+            @RequestParam String providerType,
+            @Parameter(description = "Base URL of the Git provider")
+            @RequestParam String providerBaseUrl,
+            @Parameter(description = "Search options for filtering commits by branch, or between tag names, branch names or commit hashes")
+            CommitSearchOptions searchOptions,
+            @Parameter(description = "Pagination parameters")
+            @PageableDefault(page = 0, size = 20)
+            Pageable pageable,
+            @Parameter(description = "HTTP headers for Git provider authentication")
+            @RequestHeader HttpHeaders headers
+    ) {
+        if (!StringUtils.hasText(providerType)) {
+            throw new BadRequestException("Provider type is required");
+        }
+        if (!StringUtils.hasText(providerBaseUrl)) {
+            throw new BadRequestException("Provider base URL is required");
+        }
+        ProviderIdentifierRes providerIdentifier = new ProviderIdentifierRes(providerType, providerBaseUrl);
+
+        return gitProviderService.listCommits(providerIdentifier, repositoryId, ownerId, searchOptions, headers, pageable);
+    }
+
     @Operation(summary = "Create repository tag", description = "Clones the repository at a pointer (branch, tag, or commit), creates a Git tag via JGit, and pushes tags to the remote")
     @PostMapping("/repositories/{repositoryId}/tags")
     @ResponseStatus(HttpStatus.OK)
