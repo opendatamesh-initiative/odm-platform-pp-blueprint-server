@@ -608,6 +608,160 @@ public class GitProviderControllerIT extends BlueprintApplicationIT {
     }
 
     @Test
+    public void whenGetRepositoryCommitsBetweenTagsThenReturnCommitsOfTheRange() {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        Commit commit = new Commit("sha111aaa", "feat: add module", "Jane Doe", "jane@example.com", null);
+        Page<Commit> mockPage = new PageImpl<>(List.of(commit), PageRequest.of(0, 100), 1);
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("repo-123"), eq("owner-1"))).thenReturn(Optional.of(mockRepo));
+        when(mockGitProvider.listCommits(eq(mockRepo), any(CommitListFilter.class), any(Pageable.class))).thenReturn(mockPage);
+
+        ResponseEntity<JsonNode> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/commits?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com&fromTagName=v1.0.0&toTagName=v1.1.0&size=100"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                JsonNode.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode content = response.getBody().get("content");
+        assertThat(content.size()).isEqualTo(1);
+        assertThat(content.get(0).get("hash").asText()).isEqualTo("sha111aaa");
+        assertThat(content.get(0).get("message").asText()).isEqualTo("feat: add module");
+        assertThat(content.get(0).get("author").asText()).isEqualTo("Jane Doe");
+        assertThat(content.get(0).get("authorEmail").asText()).isEqualTo("jane@example.com");
+        verify(mockGitProvider).listCommits(eq(mockRepo), argThat(filter ->
+                filter instanceof CommitListRangeFilter range
+                        && "v1.0.0".equals(range.from().getRefValue())
+                        && "v1.1.0".equals(range.to().getRefValue())
+        ), any(Pageable.class));
+    }
+
+    @Test
+    public void whenGetRepositoryCommitsFromTagToBranchThenRangeEndsAtTheBranch() {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("repo-123"), eq("owner-1"))).thenReturn(Optional.of(mockRepo));
+        when(mockGitProvider.listCommits(eq(mockRepo), any(CommitListFilter.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        ResponseEntity<JsonNode> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/commits?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com&fromTagName=v1.0.0&toBranchName=develop"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                JsonNode.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(mockGitProvider).listCommits(eq(mockRepo), argThat(filter ->
+                filter instanceof CommitListRangeFilter range
+                        && "v1.0.0".equals(range.from().getRefValue())
+                        && "develop".equals(range.to().getRefValue())
+        ), any(Pageable.class));
+    }
+
+    @Test
+    public void whenGetRepositoryCommitsWithOnlyFromTagThenRangeEndsAtTheDefaultBranch() {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("repo-123"), eq("owner-1"))).thenReturn(Optional.of(mockRepo));
+        when(mockGitProvider.listCommits(eq(mockRepo), any(CommitListFilter.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        ResponseEntity<JsonNode> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/commits?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com&fromTagName=v1.0.0"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                JsonNode.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(mockGitProvider).listCommits(eq(mockRepo), argThat(filter ->
+                filter instanceof CommitListRangeFilter range
+                        && "v1.0.0".equals(range.from().getRefValue())
+                        && "main".equals(range.to().getRefValue())
+        ), any(Pageable.class));
+    }
+
+    @Test
+    public void whenGetRepositoryCommitsWithoutFiltersThenListTheDefaultBranch() {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("repo-123"), eq("owner-1"))).thenReturn(Optional.of(mockRepo));
+        when(mockGitProvider.listCommits(eq(mockRepo), any(CommitListFilter.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        ResponseEntity<JsonNode> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/commits?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                JsonNode.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(mockGitProvider).listCommits(eq(mockRepo), argThat(filter -> filter instanceof CommitListNoFilter), any(Pageable.class));
+    }
+
+    @Test
+    public void whenGetRepositoryCommitsWithBranchNameAndRangeThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+
+        Repository mockRepo = createMockRepository("my-repo", "My repository");
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("repo-123"), eq("owner-1"))).thenReturn(Optional.of(mockRepo));
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/commits?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com&branchName=main&fromTagName=v1.0.0"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(mockGitProvider, never()).listCommits(any(), any(), any());
+    }
+
+    @Test
+    public void whenGetRepositoryCommitsWhenRepositoryNotFoundThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+
+        GitProvider mockGitProvider = gitProviderFactoryMock.getMockGitProvider();
+        when(mockGitProvider.getRepository(eq("missing-repo"), eq("owner-1"))).thenReturn(Optional.empty());
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/missing-repo/commits?ownerId=owner-1&providerType=GITHUB&providerBaseUrl=https://api.github.com"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    public void whenGetRepositoryCommitsWithoutProviderBaseUrlThenReturnBadRequest() {
+        HttpHeaders headers = createTestHeaders();
+
+        ResponseEntity<String> response = rest.exchange(
+                apiUrl(RoutesV2.GIT_PROVIDERS, "/repositories/repo-123/commits?ownerId=owner-1&providerType=GITHUB"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     public void whenCreateRepositoryTagWithValidParametersThenReturnsOk() throws Exception {
         HttpHeaders headers = createTestHeaders();
 

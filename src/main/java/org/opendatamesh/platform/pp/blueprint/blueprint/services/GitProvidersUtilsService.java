@@ -74,6 +74,23 @@ public interface GitProvidersUtilsService {
     Page<TagRes> listTags(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, HttpHeaders headers, Pageable pageable);
 
     /**
+     * List commits from a Git provider repository with pagination.
+     * <p>
+     * Without search options the commits of the default branch are listed. With a single
+     * {@code from} ref (tag, commit or branch) the range ends at the repository default branch;
+     * with {@code branchName} the commits of that branch are listed.
+     *
+     * @param providerIdentifier the provider identifier information (type, baseUrl)
+     * @param repositoryId       the repository ID
+     * @param ownerId            the owner ID (organization or user ID)
+     * @param searchOptions      optional filter by branch, or range between two tags, commits or branches
+     * @param headers            HTTP headers containing authentication credentials
+     * @param pageable           pagination information
+     * @return page of commits
+     */
+    Page<CommitRes> listCommits(ProviderIdentifierRes providerIdentifier, String repositoryId, String ownerId, CommitSearchOptions searchOptions, HttpHeaders headers, Pageable pageable);
+
+    /**
      * Create a Git tag on a repository via a local clone and push tags to the remote.
      *
      * @param providerIdentifier the provider identifier information (type, baseUrl)
